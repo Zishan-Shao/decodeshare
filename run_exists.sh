@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+cd /home/zs89/decodeshare/src/
+source ~/miniconda3/etc/profile.d/conda.sh
 conda activate flashsvd
-cd /home/zs89/FlashSVDTrain/shared_space/causal_analysis
+
 
 # 建议关掉 tokenizer 并行提示
 export TOKENIZERS_PARALLELISM=false
@@ -49,7 +51,7 @@ for MODEL_NAME in "${MODEL_NAMES[@]}"; do
 
               echo "[Run] model=${MODEL_NAME} layer=${LAYER} tau=${TAU} n=${N_PROMPTS} new=${CALIB_MAX_NEW_TOKENS} maxlen=${MAX_PROMPT_LEN} states=${PER_TASK_MAX_STATES}"
 
-                python prove_sharedness_decode_fair.py \
+              CUDA_VISIBLE_DEVICES=4  python prove_sharedness_decode_fair.py \
                 --model "${MODEL_NAME}" \
                 --device cuda \
                 --model_dtype fp32 \

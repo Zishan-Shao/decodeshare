@@ -1,0 +1,1857 @@
+[Cmd] prove_sharedness_decode_fair.py --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 --layer 2 --n_prompts 128 --calib_max_new_tokens 128 --max_prompt_len 512 --per_task_max_states 20000 --tau 0.001 --m_shared all --null_perm_trials 2000 --null_scramble_trials 100 --out_json results/exists/prove_existence_meta-llama_Llama-2-7b-chat-hf_fp32_layer2_n128_new128_maxlen512_states20000_tau0.001_msharedall_perm2000_scr100.json --out_txt results/exists/prove_existence_meta-llama_Llama-2-7b-chat-hf_fp32_layer2_n128_new128_maxlen512_states20000_tau0.001_msharedall_perm2000_scr100.txt
+[Log] tee stdout -> results/exists/prove_existence_meta-llama_Llama-2-7b-chat-hf_fp32_layer2_n128_new128_maxlen512_states20000_tau0.001_msharedall_perm2000_scr100.txt
+[Env] model=meta-llama/Llama-2-7b-chat-hf device=cuda dtype=fp32 layer=[2]
+[Env] hidden_dim=4096
+The repository for piqa contains custom code which must be executed to correctly load the dataset. You can inspect the repository content at https://hf.co/datasets/piqa.
+You can avoid this prompt in future by passing the argument `trust_remote_code=True`.
+
+Do you wish to run the custom code? [y/N] [Data] tasks=['gsm8k', 'commonsenseqa', 'strategyqa', 'aqua', 'openbookqa', 'qasc', 'boolq', 'piqa'] n_prompts_per_task(target)=128
+[Data] task=gsm8k loaded_prompts=128
+[Data] task=commonsenseqa loaded_prompts=128
+[Data] task=strategyqa loaded_prompts=128
+[Data] task=aqua loaded_prompts=128
+[Data] task=openbookqa loaded_prompts=128
+[Data] task=qasc loaded_prompts=128
+[Data] task=boolq loaded_prompts=128
+[Data] task=piqa loaded_prompts=128
+[Collect] task=gsm8k
+[Collect] task=commonsenseqa
+[Collect] task=strategyqa
+[Collect] task=aqua
+[Collect] task=openbookqa
+[Collect] task=qasc
+[Collect] task=boolq
+[Collect] task=piqa
+[Collect] task=gsm8k states=13934 x 4096
+[Collect] task=commonsenseqa states=14130 x 4096
+[Collect] task=strategyqa states=14321 x 4096
+[Collect] task=aqua states=15791 x 4096
+[Collect] task=openbookqa states=14350 x 4096
+[Collect] task=qasc states=15352 x 4096
+[Collect] task=boolq states=14954 x 4096
+[Collect] task=piqa states=15071 x 4096
+[Fair] balanced states per task = 13934
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.55e+03
+    Top 5 components by variance: [0, 1, 2, 3, 6]
+    Top 5 variances: [82.934531 61.104326 48.215667 44.706899 42.09147 ]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [2, 3, 5, 0, 1]
+    Top 5 variances: [39.427337 32.176817 31.148076 30.04347  28.209076]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 2, 1, 4, 3]
+    Top 5 variances: [40.044239 30.965795 28.576612 22.475413 18.251065]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.51e+03
+    Top 5 components by variance: [0, 1, 2, 6, 3]
+    Top 5 variances: [55.781141 52.641038 50.388452 46.255765 45.304806]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.96e+03
+    Top 5 components by variance: [2, 0, 4, 1, 3]
+    Top 5 variances: [39.831757 35.548154 30.655473 30.442236 29.170043]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.24e+03
+    Top 5 components by variance: [0, 2, 1, 3, 4]
+    Top 5 variances: [59.118517 45.709633 41.592257 34.435777 30.79382 ]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.04e+03
+    Top 5 components by variance: [0, 14, 1, 4, 13]
+    Top 5 variances: [124.341229  64.330825  57.030745  35.966989  35.956542]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [0, 1, 2, 3, 4]
+    Top 5 variances: [84.179046 47.713163 42.790917 33.171526 33.119672]
+
+Cross-task subspace: 2828/4096 dim (69.0%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 2828)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 3.959476e-01
+  平均范数误差: 4.837925e-07
+[PCA] cross_dim=2828 / 4096  (pca_var=0.95)
+
+================================================================================
+[Observed Sharedness]
+================================================================================
+tasks=['gsm8k', 'commonsenseqa', 'strategyqa', 'aqua', 'openbookqa', 'qasc', 'boolq', 'piqa']
+tau=0.001 m_shared=8 (all=8)
+OBS shared_count=121 / cross_dim=2828
+Top-10 components by avg relvar: [2, 4, 7, 0, 1, 8, 10, 12, 3, 5]
+Top-10 avg relvar: [0.017269238829612732, 0.013008017092943192, 0.010845274664461613, 0.010361114516854286, 0.010036064311861992, 0.00830859038978815, 0.008061028085649014, 0.00763317383825779, 0.007250293157994747, 0.007161417044699192]
+
+================================================================================
+[Null-1] relvar-permutation (fast)
+================================================================================
+trials=2000 null_mean=0.00 p95=0.00 max=0
+p-value (null>=obs) = 0.0004998
+
+================================================================================
+[Null-2] per-task orthogonal scramble + recompute PCA (stronger, slower)
+================================================================================
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 5, 11, 14, 21]
+    Top 5 variances: [96.587469 64.161874 57.512237 27.875012 27.22871 ]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 9, 18, 28, 10]
+    Top 5 variances: [28.009491 26.566604 23.685641 19.646107 14.392022]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [38, 27, 45, 25, 63]
+    Top 5 variances: [19.400558 17.390829 16.835857 13.383163 13.203009]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 9, 4, 6, 17]
+    Top 5 variances: [103.591686  45.583236  41.656902  41.003409  39.798779]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [13, 23, 47, 41, 34]
+    Top 5 variances: [40.714908 29.30659  22.633177 21.968581 12.214617]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 20, 54, 24, 35]
+    Top 5 variances: [67.321185 24.486386 22.041626 20.174097 19.973041]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 10, 8, 24]
+    Top 5 variances: [137.049131 105.732218  46.498601  21.167434  15.645869]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 6, 19, 12, 42]
+    Top 5 variances: [41.225387 39.81546  37.056994 35.561078 15.533514]
+
+Cross-task subspace: 3295/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3295)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.017413e-01
+  平均范数误差: 4.666166e-07
+  trial=1/100: cross_dim=3295 shared_count=3
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 6, 11, 20, 29]
+    Top 5 variances: [98.8125   49.143582 48.286935 36.280028 32.239194]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [9, 28, 18, 30, 17]
+    Top 5 variances: [71.624221 28.232814 21.366401 16.119264 15.886404]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [25, 47, 23, 34, 35]
+    Top 5 variances: [21.036778 18.545194 15.614009 14.928443 12.381065]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.53e+03
+    Top 5 components by variance: [2, 5, 8, 16, 17]
+    Top 5 variances: [105.786396  65.132866  48.468409  32.756312  29.907699]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 45, 22, 14, 13]
+    Top 5 variances: [33.536183 18.359869 18.12973  18.107418 16.25168 ]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 15, 22, 31, 21]
+    Top 5 variances: [66.836659 30.710535 26.184878 24.374093 19.324624]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 10, 19, 40]
+    Top 5 variances: [135.148709 115.513426  67.364418  27.776218  21.279278]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 13, 6, 19, 32]
+    Top 5 variances: [67.056842 47.729299 25.096201 19.178112 18.035538]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.148653e-01
+  平均范数误差: 4.778504e-07
+  trial=2/100: cross_dim=3294 shared_count=2
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 11, 15, 5, 6]
+    Top 5 variances: [97.424904 51.609401 37.629283 37.245011 33.835588]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 26, 35, 50]
+    Top 5 variances: [47.94823  34.272864 20.388119 18.52942  16.862675]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [27, 24, 49, 63, 54]
+    Top 5 variances: [20.075272 19.827696 17.36096  11.940356  8.486646]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 9, 6, 5, 16]
+    Top 5 variances: [93.973455 50.092462 49.308164 41.669745 35.006798]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 43, 22, 44, 33]
+    Top 5 variances: [50.578365 17.494026 15.354492 14.741751 14.477461]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 14, 20, 34, 32]
+    Top 5 variances: [71.621924 31.663729 26.427426 23.962263 23.612675]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 10, 21, 28]
+    Top 5 variances: [136.849626 105.383356  47.956667  29.452517  16.947028]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.90e+03
+    Top 5 components by variance: [4, 13, 19, 48, 33]
+    Top 5 variances: [75.88448  41.999509 25.601376 16.178237 14.181611]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000003]
+  最大非对角线元素: 2.639684e-01
+  平均范数误差: 4.699249e-07
+  trial=3/100: cross_dim=3294 shared_count=3
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 5, 11, 4, 27]
+    Top 5 variances: [79.346758 60.82     41.248882 35.076059 30.393079]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [10, 18, 9, 7, 19]
+    Top 5 variances: [25.254171 24.799756 21.471745 19.575822 17.096603]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [38, 26, 28, 48, 46]
+    Top 5 variances: [20.753053 19.208368 13.08845  12.668568 12.404735]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 6, 16, 9, 17]
+    Top 5 variances: [109.231005  58.783805  46.861457  45.725604  30.242179]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [14, 12, 45, 21, 25]
+    Top 5 variances: [33.873029 23.527469 22.67331  18.342448 14.359995]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 15, 32, 23, 37]
+    Top 5 variances: [63.757458 29.584907 26.358222 25.676298 22.572824]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 8, 10, 20]
+    Top 5 variances: [137.316621 108.273705  28.675216  23.876386  23.276579]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [13, 4, 5, 6, 19]
+    Top 5 variances: [44.172332 29.926437 27.782914 26.432364 24.974959]
+
+Cross-task subspace: 3296/4096 dim (80.5%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3296)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.017510e-01
+  平均范数误差: 4.700919e-07
+  trial=4/100: cross_dim=3296 shared_count=3
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 6, 11, 4, 13]
+    Top 5 variances: [87.761325 54.160161 43.206641 35.763741 35.564568]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 37, 26, 67]
+    Top 5 variances: [38.997272 37.318777 21.622494 17.112637 14.217009]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [25, 46, 57, 36, 24]
+    Top 5 variances: [29.87446  22.430237 16.959138 12.968656 10.152632]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 4, 17, 9, 6]
+    Top 5 variances: [73.345663 50.228519 44.172693 40.021031 35.624328]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 23, 47, 40, 31]
+    Top 5 variances: [52.866218 27.761442 18.405935 16.773045 14.277244]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.21e+03
+    Top 5 components by variance: [7, 15, 32, 14, 23]
+    Top 5 variances: [69.908961 28.946044 22.51382  20.393296 16.545058]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 21, 10, 9]
+    Top 5 variances: [138.04864   89.399436  40.011205  38.440482  28.104528]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.90e+03
+    Top 5 components by variance: [5, 13, 16, 19, 34]
+    Top 5 variances: [76.583033 25.226072 21.121637 17.684707 15.494125]
+
+Cross-task subspace: 3295/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3295)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.067530e-01
+  平均范数误差: 4.766020e-07
+  trial=5/100: cross_dim=3295 shared_count=2
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.58e+03
+    Top 5 components by variance: [3, 6, 14, 11, 25]
+    Top 5 variances: [90.124338 71.545573 44.954499 42.954143 32.735643]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 10, 27, 26]
+    Top 5 variances: [46.307756 38.986482 28.232737 20.637873 16.86276 ]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [48, 24, 39, 37, 56]
+    Top 5 variances: [25.013756 23.732835 20.773976 11.144151 10.185571]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 9, 17, 5, 16]
+    Top 5 variances: [93.362063 76.337172 50.760393 41.729111 41.03413 ]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 23, 22, 46, 44]
+    Top 5 variances: [57.335909 27.158262 15.251971 14.09508  14.032208]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 15, 20, 34, 33]
+    Top 5 variances: [85.495197 40.697447 23.707632 23.323408 18.513764]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 21, 30, 11]
+    Top 5 variances: [136.86166   91.405507  36.112013  28.843459  26.916651]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [13, 5, 4, 19, 49]
+    Top 5 variances: [48.176003 46.982571 45.357658 29.996673 23.106795]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.180292e-01
+  平均范数误差: 4.694363e-07
+  trial=6/100: cross_dim=3294 shared_count=6
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 6, 10, 5, 11]
+    Top 5 variances: [93.829177 54.761071 39.78576  38.299493 28.557135]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.87e+03
+    Top 5 components by variance: [8, 18, 27, 11, 52]
+    Top 5 variances: [53.363227 38.338631 26.675619 20.382796 12.470548]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [53, 38, 26, 48, 23]
+    Top 5 variances: [17.001383 16.118497 15.257025 12.223506 11.513073]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.53e+03
+    Top 5 components by variance: [2, 9, 16, 5, 17]
+    Top 5 variances: [103.035119  70.65387   52.515879  47.573032  34.118331]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.94e+03
+    Top 5 components by variance: [13, 42, 46, 32, 24]
+    Top 5 variances: [50.909454 26.976125 18.305754 17.856942 14.472888]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 14, 15, 22, 36]
+    Top 5 variances: [81.271287 26.068953 23.069908 22.680547 21.631761]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 10, 19, 43]
+    Top 5 variances: [137.323047 103.129844  34.578859  24.35132   23.006253]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 12, 30, 20, 13]
+    Top 5 variances: [87.573242 36.8594   26.857948 25.967616 15.739613]
+
+Cross-task subspace: 3293/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3293)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.332224e-01
+  平均范数误差: 4.695065e-07
+  trial=7/100: cross_dim=3293 shared_count=4
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 11, 6, 4, 24]
+    Top 5 variances: [66.793856 62.714721 58.324003 36.531051 29.307373]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [18, 9, 8, 28, 41]
+    Top 5 variances: [48.223246 40.671368 34.728845 33.768646 15.327761]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [26, 39, 36, 24, 48]
+    Top 5 variances: [33.256939 12.408651 10.851527  9.974004  9.340166]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.53e+03
+    Top 5 components by variance: [5, 2, 17, 25, 16]
+    Top 5 variances: [88.572133 86.533334 41.244657 35.907236 35.066527]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 22, 43, 30, 45]
+    Top 5 variances: [56.359394 27.47636  16.854054 16.72911  14.397368]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 23, 31, 14, 32]
+    Top 5 variances: [73.047625 31.730404 27.95745  23.825582 17.280906]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 10, 20, 35]
+    Top 5 variances: [135.98536  105.865618  51.651198  21.438513  19.700493]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 19, 6, 13, 14]
+    Top 5 variances: [55.968573 34.738669 30.674701 23.357434 21.66571 ]
+
+Cross-task subspace: 3296/4096 dim (80.5%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3296)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.154434e-01
+  平均范数误差: 4.592777e-07
+  trial=8/100: cross_dim=3296 shared_count=4
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.56e+03
+    Top 5 components by variance: [3, 6, 11, 30, 14]
+    Top 5 variances: [103.319137  67.223429  55.55856   21.880179  21.80574 ]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [9, 19, 27, 10, 39]
+    Top 5 variances: [34.090985 31.232925 26.509235 25.443957 20.120717]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [26, 47, 37, 64, 25]
+    Top 5 variances: [23.476212 20.110269 18.891848 13.804495 10.696049]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 8, 5, 15, 16]
+    Top 5 variances: [99.000495 64.176032 51.423986 43.991226 27.89699 ]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 23, 29, 43, 46]
+    Top 5 variances: [62.886821 21.51076  18.64339  17.950921 13.348703]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 14, 20, 32, 13]
+    Top 5 variances: [72.129785 31.353615 30.040578 23.141463 23.07748 ]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 10, 22, 31]
+    Top 5 variances: [137.743764 106.267315  39.138684  24.58938   21.7685  ]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 13, 5, 18, 21]
+    Top 5 variances: [68.516891 39.242403 22.511512 22.294852 16.609784]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.134103e-01
+  平均范数误差: 4.685859e-07
+  trial=9/100: cross_dim=3294 shared_count=2
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 5, 11, 14, 24]
+    Top 5 variances: [95.601037 73.868847 46.345582 35.502408 32.03237 ]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 10, 49, 27]
+    Top 5 variances: [51.668832 42.637706 20.044963 13.904323 13.214188]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [25, 39, 27, 63, 26]
+    Top 5 variances: [22.4339   21.896841 11.519927 10.857773 10.821471]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.53e+03
+    Top 5 components by variance: [2, 6, 17, 15, 10]
+    Top 5 variances: [95.329506 67.257258 43.213507 30.611397 30.299528]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.94e+03
+    Top 5 components by variance: [12, 46, 45, 21, 29]
+    Top 5 variances: [41.128753 21.81323  20.472538 18.806281 17.350246]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 40, 22, 34, 16]
+    Top 5 variances: [76.354481 23.129783 21.874026 21.0742   20.348675]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 9, 23, 10]
+    Top 5 variances: [137.370165  97.754244  31.553278  26.683878  26.434056]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 13, 19, 6, 50]
+    Top 5 variances: [60.7328   58.563953 28.546844 16.337683 14.183753]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.048200e-01
+  平均范数误差: 4.664688e-07
+  trial=10/100: cross_dim=3294 shared_count=3
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 6, 10, 14, 20]
+    Top 5 variances: [103.522693  84.653278  49.314763  44.36723   28.964956]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [18, 8, 27, 26, 11]
+    Top 5 variances: [46.385559 40.847065 19.036947 17.900991 14.742599]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [59, 47, 24, 28, 45]
+    Top 5 variances: [16.258364 14.573114 14.453675 14.003491 12.816862]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 5, 16, 9, 17]
+    Top 5 variances: [107.75309   82.69558   53.287647  47.479299  45.109754]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.94e+03
+    Top 5 components by variance: [12, 20, 43, 32, 13]
+    Top 5 variances: [49.470315 21.518823 17.274199 16.313452 15.989459]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.21e+03
+    Top 5 components by variance: [7, 15, 30, 23, 50]
+    Top 5 variances: [75.800301 54.051296 33.794002 31.060233 21.947636]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 21, 11, 9]
+    Top 5 variances: [136.883427 115.404026  45.257723  31.04816   19.402635]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 13, 19, 12, 56]
+    Top 5 variances: [83.799141 45.160224 37.816572 14.943356 13.771675]
+
+Cross-task subspace: 3295/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3295)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.061099e-01
+  平均范数误差: 4.678829e-07
+  trial=11/100: cross_dim=3295 shared_count=5
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 6, 11, 26, 20]
+    Top 5 variances: [96.326481 65.006902 45.350941 29.501379 27.895726]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 17, 27, 38, 11]
+    Top 5 variances: [61.758799 40.427997 23.779966 17.910892 12.106807]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [25, 36, 46, 56, 23]
+    Top 5 variances: [24.069432 21.656459 11.748823 11.179611 10.895723]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 9, 16, 5, 18]
+    Top 5 variances: [99.349011 53.588763 48.414543 44.593671 36.989608]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 23, 45, 47, 14]
+    Top 5 variances: [42.788755 21.572122 18.551488 17.653279 13.22986 ]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 22, 15, 40, 32]
+    Top 5 variances: [74.655661 33.280059 27.866972 25.256167 19.834999]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 10, 21, 29]
+    Top 5 variances: [135.929191 107.547772  57.272957  28.365714  20.655846]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.90e+03
+    Top 5 components by variance: [4, 19, 14, 5, 13]
+    Top 5 variances: [58.161786 38.864008 31.51686  28.08576  25.072273]
+
+Cross-task subspace: 3293/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3293)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.521642e-01
+  平均范数误差: 4.726922e-07
+  trial=12/100: cross_dim=3293 shared_count=4
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 11, 6, 37, 25]
+    Top 5 variances: [75.712448 53.823117 51.879949 30.428646 29.910572]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [9, 18, 8, 38, 52]
+    Top 5 variances: [55.769136 34.342278 24.870332 19.820528 18.330103]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [47, 24, 23, 34, 26]
+    Top 5 variances: [20.585041 15.986192 15.520289 13.572784 12.210357]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 5, 17, 15, 8]
+    Top 5 variances: [89.048711 60.168713 50.360063 44.38462  35.452899]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 13, 44, 20, 48]
+    Top 5 variances: [30.382496 27.012735 23.107391 18.049736 14.525325]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 16, 21, 36, 35]
+    Top 5 variances: [60.401091 37.78713  33.251265 24.812178 20.949321]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 10, 22, 39]
+    Top 5 variances: [135.76881  111.634599  45.91425   39.094143  18.785098]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 19, 14, 13, 5]
+    Top 5 variances: [67.120213 38.128374 30.667479 20.600019 17.739365]
+
+Cross-task subspace: 3293/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3293)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.440496e-01
+  平均范数误差: 4.822130e-07
+  trial=13/100: cross_dim=3293 shared_count=2
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 5, 10, 14, 21]
+    Top 5 variances: [100.968179  74.3312    55.519295  41.56921   29.024639]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.87e+03
+    Top 5 components by variance: [8, 18, 37, 9, 19]
+    Top 5 variances: [47.557462 30.652505 20.733375 20.673853 17.209389]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [39, 25, 26, 56, 47]
+    Top 5 variances: [15.759336 15.232828 12.42811  10.890914 10.307332]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 6, 16, 9, 17]
+    Top 5 variances: [107.905204  62.368425  47.844741  34.219761  29.494954]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [13, 43, 31, 21, 48]
+    Top 5 variances: [62.214598 22.35379  22.000936 15.682839 14.556552]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 15, 32, 38, 20]
+    Top 5 variances: [71.842756 38.949078 23.712119 18.79185  15.395751]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 11, 24, 10]
+    Top 5 variances: [137.618379 111.06845   35.008797  24.099334  20.324842]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 12, 19, 55, 53]
+    Top 5 variances: [77.110032 56.139219 34.829511 14.139019 13.936695]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.417376e-01
+  平均范数误差: 4.726572e-07
+  trial=14/100: cross_dim=3294 shared_count=4
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 11, 6, 14, 24]
+    Top 5 variances: [101.35183   57.127741  56.209026  33.162781  24.297307]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 27, 9, 51]
+    Top 5 variances: [41.163033 38.477216 28.042092 24.865612 13.72409 ]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [24, 37, 41, 59, 26]
+    Top 5 variances: [21.247693 15.503294 12.569839 11.569304 10.662473]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.53e+03
+    Top 5 components by variance: [2, 5, 16, 17, 8]
+    Top 5 variances: [107.177353  56.408655  41.631432  38.514235  33.195794]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 23, 44, 47, 22]
+    Top 5 variances: [58.085057 24.710535 22.539463 17.931701 13.672083]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 21, 15, 34, 31]
+    Top 5 variances: [64.853618 35.031146 31.771064 24.483645 23.727185]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 10, 20, 43]
+    Top 5 variances: [135.492594 115.134054  55.110592  33.065492  19.379068]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.90e+03
+    Top 5 components by variance: [4, 13, 19, 5, 32]
+    Top 5 variances: [61.50494  50.735391 37.517843 22.39599  18.015688]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.413076e-01
+  平均范数误差: 4.749372e-07
+  trial=15/100: cross_dim=3294 shared_count=1
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 6, 11, 15, 23]
+    Top 5 variances: [93.051153 73.911145 40.927767 33.699316 24.05171 ]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 27, 38, 29]
+    Top 5 variances: [35.919619 34.876739 30.803697 14.2527   12.882384]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [25, 44, 37, 24, 58]
+    Top 5 variances: [22.996453 15.542956 15.104489 11.644503 10.779742]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.53e+03
+    Top 5 components by variance: [2, 5, 16, 17, 10]
+    Top 5 variances: [96.595158 62.841037 54.951586 52.647249 43.417646]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 19, 26, 48, 31]
+    Top 5 variances: [52.597523 17.727293 16.486904 14.893673 14.220777]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 13, 36, 35, 14]
+    Top 5 variances: [69.32525  35.548052 22.433494 22.318849 22.060778]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 9, 21, 28]
+    Top 5 variances: [136.84467  102.793671  36.796299  30.967534  28.067463]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 14, 19, 13, 20]
+    Top 5 variances: [65.153599 23.617045 23.108997 22.214425 19.213427]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.134519e-01
+  平均范数误差: 4.858484e-07
+  trial=16/100: cross_dim=3294 shared_count=4
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 6, 11, 14, 24]
+    Top 5 variances: [86.79432  65.947032 47.276716 43.409339 26.781152]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 38, 17, 10]
+    Top 5 variances: [62.420554 25.574793 25.135548 19.277516 16.270314]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [26, 47, 39, 58, 59]
+    Top 5 variances: [32.576357 26.097389 23.693152  9.864242  9.781583]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 9, 15, 4, 16]
+    Top 5 variances: [100.617196  61.116774  46.292544  40.986682  35.282234]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 23, 30, 41, 61]
+    Top 5 variances: [42.618121 33.083251 16.770621 12.478427 12.350571]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 20, 14, 34, 33]
+    Top 5 variances: [69.508994 23.855474 20.99692  17.581256 16.960425]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 10, 21, 36]
+    Top 5 variances: [134.88927  109.933146  39.917458  26.911369  18.324347]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.90e+03
+    Top 5 components by variance: [13, 5, 4, 19, 31]
+    Top 5 variances: [49.375499 46.754907 39.186648 24.134933 23.080885]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.165057e-01
+  平均范数误差: 4.636641e-07
+  trial=17/100: cross_dim=3294 shared_count=4
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.58e+03
+    Top 5 components by variance: [3, 6, 11, 14, 27]
+    Top 5 variances: [84.258851 78.110493 43.739273 38.039301 28.589572]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 28, 19, 18, 51]
+    Top 5 variances: [49.601152 31.678529 26.678385 17.187432 16.8532  ]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [26, 58, 43, 62, 61]
+    Top 5 variances: [21.077671 11.111758  9.465302  9.287683  8.128959]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.53e+03
+    Top 5 components by variance: [2, 5, 9, 16, 15]
+    Top 5 variances: [77.960968 63.79598  37.596374 31.96856  31.143981]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [13, 25, 43, 55, 21]
+    Top 5 variances: [50.998968 23.874067 14.954204 14.195833 13.558953]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 21, 22, 15, 30]
+    Top 5 variances: [82.650758 24.143757 21.694834 20.440554 19.059016]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 10, 9, 23]
+    Top 5 variances: [137.088158 106.243784  41.909909  25.073563  22.859458]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 12, 18, 5, 32]
+    Top 5 variances: [59.956557 46.264929 29.0739   26.733278 14.557255]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.045665e-01
+  平均范数误差: 4.845999e-07
+  trial=18/100: cross_dim=3294 shared_count=3
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 6, 10, 14, 9]
+    Top 5 variances: [98.001598 64.682193 47.10257  38.923373 27.159572]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [18, 9, 8, 37, 52]
+    Top 5 variances: [49.633936 33.366024 30.512494 15.762539 11.969405]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [27, 47, 24, 35, 42]
+    Top 5 variances: [19.230307 16.247816 15.628656 12.018885 11.864023]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 5, 17, 16, 25]
+    Top 5 variances: [93.00128  65.500064 50.311151 48.273925 25.652355]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 13, 43, 22, 23]
+    Top 5 variances: [30.530749 30.398948 19.388839 18.133171 15.064504]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 15, 21, 20, 34]
+    Top 5 variances: [53.774558 50.444988 19.309863 17.913914 17.688806]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 11, 8, 20]
+    Top 5 variances: [137.518753 100.914131  36.705296  28.574526  17.092899]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 13, 19, 12, 5]
+    Top 5 variances: [72.227304 30.262789 20.60872  16.835453 15.763042]
+
+Cross-task subspace: 3293/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3293)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.390761e-01
+  平均范数误差: 4.747918e-07
+  trial=19/100: cross_dim=3293 shared_count=7
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.58e+03
+    Top 5 components by variance: [3, 10, 5, 6, 13]
+    Top 5 variances: [84.881873 62.870811 47.748279 33.274983 29.812804]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 9, 37, 26]
+    Top 5 variances: [43.045902 34.073476 22.68352  17.78082  14.010683]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [27, 25, 42, 44, 33]
+    Top 5 variances: [22.55822  17.409551 15.569748 14.728941 11.093677]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.53e+03
+    Top 5 components by variance: [2, 17, 9, 16, 5]
+    Top 5 variances: [85.8145   47.963944 47.656869 47.03378  42.446848]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 32, 43, 22, 24]
+    Top 5 variances: [49.391955 16.902041 16.060516 15.32328  14.130474]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.23e+03
+    Top 5 components by variance: [7, 15, 32, 13, 30]
+    Top 5 variances: [70.598248 38.231838 21.323483 19.872919 18.465745]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 11, 31, 8]
+    Top 5 variances: [137.609245  98.34711   41.567099  31.291978  27.165412]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.90e+03
+    Top 5 components by variance: [4, 14, 6, 19, 29]
+    Top 5 variances: [46.246059 39.259402 27.76345  21.253118 17.801278]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.002068e-01
+  平均范数误差: 4.708296e-07
+  trial=20/100: cross_dim=3294 shared_count=4
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 4, 11, 29, 16]
+    Top 5 variances: [93.099173 44.966672 39.459492 31.08537  27.902897]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 27, 39, 55]
+    Top 5 variances: [55.570832 54.435905 17.545292 16.810528 14.488682]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [38, 24, 46, 58, 48]
+    Top 5 variances: [23.653782 18.896354 16.983137 13.198156 12.272761]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 6, 9, 17, 15]
+    Top 5 variances: [103.204325  51.418463  48.323058  48.040367  30.354864]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 22, 47, 33, 59]
+    Top 5 variances: [48.568122 32.666979 19.688046 17.072941 13.972844]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 14, 23, 34, 32]
+    Top 5 variances: [58.452042 49.719084 29.965483 29.942357 18.652701]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 10, 20, 28]
+    Top 5 variances: [137.838104 108.719867  52.267133  36.141271  24.538845]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [5, 13, 19, 4, 49]
+    Top 5 variances: [48.386124 47.387301 42.888634 38.365423 18.168141]
+
+Cross-task subspace: 3293/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3293)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.689161e-01
+  平均范数误差: 4.855073e-07
+  trial=21/100: cross_dim=3293 shared_count=4
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.58e+03
+    Top 5 components by variance: [3, 11, 6, 14, 4]
+    Top 5 variances: [98.885586 57.642023 40.782647 36.175037 35.115018]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 27, 9, 52]
+    Top 5 variances: [59.361951 49.368495 19.61394  12.800085 11.555554]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [24, 35, 58, 25, 22]
+    Top 5 variances: [18.482943 15.754487 13.374278 11.351771 10.057499]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.53e+03
+    Top 5 components by variance: [2, 9, 6, 16, 5]
+    Top 5 variances: [93.535044 57.41163  38.310426 37.908592 35.917988]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.94e+03
+    Top 5 components by variance: [12, 13, 23, 32, 45]
+    Top 5 variances: [34.578629 23.128781 20.982885 14.43631  13.076204]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.21e+03
+    Top 5 components by variance: [7, 15, 34, 22, 28]
+    Top 5 variances: [73.270044 47.872936 28.305947 18.723675 17.602827]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 10, 21, 20]
+    Top 5 variances: [136.665441 103.010387  49.597708  18.244497  16.431626]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [5, 4, 19, 13, 38]
+    Top 5 variances: [46.592815 42.176583 37.684186 28.89288  19.856186]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.400578e-01
+  平均范数误差: 4.819942e-07
+  trial=22/100: cross_dim=3294 shared_count=7
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [5, 3, 2, 15, 10]
+    Top 5 variances: [75.477429 57.63611  51.881942 36.079278 33.21422 ]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [18, 8, 35, 27, 10]
+    Top 5 variances: [54.002233 47.357302 21.81986  21.121217 18.996403]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [23, 39, 36, 26, 47]
+    Top 5 variances: [14.343062 11.885879 11.885859 10.783064 10.285167]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.53e+03
+    Top 5 components by variance: [2, 17, 16, 3, 6]
+    Top 5 variances: [54.05135  52.705341 45.2066   44.890499 42.399745]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.94e+03
+    Top 5 components by variance: [12, 44, 22, 21, 28]
+    Top 5 variances: [55.857242 16.793041 16.221922 15.457228 15.251214]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 14, 15, 23, 28]
+    Top 5 variances: [76.583083 33.41387  21.29986  17.95642  17.787117]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 9, 20, 30]
+    Top 5 variances: [136.854897 105.042627  62.729206  34.15487   15.627899]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [13, 6, 4, 19, 50]
+    Top 5 variances: [54.065436 45.1446   43.763637 37.508918 19.374804]
+
+Cross-task subspace: 3295/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3295)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.317028e-01
+  平均范数误差: 4.736715e-07
+  trial=23/100: cross_dim=3295 shared_count=5
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 11, 15, 6, 5]
+    Top 5 variances: [93.713656 53.608341 39.718704 36.061644 33.776098]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 10, 9, 30]
+    Top 5 variances: [39.014161 28.552826 21.286761 17.167281 16.346159]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [47, 23, 22, 26, 24]
+    Top 5 variances: [16.158674 13.651864 12.254865 11.381346  9.938062]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 6, 17, 16, 9]
+    Top 5 variances: [75.946122 56.530047 46.160459 45.776282 44.432407]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [22, 12, 46, 44, 28]
+    Top 5 variances: [38.436329 32.07923  23.778041 17.95497  17.253026]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 34, 13, 14, 15]
+    Top 5 variances: [76.799917 30.799137 20.851067 19.817257 19.700429]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [0, 1, 10, 21, 29]
+    Top 5 variances: [136.589975  94.628508  46.380782  27.201098  21.369808]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.90e+03
+    Top 5 components by variance: [4, 5, 19, 14, 13]
+    Top 5 variances: [58.662058 29.291262 26.338897 24.9324   22.10532 ]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 1.822995e-01
+  平均范数误差: 4.790447e-07
+  trial=24/100: cross_dim=3294 shared_count=3
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 11, 5, 6, 14]
+    Top 5 variances: [99.180782 57.132048 50.799508 37.664481 27.150803]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [9, 10, 20, 51, 18]
+    Top 5 variances: [57.202894 17.279335 16.871812 15.065067 13.627246]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.04e+03
+    Top 5 components by variance: [27, 47, 24, 35, 65]
+    Top 5 variances: [25.205496 16.007379 11.620881 11.152802  9.86206 ]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 8, 6, 17, 16]
+    Top 5 variances: [103.645589  56.289237  48.247572  47.238269  28.144589]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 44, 32, 46, 25]
+    Top 5 variances: [43.948299 17.99938  17.370453 15.334    15.177467]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 15, 34, 21, 22]
+    Top 5 variances: [73.20496  29.026311 21.4791   21.369686 21.331184]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 10, 19, 40]
+    Top 5 variances: [136.965058 111.803043  54.992189  25.769542  18.20721 ]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 13, 18, 12, 5]
+    Top 5 variances: [67.666873 35.892797 29.513209 22.437569 19.945525]
+
+Cross-task subspace: 3295/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3295)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.098919e-01
+  平均范数误差: 4.754624e-07
+  trial=25/100: cross_dim=3295 shared_count=4
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 6, 11, 16, 14]
+    Top 5 variances: [95.815175 87.692701 57.970679 30.79494  28.207154]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [8, 18, 26, 21, 72]
+    Top 5 variances: [53.219667 39.661733 16.40539  14.715762 14.626097]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [27, 47, 38, 58, 43]
+    Top 5 variances: [28.313303 16.634346 16.241501 14.036177  9.287125]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.53e+03
+    Top 5 components by variance: [2, 5, 9, 17, 15]
+    Top 5 variances: [97.431035 77.840524 61.835638 39.520976 26.963177]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.94e+03
+    Top 5 components by variance: [12, 22, 45, 40, 33]
+    Top 5 variances: [53.90734  24.940407 17.943198 17.080408 14.665625]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 15, 33, 24, 32]
+    Top 5 variances: [77.226615 23.6264   19.382179 18.364634 17.379839]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 10, 28, 20]
+    Top 5 variances: [137.891025 110.009918  53.019487  26.943201  24.210652]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.90e+03
+    Top 5 components by variance: [4, 13, 19, 30, 54]
+    Top 5 variances: [75.441262 52.257789 35.66975  17.766737 16.096357]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 2.332546e-01
+  平均范数误差: 4.595927e-07
+  trial=26/100: cross_dim=3294 shared_count=4
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
+
+Analyzing task contributions to cross-task subspace...
+  gsm8k:
+    Samples: 13934
+    Total variance in subspace: 3.57e+03
+    Top 5 components by variance: [3, 11, 6, 5, 16]
+    Top 5 variances: [102.816919  66.91492   33.01489   31.961209  20.934414]
+  commonsenseqa:
+    Samples: 13934
+    Total variance in subspace: 3.86e+03
+    Top 5 components by variance: [18, 8, 10, 38, 28]
+    Top 5 variances: [40.587133 31.959797 26.000941 23.525913 19.956647]
+  strategyqa:
+    Samples: 13934
+    Total variance in subspace: 4.05e+03
+    Top 5 components by variance: [25, 44, 56, 47, 24]
+    Top 5 variances: [26.308009 17.548697 13.395761 10.132417 10.059008]
+  aqua:
+    Samples: 13934
+    Total variance in subspace: 3.54e+03
+    Top 5 components by variance: [2, 5, 8, 17, 16]
+    Top 5 variances: [111.476567  61.54947   40.058353  31.680884  30.901335]
+  openbookqa:
+    Samples: 13934
+    Total variance in subspace: 3.93e+03
+    Top 5 components by variance: [12, 31, 23, 48, 63]
+    Top 5 variances: [54.451592 29.896404 20.729746 20.166566 15.470004]
+  qasc:
+    Samples: 13934
+    Total variance in subspace: 4.22e+03
+    Top 5 components by variance: [7, 15, 14, 40, 34]
+    Top 5 variances: [67.677301 41.481562 17.408721 16.349811 16.17201 ]
+  boolq:
+    Samples: 13934
+    Total variance in subspace: 4.06e+03
+    Top 5 components by variance: [0, 1, 9, 10, 21]
+    Top 5 variances: [137.333996 115.412551  28.885208  27.96442   26.727191]
+  piqa:
+    Samples: 13934
+    Total variance in subspace: 3.91e+03
+    Top 5 components by variance: [4, 13, 19, 49, 54]
+    Top 5 variances: [72.419398 49.211167 27.976381 22.265617 17.941365]
+
+Cross-task subspace: 3294/4096 dim (80.4%), explains 95.0% variance
+
+[VALIDATE] 跨任务子空间验证:
+  形状: (4096, 3294)
+  列向量范数范围: [0.999998, 1.000002]
+  最大非对角线元素: 1.989390e-01
+  平均范数误差: 4.793704e-07
+  trial=27/100: cross_dim=3294 shared_count=4
+
+Combining activations from 8 tasks...
+  gsm8k: 13934 samples
+  commonsenseqa: 13934 samples
+  strategyqa: 13934 samples
+  aqua: 13934 samples
+  openbookqa: 13934 samples
+  qasc: 13934 samples
+  boolq: 13934 samples
+  piqa: 13934 samples
+
+Total samples for cross-task PCA: 111472
+Computing cross-task PCA...
