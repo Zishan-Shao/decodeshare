@@ -65,6 +65,7 @@ import sys
 import re
 import json
 import random
+import math
 import argparse
 import hashlib
 from dataclasses import dataclass
@@ -252,6 +253,59 @@ def build_fc_prompt_strategyqa(q: str) -> str:
         "Answer:"
     )
 
+def build_fc_prompt_arc(q: str, choices: Dict[str, List[str]]) -> str:
+    labels = choices["label"]
+    texts = choices["text"]
+    lines = [f"{lab}) {txt}" for lab, txt in zip(labels, texts)]
+    return (
+        f"Question: {q}\n"
+        "Choices:\n" + "\n".join(lines) + "\n"
+        "Select the correct option.\n"
+        "Answer:"
+    )
+
+def build_fc_prompt_openbookqa(q_stem: str, choices: Dict[str, List[str]]) -> str:
+    labels = choices["label"]
+    texts = choices["text"]
+    lines = [f"{lab}) {txt}" for lab, txt in zip(labels, texts)]
+    return (
+        f"Question: {q_stem}\n"
+        "Choices:\n" + "\n".join(lines) + "\n"
+        "Select the correct option.\n"
+        "Answer:"
+    )
+
+def build_fc_prompt_qasc(q: str, choices: Dict[str, List[str]]) -> str:
+    labels = choices["label"]  # A-H
+    texts = choices["text"]
+    lines = [f"{lab}) {txt}" for lab, txt in zip(labels, texts)]
+    return (
+        f"Question: {q}\n"
+        "Choices:\n" + "\n".join(lines) + "\n"
+        "Select the correct option.\n"
+        "Answer:"
+    )
+
+def build_fc_prompt_logiqa(context: str, query: str, options: List[str]) -> str:
+    labels = ["A", "B", "C", "D"]
+    lines = [f"{labels[i]}) {opt}" for i, opt in enumerate(options[:4])]
+    return (
+        f"Context: {context}\n"
+        f"Question: {query}\n"
+        "Choices:\n" + "\n".join(lines) + "\n"
+        "Select the correct option.\n"
+        "Answer:"
+    )
+
+def build_fc_prompt_boolq(passage: str, question: str) -> str:
+    return (
+        f"Passage: {passage}\n"
+        f"Question: {question}\n"
+        "Answer yes or no.\n"
+        "Answer:"
+    )
+
+
 def sample_hf_split(ds_split, n: int, seed: int):
     n = min(int(n), len(ds_split))
     if n <= 0:
@@ -283,59 +337,173 @@ def load_calib_prompts(n_prompts: int, seed: int) -> Dict[str, List[str]]:
 
     return prompts_by
 
-def load_forced_choice_eval(n_eval: int, seed: int) -> Dict[str, List[Example]]:
+# def load_forced_choice_eval(n_eval: int, seed: int) -> Dict[str, List[Example]]:
+#     out: Dict[str, List[Example]] = {}
+
+#     ds = load_dataset("commonsense_qa")
+#     split = "validation" if "validation" in ds else ("test" if "test" in ds else list(ds.keys())[0])
+#     rows = sample_hf_split(ds[split], n_eval, seed + 101)
+#     exs = []
+#     for i, ex in enumerate(rows):
+#         exs.append(Example("commonsenseqa", f"csqa-{split}-{i}", build_fc_prompt_csqa(ex["question"], ex["choices"]), safe_upper(ex["answerKey"])))
+#     out["commonsenseqa"] = exs
+
+#     ds = load_dataset("ChilleD/StrategyQA")
+#     split = "test" if "test" in ds else ("validation" if "validation" in ds else list(ds.keys())[0])
+#     rows = sample_hf_split(ds[split], n_eval, seed + 111)
+
+#     def to_yesno(v: Any) -> str:
+#         if isinstance(v, bool):
+#             return "YES" if v else "NO"
+#         if isinstance(v, (int, np.integer)):
+#             return "YES" if int(v) == 1 else "NO"
+#         s = str(v).strip().lower()
+#         if s in ["true", "yes", "1"]:
+#             return "YES"
+#         if s in ["false", "no", "0"]:
+#             return "NO"
+#         if "yes" in s:
+#             return "YES"
+#         if "no" in s:
+#             return "NO"
+#         return ""
+
+#     exs = []
+#     for i, ex in enumerate(rows):
+#         exs.append(Example("strategyqa", f"strategyqa-{split}-{i}", build_fc_prompt_strategyqa(ex["question"]), to_yesno(ex["answer"])))
+#     out["strategyqa"] = exs
+
+#     ds = load_dataset("aqua_rat")
+#     split = "test" if "test" in ds else ("validation" if "validation" in ds else list(ds.keys())[0])
+#     rows = sample_hf_split(ds[split], n_eval, seed + 121)
+
+#     def get_gold(ex: dict) -> str:
+#         if "correct" in ex:
+#             return safe_upper(ex["correct"])
+#         if "answer" in ex:
+#             return safe_upper(ex["answer"])
+#         return ""
+
+#     exs = []
+#     for i, ex in enumerate(rows):
+#         exs.append(Example("aqua", f"aqua-{split}-{i}", build_fc_prompt_aqua(ex["question"], ex["options"]), get_gold(ex)))
+#     out["aqua"] = exs
+
+#     return out
+def load_forced_choice_eval(n_eval: int, seed: int, tasks: Optional[List[str]] = None) -> Dict[str, List[Example]]:
     out: Dict[str, List[Example]] = {}
+    tasks = tasks or ["commonsenseqa", "strategyqa", "aqua"]
 
-    ds = load_dataset("commonsense_qa")
-    split = "validation" if "validation" in ds else ("test" if "test" in ds else list(ds.keys())[0])
-    rows = sample_hf_split(ds[split], n_eval, seed + 101)
-    exs = []
-    for i, ex in enumerate(rows):
-        exs.append(Example("commonsenseqa", f"csqa-{split}-{i}", build_fc_prompt_csqa(ex["question"], ex["choices"]), safe_upper(ex["answerKey"])))
-    out["commonsenseqa"] = exs
+    if "commonsenseqa" in tasks:
+        ds = load_dataset("commonsense_qa")
+        split = "validation" if "validation" in ds else ("test" if "test" in ds else list(ds.keys())[0])
+        rows = sample_hf_split(ds[split], n_eval, seed + 101)
+        exs = []
+        for i, ex in enumerate(rows):
+            exs.append(Example("commonsenseqa", f"csqa-{split}-{i}",
+                               build_fc_prompt_csqa(ex["question"], ex["choices"]),
+                               safe_upper(ex["answerKey"])))
+        out["commonsenseqa"] = exs
 
-    ds = load_dataset("ChilleD/StrategyQA")
-    split = "test" if "test" in ds else ("validation" if "validation" in ds else list(ds.keys())[0])
-    rows = sample_hf_split(ds[split], n_eval, seed + 111)
+    if "strategyqa" in tasks:
+        ds = load_dataset("ChilleD/StrategyQA")
+        split = "test" if "test" in ds else ("validation" if "validation" in ds else list(ds.keys())[0])
+        rows = sample_hf_split(ds[split], n_eval, seed + 111)
+        def to_yesno(v: Any) -> str:
+            if isinstance(v, bool): return "YES" if v else "NO"
+            if isinstance(v, (int, np.integer)): return "YES" if int(v) == 1 else "NO"
+            s = str(v).strip().lower()
+            if s in ["true", "yes", "1"]: return "YES"
+            if s in ["false", "no", "0"]: return "NO"
+            return ""
+        exs = []
+        for i, ex in enumerate(rows):
+            exs.append(Example("strategyqa", f"strategyqa-{split}-{i}",
+                               build_fc_prompt_strategyqa(ex["question"]),
+                               to_yesno(ex["answer"])))
+        out["strategyqa"] = exs
 
-    def to_yesno(v: Any) -> str:
-        if isinstance(v, bool):
-            return "YES" if v else "NO"
-        if isinstance(v, (int, np.integer)):
-            return "YES" if int(v) == 1 else "NO"
-        s = str(v).strip().lower()
-        if s in ["true", "yes", "1"]:
-            return "YES"
-        if s in ["false", "no", "0"]:
-            return "NO"
-        if "yes" in s:
-            return "YES"
-        if "no" in s:
-            return "NO"
-        return ""
+    if "aqua" in tasks:
+        ds = load_dataset("aqua_rat")
+        split = "test" if "test" in ds else ("validation" if "validation" in ds else list(ds.keys())[0])
+        rows = sample_hf_split(ds[split], n_eval, seed + 121)
+        def get_gold(ex: dict) -> str:
+            if "correct" in ex: return safe_upper(ex["correct"])
+            if "answer" in ex: return safe_upper(ex["answer"])
+            return ""
+        exs = []
+        for i, ex in enumerate(rows):
+            exs.append(Example("aqua", f"aqua-{split}-{i}",
+                               build_fc_prompt_aqua(ex["question"], ex["options"]),
+                               get_gold(ex)))
+        out["aqua"] = exs
 
-    exs = []
-    for i, ex in enumerate(rows):
-        exs.append(Example("strategyqa", f"strategyqa-{split}-{i}", build_fc_prompt_strategyqa(ex["question"]), to_yesno(ex["answer"])))
-    out["strategyqa"] = exs
+    # -------- NEW: ARC-Challenge (A-D) --------
+    if "arc_challenge" in tasks:
+        ds = load_dataset("allenai/ai2_arc", "ARC-Challenge")  # question/choices/answerKey :contentReference[oaicite:5]{index=5}
+        split = "validation" if "validation" in ds else ("train" if "train" in ds else list(ds.keys())[0])
+        rows = sample_hf_split(ds[split], n_eval, seed + 201)
+        exs = []
+        for i, ex in enumerate(rows):
+            exs.append(Example("arc_challenge", f"arc-{split}-{i}",
+                               build_fc_prompt_arc(ex["question"], ex["choices"]),
+                               safe_upper(ex["answerKey"])))
+        out["arc_challenge"] = exs
 
-    ds = load_dataset("aqua_rat")
-    split = "test" if "test" in ds else ("validation" if "validation" in ds else list(ds.keys())[0])
-    rows = sample_hf_split(ds[split], n_eval, seed + 121)
+    # -------- NEW: OpenBookQA (A-D) --------
+    if "openbookqa" in tasks:
+        ds = load_dataset("allenai/openbookqa", "main")  # question_stem/choices/answerKey :contentReference[oaicite:6]{index=6}
+        split = "validation" if "validation" in ds else ("train" if "train" in ds else list(ds.keys())[0])
+        rows = sample_hf_split(ds[split], n_eval, seed + 211)
+        exs = []
+        for i, ex in enumerate(rows):
+            exs.append(Example("openbookqa", f"obqa-{split}-{i}",
+                               build_fc_prompt_openbookqa(ex["question_stem"], ex["choices"]),
+                               safe_upper(ex["answerKey"])))
+        out["openbookqa"] = exs
 
-    def get_gold(ex: dict) -> str:
-        if "correct" in ex:
-            return safe_upper(ex["correct"])
-        if "answer" in ex:
-            return safe_upper(ex["answer"])
-        return ""
+    # -------- NEW: QASC (A-H) --------
+    if "qasc" in tasks:
+        ds = load_dataset("allenai/qasc")  # choices A-H :contentReference[oaicite:7]{index=7}
+        split = "validation" if "validation" in ds else ("train" if "train" in ds else list(ds.keys())[0])
+        rows = sample_hf_split(ds[split], n_eval, seed + 221)
+        exs = []
+        for i, ex in enumerate(rows):
+            exs.append(Example("qasc", f"qasc-{split}-{i}",
+                               build_fc_prompt_qasc(ex["question"], ex["choices"]),
+                               safe_upper(ex["answerKey"])))
+        out["qasc"] = exs
 
-    exs = []
-    for i, ex in enumerate(rows):
-        exs.append(Example("aqua", f"aqua-{split}-{i}", build_fc_prompt_aqua(ex["question"], ex["options"]), get_gold(ex)))
-    out["aqua"] = exs
+    # -------- NEW: LogiQA (A-D, correct_option=0..3) --------
+    if "logiqa" in tasks:
+        ds = load_dataset("lucasmccabe/logiqa")  # context/query/options/correct_option :contentReference[oaicite:8]{index=8}
+        split = "validation" if "validation" in ds else ("test" if "test" in ds else list(ds.keys())[0])
+        rows = sample_hf_split(ds[split], n_eval, seed + 231)
+        labels = ["A", "B", "C", "D"]
+        exs = []
+        for i, ex in enumerate(rows):
+            gold_idx = int(ex["correct_option"])
+            gold = labels[gold_idx] if 0 <= gold_idx < 4 else ""
+            exs.append(Example("logiqa", f"logiqa-{split}-{i}",
+                               build_fc_prompt_logiqa(ex["context"], ex["query"], ex["options"]),
+                               gold))
+        out["logiqa"] = exs
+
+    # -------- NEW: BoolQ (YES/NO) --------
+    if "boolq" in tasks:
+        ds = load_dataset("google/boolq")  # question/passage/answer :contentReference[oaicite:9]{index=9}
+        split = "validation" if "validation" in ds else ("train" if "train" in ds else list(ds.keys())[0])
+        rows = sample_hf_split(ds[split], n_eval, seed + 241)
+        exs = []
+        for i, ex in enumerate(rows):
+            gold = "YES" if bool(ex["answer"]) else "NO"
+            exs.append(Example("boolq", f"boolq-{split}-{i}",
+                               build_fc_prompt_boolq(ex["passage"], ex["question"]),
+                               gold))
+        out["boolq"] = exs
 
     return out
+
 
 # -----------------------------
 # Chat template helper
@@ -713,19 +881,48 @@ def remove_hooks(handles: List[Any]) -> None:
         except Exception:
             pass
 
-# -----------------------------
-# Forced-choice evaluation (decode-aligned)
-# -----------------------------
+
+# # -----------------------------
+# # Forced-choice evaluation (decode-aligned)
+# # -----------------------------
+# def get_candidates(task: str) -> Tuple[List[str], List[str]]:
+#     if task in ["commonsenseqa", "aqua"]:
+#         labels = ["A", "B", "C", "D", "E"]
+#         texts = [f" {x}" for x in labels]
+#         return labels, texts
+#     if task == "strategyqa":
+#         labels = ["YES", "NO"]
+#         texts = [" Yes", " No"]
+#         return labels, texts
+#     raise ValueError(f"Unknown forced-choice task: {task}")
+
 def get_candidates(task: str) -> Tuple[List[str], List[str]]:
+    # 5-way
     if task in ["commonsenseqa", "aqua"]:
         labels = ["A", "B", "C", "D", "E"]
         texts = [f" {x}" for x in labels]
         return labels, texts
-    if task == "strategyqa":
+
+    # 4-way
+    if task in ["arc_challenge", "openbookqa", "logiqa"]:
+        labels = ["A", "B", "C", "D"]
+        texts = [f" {x}" for x in labels]
+        return labels, texts
+
+    # 8-way (QASC)
+    if task in ["qasc"]:
+        labels = ["A", "B", "C", "D", "E", "F", "G", "H"]
+        texts = [f" {x}" for x in labels]
+        return labels, texts
+
+    # yes/no
+    if task in ["strategyqa", "boolq"]:
         labels = ["YES", "NO"]
         texts = [" Yes", " No"]
         return labels, texts
+
     raise ValueError(f"Unknown forced-choice task: {task}")
+
 
 @torch.no_grad()
 def forced_choice_eval(
@@ -864,6 +1061,7 @@ def forced_choice_eval(
         return {
             "task": task,
             "condition": condition_name,
+            "alpha": float(alpha),
             "accuracy": float(acc),
             "ci_low": float(lo),
             "ci_high": float(hi),
@@ -916,7 +1114,7 @@ def main():
     ap.add_argument("--tau", type=float, default=0.001)
     ap.add_argument("--m_shared", type=str, default="all")  # "all" or integer
     ap.add_argument("--control_basis", type=str, default="joint_nonshared_topk", choices=["joint_nonshared_topk"])
-    ap.add_argument("--eval_n", type=int, default=256)
+    ap.add_argument("--eval_n", type=int, default=2048)
     ap.add_argument("--max_prompt_len", type=int, default=512)
     ap.add_argument("--batch_size", type=int, default=4)
     ap.add_argument("--bootstrap_iters", type=int, default=5000)
@@ -924,8 +1122,16 @@ def main():
     ap.add_argument("--ci_alpha", type=float, default=0.05)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--use_chat_template", type=int, default=0)
+    ap.add_argument("--alpha_shared_base", type=float, default=1.0)
     ap.add_argument("--out_json", type=str, default=os.path.join(THIS_DIR, "energy_kmatch_results.json"))
     ap.add_argument("--out_txt", type=str, default=os.path.join(THIS_DIR, "energy_kmatch_summary.txt"))
+    ap.add_argument(
+        "--eval_tasks",
+        type=str,
+        default="commonsenseqa,strategyqa,aqua",
+        help="Comma-separated eval task names (forced-choice): commonsenseqa,strategyqa,aqua,arc_challenge,openbookqa,qasc,logiqa,boolq",
+    )
+
     args = ap.parse_args()
 
     set_global_seed(args.seed)
@@ -943,7 +1149,11 @@ def main():
 
     # 1) Load calibration prompts + eval examples
     calib_prompts_by = load_calib_prompts(args.n_prompts, seed=args.seed)
-    eval_by = load_forced_choice_eval(args.eval_n, seed=args.seed)
+    #eval_by = load_forced_choice_eval(args.eval_n, seed=args.seed)
+    eval_tasks = [t.strip() for t in args.eval_tasks.split(",") if t.strip()]
+    eval_by = load_forced_choice_eval(args.eval_n, seed=args.seed, tasks=eval_tasks)
+    print(f"[Data] eval forced-choice tasks={list(eval_by.keys())}")
+
     print(f"[Data] calib tasks={list(calib_prompts_by.keys())}")
     print(f"[Data] eval forced-choice tasks={list(eval_by.keys())}")
 
@@ -1082,6 +1292,18 @@ def main():
     # 5) K-match (alpha=1) to match removed energy on H_calib
     stats_shared = projection_energy_stats(H_calib, Q_shared)
     target_removed_mean = stats_shared["mean_energy"]
+    
+    # (NEW) Control-1: alpha-scaling mean-match (decode-aligned on H_calib)
+    # Match mean removed energy at fixed dimension k = k_shared using alpha_C (may be > 1).
+    alpha_shared = float(args.alpha_shared_base)
+    stats_ctrl_struct = projection_energy_stats(H_calib, Q_ctrl_struct)  # ensure available before alpha-match
+    Es = float(stats_shared["mean_energy"])
+    Ec_struct = float(stats_ctrl_struct["mean_energy"])
+    alpha_ctrl = alpha_shared * math.sqrt(Es / max(Ec_struct, 1e-12))
+    removed_shared_mean = (alpha_shared ** 2) * Es
+    removed_ctrl_alpha_mean = (alpha_ctrl ** 2) * Ec_struct
+    print(f"  alpha_shared={alpha_shared} alpha_ctrl={alpha_ctrl} removed_shared_mean={removed_shared_mean} removed_ctrl_alpha_mean={removed_ctrl_alpha_mean}")
+
 
     Z_pool = H_calib @ Q_pool
     cum_energy = np.cumsum(Z_pool * Z_pool, axis=1)
@@ -1096,7 +1318,7 @@ def main():
     Q_rand_energy = make_random_orthonormal(hidden_dim, k_c, seed=args.seed + 5678, orthogonal_to=Q_shared)
 
     # 6) Sanity checks on H_calib
-    stats_ctrl_struct = projection_energy_stats(H_calib, Q_ctrl_struct)
+    # stats_ctrl_struct = projection_energy_stats(H_calib, Q_ctrl_struct)
     stats_ctrl_energy = projection_energy_stats(H_calib, Q_ctrl_energy)
 
     print("\n" + "=" * 80)
@@ -1111,6 +1333,13 @@ def main():
     print(f"    shared      mean={stats_shared['mean_ratio']:.4f} (p50={stats_shared['p50_ratio']:.4f}, p95={stats_shared['p95_ratio']:.4f})  mean||P h||^2={stats_shared['mean_energy']:.4e}")
     print(f"    ctrl_struct mean={stats_ctrl_struct['mean_ratio']:.4f} (p50={stats_ctrl_struct['p50_ratio']:.4f}, p95={stats_ctrl_struct['p95_ratio']:.4f})  mean||P h||^2={stats_ctrl_struct['mean_energy']:.4e}")
     print(f"    ctrl_energy mean={stats_ctrl_energy['mean_ratio']:.4f} (p50={stats_ctrl_energy['p50_ratio']:.4f}, p95={stats_ctrl_energy['p95_ratio']:.4f})  mean||P h||^2={stats_ctrl_energy['mean_energy']:.4e}")
+    
+    print("  (Control-1) Alpha-scaling mean match at fixed k=k_shared (decode-aligned, may allow alpha>1):")
+    print(f"    alpha_shared={alpha_shared:.4f}  removed_mean(shared)=alpha^2*E||P_s h||^2={removed_shared_mean:.4e}")
+    print(f"    alpha_ctrl  ={alpha_ctrl:.4f}  removed_mean(ctrl)  =alpha^2*E||P_c h||^2={removed_ctrl_alpha_mean:.4e}")
+    if alpha_ctrl > 2.5:
+        print("  [Sanity][WARN] alpha_ctrl is quite large (over-subtraction risk). Consider reporting K-match as primary.")
+
     print("  Removed-energy mean match check (alpha=1 => removed_mean = E||P h||^2):")
     print(f"    target(shared) removed_mean={target_removed_mean:.4e}")
     print(f"    ctrl_energy    removed_mean={stats_ctrl_energy['mean_energy']:.4e}  (ratio={stats_ctrl_energy['mean_energy']/max(target_removed_mean,1e-12):.4f})")
@@ -1119,6 +1348,8 @@ def main():
     # 7) Forced-choice evaluation with paired stats
     conditions: List[Tuple[str, Optional[np.ndarray], float]] = [
         ("baseline", None, 0.0),
+        ("shared_alpha", Q_shared, alpha_shared),
+        ("ctrl_alpha", Q_ctrl_struct, alpha_ctrl),
         ("shared_full", Q_shared, 1.0),
         ("ctrl_struct", Q_ctrl_struct, 1.0),
         ("ctrl_energy", Q_ctrl_energy, 1.0),
@@ -1150,6 +1381,8 @@ def main():
             "cross_dim": int(cross_dim),
             "k_shared": int(k_shared),
             "k_c": int(k_c),
+            "alpha_shared_base": float(alpha_shared),
+            "alpha_ctrl_alpha_match": float(alpha_ctrl),
             "energy_match_space": "prompt_boundary_decode_last",  # MOD (3)
             "forced_choice_decode_aligned": True,  # MOD (2)
             "hook_decode_only": True,              # MOD (1)
@@ -1160,6 +1393,12 @@ def main():
             "energy_shared": stats_shared,
             "energy_ctrl_struct": stats_ctrl_struct,
             "energy_ctrl_energy": stats_ctrl_energy,
+            "alpha_match": {
+                "alpha_shared": float(alpha_shared),
+                "alpha_ctrl": float(alpha_ctrl),
+                "removed_shared_mean": float(removed_shared_mean),
+                "removed_ctrl_mean": float(removed_ctrl_alpha_mean),
+            },
         },
         "by_task": {},
     }
@@ -1170,6 +1409,7 @@ def main():
     summary_lines.append("=" * 80)
     summary_lines.append(f"Model={args.model} dtype={args.dtype} device={args.device} layer={layer_indices}")
     summary_lines.append(f"cross_dim={cross_dim} k_shared={k_shared} k_c={k_c} tau={args.tau} m_shared={args.m_shared}")
+    summary_lines.append(f"Alpha-match (fixed k=k_shared): alpha_shared={alpha_shared:.4f}, alpha_ctrl={alpha_ctrl:.4f}")
     summary_lines.append(f"EnergyRatio(shared) mean={stats_shared['mean_ratio']:.4f}, ctrl_struct mean={stats_ctrl_struct['mean_ratio']:.4f}, ctrl_energy mean={stats_ctrl_energy['mean_ratio']:.4f}")
     summary_lines.append(f"RemovedEnergyMean(shared)={stats_shared['mean_energy']:.4e}, ctrl_energy={stats_ctrl_energy['mean_energy']:.4e}")
     summary_lines.append(f"MaxOverlap |Q_s^T Q_c_struct|={max_overlap(Q_shared, Q_ctrl_struct):.3e}, |Q_s^T Q_c_energy|={max_overlap(Q_shared, Q_ctrl_energy):.3e}")
@@ -1198,7 +1438,8 @@ def main():
                 seed=stable_int_seed(args.seed, task, cname),
             )
             block["runs"][cname] = run
-            print(f"  {cname:11s} acc={fmt_acc(run['accuracy'], run['ci_low'], run['ci_high'])} hook={run.get('hookstats', {})}")
+            print(f"  {cname:11s} acc={fmt_acc(run['accuracy'], run['ci_low'], run['ci_high'])} alpha={run.get('alpha', float('nan')):.4g} hook={run.get('hookstats', {})}")
+            #print(f"  {cname:11s} acc={fmt_acc(run['accuracy'], run['ci_low'], run['ci_high'])} hook={run.get('hookstats', {})}")
 
         base = np.array(block["runs"]["baseline"]["correct"], dtype=np.float32)
         def arr(name: str) -> np.ndarray:
@@ -1206,6 +1447,9 @@ def main():
 
         seed0 = stable_int_seed(args.seed, task, "paired")
         block["paired"] = {
+            "shared_alpha_vs_base": summarize_paired(base, arr("shared_alpha"), f"{task}:shared_alpha_vs_base", args.bootstrap_iters, args.perm_iters, args.ci_alpha, seed0 + 11),
+            "ctrl_alpha_vs_base": summarize_paired(base, arr("ctrl_alpha"), f"{task}:ctrl_alpha_vs_base", args.bootstrap_iters, args.perm_iters, args.ci_alpha, seed0 + 12),
+            "shared_alpha_vs_ctrl_alpha": summarize_paired(arr("ctrl_alpha"), arr("shared_alpha"), f"{task}:shared_alpha_vs_ctrl_alpha", args.bootstrap_iters, args.perm_iters, args.ci_alpha, seed0 + 13),
             "shared_vs_base": summarize_paired(base, arr("shared_full"), f"{task}:shared_vs_base", args.bootstrap_iters, args.perm_iters, args.ci_alpha, seed0 + 1),
             "ctrl_struct_vs_base": summarize_paired(base, arr("ctrl_struct"), f"{task}:ctrl_struct_vs_base", args.bootstrap_iters, args.perm_iters, args.ci_alpha, seed0 + 2),
             "ctrl_energy_vs_base": summarize_paired(base, arr("ctrl_energy"), f"{task}:ctrl_energy_vs_base", args.bootstrap_iters, args.perm_iters, args.ci_alpha, seed0 + 3),
@@ -1220,9 +1464,16 @@ def main():
         results["by_task"][task] = block
 
         summary_lines.append(f"[ForcedChoice] {task} n={len(exs)}")
+        for cname in ["baseline", "shared_alpha", "ctrl_alpha"]:
+            r = block["runs"][cname]
+            summary_lines.append(f"  {cname:11s} {fmt_acc(r['accuracy'], r['ci_low'], r['ci_high'])}  (alpha={r.get('alpha', float('nan')):.4g})")
+         
         for cname in ["baseline", "shared_full", "ctrl_struct", "ctrl_energy"]:
             r = block["runs"][cname]
             summary_lines.append(f"  {cname:11s} {fmt_acc(r['accuracy'], r['ci_low'], r['ci_high'])}")
+        summary_lines.append(f"  Δ(shared_alpha-base) {fmt_diff(block['paired']['shared_alpha_vs_base'])} p={block['paired']['shared_alpha_vs_base']['p_value']:.4g}")
+        summary_lines.append(f"  Δ(ctrl_alpha-base)   {fmt_diff(block['paired']['ctrl_alpha_vs_base'])} p={block['paired']['ctrl_alpha_vs_base']['p_value']:.4g}")
+        summary_lines.append(f"  Δ(shared_alpha-ctrl_alpha) {fmt_diff(block['paired']['shared_alpha_vs_ctrl_alpha'])} p={block['paired']['shared_alpha_vs_ctrl_alpha']['p_value']:.4g}")
         summary_lines.append(f"  Δ(shared-base)       {fmt_diff(block['paired']['shared_vs_base'])} p={block['paired']['shared_vs_base']['p_value']:.4g}")
         summary_lines.append(f"  Δ(ctrl_struct-base)  {fmt_diff(block['paired']['ctrl_struct_vs_base'])} p={block['paired']['ctrl_struct_vs_base']['p_value']:.4g}")
         summary_lines.append(f"  Δ(ctrl_energy-base)  {fmt_diff(block['paired']['ctrl_energy_vs_base'])} p={block['paired']['ctrl_energy_vs_base']['p_value']:.4g}")

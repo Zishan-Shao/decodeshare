@@ -1,76 +1,55 @@
 # -*- coding: utf-8 -*-
-"""prefill_vs_decode_alignment_experiment_v3.py
+"""
+prefill_vs_decode_alignment_experiment_reasoning_fixed.py
 
-Prefill-vs-Decode shared-basis *alignment* experiment (estimation distribution mismatch).
+ NOTE：n_eval should be 2048, and use_forced_choice should be 1. 这个代码在reasoning folder里面也有一个，那个也是对的，实验是用那个跑的
 
-This is v3 (scheme-2): add a **decode-warmup** option for forced-choice evaluation.
+This is a patched version of your `prefill_vs_decode_alignment_experiment_reasoning.py`
+focused on making forced-choice results "make sense" when using warmup tokens and/or
+when prompts do not already end with an explicit answer prefix.
 
-Motivation (scheme-2)
---------------------
-The v1/v2 forced-choice protocol scores candidates immediately at the prompt boundary.
-For many MC tasks (A/B/C/D/E, Yes/No), answers are 1 token, so the decision is made
-almost entirely from the *prompt-boundary* next-token state.
+Key fixes vs your original script:
+  1) Forced-choice now supports a prefix policy via --fc_prefix_mode {auto,always,never}.
+     - auto (recommended): add the answer prefix when it is needed:
+         * always add after warmup tokens (because the decision point moved deep into decode)
+         * if no warmup, add only if the prompt does NOT already end with the prefix
+     - always: always add the prefix before scoring candidates
+     - never: never add (can lead to near-chance accuracy if prompts don't end with prefix)
 
-However, the estimator–intervention mismatch we care about is primarily between:
-  - D_prefill: prompt-time (seq_len>1) last-token states
-  - D_decode: *later* decode states (seq_len==1) after several cached decode steps,
-              especially on self-generated tokens.
+     For backward compatibility, --fc_add_answer_prefix is still accepted:
+       * 1 -> --fc_prefix_mode always
+       * 0 -> --fc_prefix_mode auto   (NOTE: old semantics were "never"; use --fc_prefix_mode never now)
 
-To probe deeper into D_decode (where misalignment is largest), v3 optionally:
-  1) Generates W warmup tokens **once** under baseline (no intervention),
-  2) Then *teacher-forces* those same warmup tokens for **all** conditions,
-  3) Scores the multiple-choice candidates *after* the warmup context.
+  2) Forced-choice correctness uses benchmark_dataloaders.is_correct() (robust normalization),
+     instead of raw string equality.
 
-This keeps the evaluation "forced-choice" (no free-form generation during scoring)
-while moving the decision point away from the prompt boundary.
+  3) Adds runtime warnings for configurations that typically yield chance-level forced-choice accuracy.
 
-Key new CLI args:
-  --fc_warmup_tokens W         (default 0)
-  --fc_warmup_decoding {greedy,sample}   (default greedy)
-  --fc_warmup_ban_eos 0/1      (default 1)
-  --fc_warmup_seed SEED        (default 123)
+All other experiment logic is unchanged: shared subspace estimation (decode vs prefill),
+decode-only projection removal hook, bootstrap CIs and sign-flip permutation tests, and
+generation evaluation for gsm8k (or for all tasks if --do_generation=1).
 
-All other features from v2 remain:
-  - decode vs prefill basis estimation
-  - dimension-matched k_match tables (decode_shared_k vs prefill_shared_k)
-  - optional state-count matching for basis estimation
-  - random control basis
-  - outputs: JSON + TXT + Markdown + LaTeX tables
-
-Run (example):
-  python prefill_vs_decode_alignment_experiment_v3_fixed.py \
-  --model meta-llama/Llama-2-7b-chat-hf --device cuda --dtype fp32 \
-  --layer 10 --n_prompts 128 --eval_n 256 \
-  --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-  --pca_var 0.95 --tau 0.001 --m_shared all \
-  --do_generation 0 \
-  --fc_warmup_tokens 128 \
-  --fc_add_answer_prefix 1 \
-  --fc_answer_prefix $'\nFinal answer:'
 """
 
 import os
 import sys
-import re
 import json
-import math
 import random
 import argparse
 import hashlib
-from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional, Any
 
 import numpy as np
 import torch
 from tqdm import tqdm
-from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
 
 # ---------------------------------------------------------------------
 # Import your shared-subspace utilities (from your project)
 # ---------------------------------------------------------------------
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if THIS_DIR not in sys.path:
+    sys.path.append(THIS_DIR)
 sys.path.append(os.path.join(THIS_DIR, ".."))
 
 from joint_subspace_large.disturb_cross_task_all_shared import (  # noqa: E402
@@ -78,6 +57,33 @@ from joint_subspace_large.disturb_cross_task_all_shared import (  # noqa: E402
     compute_cross_task_subspace,
     find_fully_shared_basis_improved,
 )
+
+# ---------------------------------------------------------------------
+# Import dataset loaders / parsing helpers
+# ---------------------------------------------------------------------
+# The user may have attached a dataloader file with a different name.
+# We try the canonical import first, then fall back.
+try:
+    from benchmark_dataloaders import (  # noqa: E402
+        Example,
+        load_selected_tasks as bdl_load_selected_tasks,
+        parse_prediction as parse_prediction_generation,
+        is_correct as is_correct_any,
+    )
+except Exception:
+    try:
+        from benchmark_dataloaders_aqua_prefix_default import (  # noqa: E402
+            Example,
+            load_selected_tasks as bdl_load_selected_tasks,
+            parse_prediction as parse_prediction_generation,
+            is_correct as is_correct_any,
+        )
+    except Exception as e:  # pragma: no cover
+        raise RuntimeError(
+            "Failed to import benchmark dataloaders.\n"
+            "Expected `benchmark_dataloaders.py` (or fallback `benchmark_dataloaders_aqua_prefix_default.py`) "
+            "to be on PYTHONPATH / in the same directory."
+        ) from e
 
 
 # -----------------------------
@@ -105,6 +111,10 @@ def json_default(o):
     if isinstance(o, (np.ndarray,)):
         return o.tolist()
     return str(o)
+
+
+def safe_upper(x: Any) -> str:
+    return str(x).strip().upper()
 
 
 # -----------------------------
@@ -169,191 +179,60 @@ def fmt_acc(acc: float, lo: float, hi: float) -> str:
 
 
 # -----------------------------
-# Dataset / prompts
+# Task loading (9 benchmarks)
 # -----------------------------
-@dataclass
-class Example:
-    dataset: str
-    ex_id: str
-    prompt: str
-    gold: str
+TASKS_9 = [
+    "gsm8k",
+    "commonsenseqa",
+    "strategyqa",
+    "aqua",
+    "arc_challenge",
+    "openbookqa",
+    "qasc",
+    "logiqa",
+    "boolq",
+]
+TASK_DEFAULT_9 = "gsm8k,commonsenseqa,strategyqa,aqua,arc_challenge,openbookqa,qasc,logiqa,boolq"
 
 
-def safe_upper(x: Any) -> str:
-    return str(x).strip().upper()
+def load_selected_tasks_9(
+    tasks: List[str],
+    n_prompts: int,
+    eval_n: int,
+    *,
+    seed: int,
+    template_seed: int,
+    template_randomization: bool,
+    shuffle_choices: bool,
+    add_answer_prefix: bool,
+    answer_prefix: str,
+) -> Tuple[Dict[str, List[Example]], Dict[str, List[Example]], Dict[str, Any]]:
+    """
+    Compatibility wrapper to keep the rest of the script unchanged.
 
-
-def normalize_number_str(s: str) -> Optional[str]:
-    if s is None:
-        return None
-    s = str(s).strip().replace(",", "")
-    m = re.search(r"[-+]?\d+(?:\.\d+)?", s)
-    if not m:
-        return None
-    num = m.group(0)
-    if "." in num:
-        num = num.rstrip("0").rstrip(".")
-    return num
-
-
-def parse_gsm8k_gold(answer_field: str) -> str:
-    if answer_field is None:
-        return ""
-    txt = str(answer_field).replace(",", "")
-    m = re.search(r"####\s*([-+]?\d+(?:\.\d+)?)", txt)
-    if m:
-        return normalize_number_str(m.group(1)) or ""
-    nums = re.findall(r"[-+]?\d+(?:\.\d+)?", txt)
-    return normalize_number_str(nums[-1]) if nums else ""
-
-
-def build_prompt_gsm8k(question: str) -> str:
-    return (
-        f"Question: {question}\n"
-        "Let's think step by step.\n"
-        'At the end, write exactly one line in the format: "Final answer: <number>".\n'
+    Uses benchmark_dataloaders.load_selected_tasks():
+      - n_prompts -> n_subspace
+      - eval_n    -> n_eval
+    """
+    print(f"[Data] Loading tasks via benchmark_dataloaders: tasks={tasks}")
+    sub_by, eval_by, meta_by = bdl_load_selected_tasks(
+        tasks=tasks,
+        n_subspace=n_prompts,
+        n_eval=eval_n,
+        seed=seed,
+        template_randomization=template_randomization,
+        template_seed=template_seed,
+        shuffle_choices=shuffle_choices,
+        add_answer_prefix=add_answer_prefix,
+        answer_prefix=answer_prefix,
     )
 
-
-def build_prompt_commonsenseqa(question: str, choices: Dict[str, List[str]]) -> str:
-    labels = choices["label"]
-    texts = choices["text"]
-    lines = [f"{lab}) {txt}" for lab, txt in zip(labels, texts)]
-    return (
-        f"Question: {question}\n"
-        "Choices:\n" + "\n".join(lines) + "\n"
-        "Reason step by step.\n"
-        'At the end, write exactly one line in the format: "Final answer: <A/B/C/D/E>".\n'
-    )
-
-
-def build_prompt_strategyqa(question: str) -> str:
-    return (
-        f"Question: {question}\n"
-        "Please reason step by step.\n"
-        'At the end, write exactly one line in the format: "Final answer: Yes" or "Final answer: No".\n'
-    )
-
-
-def build_prompt_aqua(question: str, options: List[str]) -> str:
-    labels = ["A", "B", "C", "D", "E"]
-    lines = []
-    for i, opt in enumerate(options[:5]):
-        lab = labels[i]
-        opt_clean = re.sub(r"^[A-E]\)?\s*[:\-]?\s*", "", str(opt).strip(), flags=re.IGNORECASE)
-        lines.append(f"{lab}) {opt_clean}")
-    return (
-        f"Question: {question}\n"
-        "Choices:\n" + "\n".join(lines) + "\n"
-        "Please reason step by step.\n"
-        'At the end, write exactly one line in the format: "Final answer: <A/B/C/D/E>".\n'
-    )
-
-
-def sample_hf_split(ds_split, n: int, seed: int):
-    n = min(n, len(ds_split))
-    if n <= 0:
-        return ds_split.select([])
-    return ds_split.shuffle(seed=seed).select(range(n))
-
-
-def load_gsm8k_examples(n_prompts: int, eval_n: int, seed: int):
-    ds = load_dataset("gsm8k", "main")
-    sub_split = "train" if "train" in ds else list(ds.keys())[0]
-    eval_split = "test" if "test" in ds else ("validation" if "validation" in ds else sub_split)
-    sub_rows = sample_hf_split(ds[sub_split], n_prompts, seed + 1)
-    eval_rows = sample_hf_split(ds[eval_split], eval_n, seed + 2)
-    sub_exs, eval_exs = [], []
-    for i, ex in enumerate(sub_rows):
-        sub_exs.append(Example("gsm8k", f"gsm8k-{sub_split}-{i}", build_prompt_gsm8k(ex["question"]), parse_gsm8k_gold(ex["answer"])))
-    for i, ex in enumerate(eval_rows):
-        eval_exs.append(Example("gsm8k", f"gsm8k-{eval_split}-{i}", build_prompt_gsm8k(ex["question"]), parse_gsm8k_gold(ex["answer"])))
-    meta = {"hf_id": "gsm8k/main", "subspace_split": sub_split, "eval_split": eval_split}
-    return sub_exs, eval_exs, meta
-
-
-def load_commonsenseqa_examples(n_prompts: int, eval_n: int, seed: int):
-    ds = load_dataset("commonsense_qa")
-    sub_split = "train" if "train" in ds else list(ds.keys())[0]
-    eval_split = "validation" if "validation" in ds else ("test" if "test" in ds else sub_split)
-    sub_rows = sample_hf_split(ds[sub_split], n_prompts, seed + 11)
-    eval_rows = sample_hf_split(ds[eval_split], eval_n, seed + 12)
-    sub_exs, eval_exs = [], []
-    for i, ex in enumerate(sub_rows):
-        sub_exs.append(Example("commonsenseqa", f"csqa-{sub_split}-{i}", build_prompt_commonsenseqa(ex["question"], ex["choices"]), safe_upper(ex["answerKey"])))
-    for i, ex in enumerate(eval_rows):
-        eval_exs.append(Example("commonsenseqa", f"csqa-{eval_split}-{i}", build_prompt_commonsenseqa(ex["question"], ex["choices"]), safe_upper(ex["answerKey"])))
-    meta = {"hf_id": "commonsense_qa", "subspace_split": sub_split, "eval_split": eval_split}
-    return sub_exs, eval_exs, meta
-
-
-def load_aqua_examples(n_prompts: int, eval_n: int, seed: int):
-    ds = load_dataset("aqua_rat")
-    sub_split = "train" if "train" in ds else list(ds.keys())[0]
-    eval_split = "test" if "test" in ds else ("validation" if "validation" in ds else sub_split)
-    sub_rows = sample_hf_split(ds[sub_split], n_prompts, seed + 21)
-    eval_rows = sample_hf_split(ds[eval_split], eval_n, seed + 22)
-    def gold(ex: dict) -> str:
-        if "correct" in ex:
-            return safe_upper(ex["correct"])
-        if "answer" in ex:
-            return safe_upper(ex["answer"])
-        return ""
-    sub_exs, eval_exs = [], []
-    for i, ex in enumerate(sub_rows):
-        sub_exs.append(Example("aqua", f"aqua-{sub_split}-{i}", build_prompt_aqua(ex["question"], ex["options"]), gold(ex)))
-    for i, ex in enumerate(eval_rows):
-        eval_exs.append(Example("aqua", f"aqua-{eval_split}-{i}", build_prompt_aqua(ex["question"], ex["options"]), gold(ex)))
-    meta = {"hf_id": "aqua_rat", "subspace_split": sub_split, "eval_split": eval_split}
-    return sub_exs, eval_exs, meta
-
-
-def load_strategyqa_examples(n_prompts: int, eval_n: int, seed: int):
-    hf_id = "ChilleD/StrategyQA"
-    ds = load_dataset(hf_id)
-    sub_split = "train" if "train" in ds else list(ds.keys())[0]
-    eval_split = "test" if "test" in ds else ("validation" if "validation" in ds else sub_split)
-    sub_rows = sample_hf_split(ds[sub_split], n_prompts, seed + 31)
-    eval_rows = sample_hf_split(ds[eval_split], eval_n, seed + 32)
-    def to_yesno(v: Any) -> str:
-        if isinstance(v, bool):
-            return "YES" if v else "NO"
-        if isinstance(v, (int, np.integer)):
-            return "YES" if int(v) == 1 else "NO"
-        s = str(v).strip().lower()
-        if s in ["true", "yes", "1"]:
-            return "YES"
-        if s in ["false", "no", "0"]:
-            return "NO"
-        if "yes" in s:
-            return "YES"
-        if "no" in s:
-            return "NO"
-        return ""
-    sub_exs, eval_exs = [], []
-    for i, ex in enumerate(sub_rows):
-        sub_exs.append(Example("strategyqa", f"strategyqa-{sub_split}-{i}", build_prompt_strategyqa(ex["question"]), to_yesno(ex["answer"])))
-    for i, ex in enumerate(eval_rows):
-        eval_exs.append(Example("strategyqa", f"strategyqa-{eval_split}-{i}", build_prompt_strategyqa(ex["question"]), to_yesno(ex["answer"])))
-    meta = {"hf_id": hf_id, "subspace_split": sub_split, "eval_split": eval_split}
-    return sub_exs, eval_exs, meta
-
-
-def load_all_examples(n_prompts: int, eval_n: int, seed: int):
-    loaders = {
-        "gsm8k": load_gsm8k_examples,
-        "commonsenseqa": load_commonsenseqa_examples,
-        "strategyqa": load_strategyqa_examples,
-        "aqua": load_aqua_examples,
-    }
-    sub_by, eval_by, meta_by = {}, {}, {}
-    for name, fn in loaders.items():
-        print(f"[Data] Loading {name} (n_prompts={n_prompts}, eval_n={eval_n}) ...")
-        sub_exs, eval_exs, meta = fn(n_prompts, eval_n, seed)
-        sub_by[name] = sub_exs
-        eval_by[name] = eval_exs
-        meta_by[name] = meta
+    for name in tasks:
+        sub_exs = sub_by.get(name, [])
+        eval_exs = eval_by.get(name, [])
+        meta = meta_by.get(name, {})
         print(f"[Data] {name}: subspace={len(sub_exs)} eval={len(eval_exs)} meta={meta}")
+
     return sub_by, eval_by, meta_by
 
 
@@ -372,7 +251,6 @@ def random_orthonormal_basis_np(dim: int, k: int, seed: int) -> np.ndarray:
 
 
 def subspace_similarity(Qa: np.ndarray, Qb: np.ndarray) -> Dict[str, float]:
-    # principal angle cosines via svd of Qa^T Qb
     M = Qa.T @ Qb
     s = np.linalg.svd(M, compute_uv=False)
     s = np.clip(s, 0.0, 1.0)
@@ -391,15 +269,11 @@ def energy_ratio_stats(states: np.ndarray, Q: np.ndarray) -> Dict[str, float]:
     num = np.sum(proj * proj, axis=1)
     den = np.sum(H * H, axis=1) + eps
     r = num / den
-    return {
-        "mean": float(np.mean(r)),
-        "p50": float(np.percentile(r, 50)),
-        "p95": float(np.percentile(r, 95)),
-    }
+    return {"mean": float(np.mean(r)), "p50": float(np.percentile(r, 50)), "p95": float(np.percentile(r, 95))}
 
 
 # -----------------------------
-# Decode vs prefill activation collectors (same as v2)
+# Decode vs prefill activation collectors
 # -----------------------------
 from collections import defaultdict
 from typing import DefaultDict
@@ -495,7 +369,7 @@ def _subsample_rows_np(x: np.ndarray, n_max: int, seed: int) -> np.ndarray:
 
 
 # -----------------------------
-# Decode collection loop
+# Decode collection loop + decode-aligned prompt boundary
 # -----------------------------
 def top_p_filtering(logits: torch.Tensor, top_p: float) -> torch.Tensor:
     if top_p <= 0.0 or top_p >= 1.0:
@@ -537,33 +411,27 @@ def _choose_next_token(
         logits[:, eos_token_id] = float("-inf")
 
     if decoding == "greedy":
-        # If ban_eos, EOS is already -inf.
-        next_tok = torch.argmax(logits, dim=-1, keepdim=True)
-        return next_tok
+        return torch.argmax(logits, dim=-1, keepdim=True)
 
     lt = logits / max(temperature, 1e-6)
     lt = top_k_filtering(lt, top_k)
     lt = top_p_filtering(lt, top_p)
     probs = torch.softmax(lt, dim=-1)
-    next_tok = torch.multinomial(probs, num_samples=1)
-    return next_tok
+    return torch.multinomial(probs, num_samples=1)
 
 
 @torch.no_grad()
 def _cache_advanced_prompt_boundary(model, ids: torch.Tensor, attn: torch.Tensor):
     """Compute (past, logits_next) such that the last prompt token is processed with seq_len==1."""
-    # ids: [B,T], attn: [B,T]
     if ids.ndim != 2:
         raise ValueError(f"ids must be 2D [B,T], got {ids.shape}")
-    B, T = ids.shape
+    _, T = ids.shape
     if T == 0:
         raise ValueError("Empty prompt")
     if T == 1:
         out1 = model(input_ids=ids, attention_mask=attn, use_cache=True)
         return out1.past_key_values, out1.logits[:, -1, :]
-    # prefix (seq_len=T-1)
     out0 = model(input_ids=ids[:, :-1], attention_mask=attn[:, :-1], use_cache=True)
-    # last token (seq_len=1)
     out1 = model(input_ids=ids[:, -1:], attention_mask=attn, use_cache=True, past_key_values=out0.past_key_values)
     return out1.past_key_values, out1.logits[:, -1, :]
 
@@ -595,7 +463,6 @@ def collect_decode_states(
 
         unfinished = torch.ones(B, dtype=torch.bool, device=device)
 
-        # Prefill (no capture)
         collector.set_capture(False, None)
         past, logits = _cache_advanced_prompt_boundary(model, ids, attn)
 
@@ -652,7 +519,7 @@ def _balanced_concat(task_to_states: Dict[str, np.ndarray], seed: int) -> Tuple[
             out.append(X[idx])
         else:
             out.append(X)
-    return np.concatenate(out, axis=0), n_min
+    return np.concatenate(out, axis=0), int(n_min)
 
 
 def compute_shared_basis_from_states(
@@ -666,11 +533,8 @@ def compute_shared_basis_from_states(
     seed: int,
 ) -> Tuple[np.ndarray, List[int], Dict[str, Any]]:
     """Compute joint subspace + shared indices from task->states dict (single layer)."""
-    X_joint, n_bal = _balanced_concat(task_states, seed)
+    _X_joint, n_bal = _balanced_concat(task_states, seed)
     tasks = list(task_states.keys())
-
-    # Build dict in the format expected by compute_cross_task_subspace: task -> {layer_idx -> states}
-    # We'll use layer key 0 internally.
     task_dict = {t: {0: task_states[t]} for t in tasks}
 
     joint_subspace, cross_dim, contributions, full_pca_info = compute_cross_task_subspace(
@@ -683,7 +547,6 @@ def compute_shared_basis_from_states(
     if joint_subspace is None or cross_dim <= 0:
         raise RuntimeError("Failed to compute cross-task subspace")
 
-    # Shared components across all tasks by default
     min_tasks_shared = len(tasks) if m_shared == "all" else int(m_shared)
     shared_idx = find_fully_shared_basis_improved(
         contributions,
@@ -705,7 +568,7 @@ def compute_shared_basis_from_states(
 
 
 # -----------------------------
-# Intervention hooks (decode-only; same as v2)
+# Intervention hooks (decode-only)
 # -----------------------------
 class HookStats:
     def __init__(self, name: str):
@@ -785,18 +648,56 @@ def remove_hooks(handles):
 
 
 # -----------------------------
-# Forced-choice logprob eval (decode-aligned) + v3 warmup
+# Forced-choice logprob eval (decode-aligned) + warmup
 # -----------------------------
 def candidate_strings(task: str) -> List[str]:
+    """
+    Candidate labels/strings used for forced-choice scoring.
+
+    These should be consistent with benchmark_dataloaders' MC label conventions.
+    """
+    task = (task or "").strip().lower()
     if task in ["commonsenseqa", "aqua"]:
-        return ["A", "B", "C", "D", "E"]
+        return list("ABCDE")
+    if task in ["arc_challenge", "openbookqa", "logiqa"]:
+        return list("ABCD")
+    if task == "qasc":
+        return list("ABCDEFGH")
+    if task == "boolq":
+        # benchmark_dataloaders boolq gold is A/B (A=Yes, B=No)
+        return ["A", "B"]
     if task == "strategyqa":
+        # benchmark_dataloaders strategyqa gold normalized to YES/NO
         return ["Yes", "No"]
     return []
 
 
+def _normalize_answer_prefix(prefix: str) -> str:
+    """Match benchmark_dataloaders behavior a bit: treat '0/none/null/false' as empty."""
+    if prefix is None:
+        return ""
+    s = str(prefix)
+    if s.strip().lower() in {"0", "none", "null", "false"}:
+        return ""
+    # keep as-is; do not force leading newline here (some users may want none)
+    return s
+
+
+def _prompt_endswith_prefix(prompt: str, prefix: str) -> bool:
+    if not prefix:
+        return False
+    p = (prompt or "").rstrip()
+    ap = (prefix or "").rstrip()
+    return p.endswith(ap)
+
+
 def cand_token_ids(tok, s: str) -> List[int]:
-    # Prefer leading-space variant
+    """
+    Tokenize a candidate as it would usually appear after 'Final answer:'.
+
+    We intentionally include a leading space so that SentencePiece tokenizers
+    produce the correct "word-start" token (e.g., ▁A, ▁Yes).
+    """
     ids = tok.encode(" " + s, add_special_tokens=False)
     if not ids:
         ids = tok.encode(s, add_special_tokens=False)
@@ -881,8 +782,24 @@ def forced_choice_logprob_eval(
     max_prompt_len: int,
     warmup_token_ids: Optional[np.ndarray],
     answer_prefix: str,
+    prefix_mode: str,  # auto|always|never
+    save_scores: bool = False,
 ) -> Dict[str, Any]:
-    """Forced-choice accuracy by logprob (decode-aligned) with optional warmup teacher-forcing."""
+    """
+    Forced-choice accuracy by logprob (decode-aligned) with optional warmup teacher-forcing.
+
+    In addition to accuracy, this returns continuous diagnostics that remain informative even when
+    accuracy is at a floor (chance):
+      - gold_logprob_sum:   sum log p(gold_candidate_tokens)
+      - gold_margin_sum:    gold_logprob_sum - max_wrong_logprob_sum
+      - gold_logprob_mean:  length-normalized (per-token) logprob
+      - gold_margin_mean:   length-normalized margin
+      - entropy:            entropy of softmax(scores_sum) across candidates
+      - top1_gap:           (best - second best) score gap (sum-logprob)
+    """
+    prefix_mode = (prefix_mode or "auto").strip().lower()
+    if prefix_mode not in {"auto", "always", "never"}:
+        raise ValueError(f"Unknown prefix_mode={prefix_mode!r}")
 
     device = next(model.parameters()).device
     model.eval()
@@ -893,9 +810,15 @@ def forced_choice_logprob_eval(
     prompts = [ex.prompt for ex in examples]
     golds = [ex.gold for ex in examples]
     cands = candidate_strings(task)
+    if len(cands) == 0:
+        raise ValueError(f"Task '{task}' has no forced-choice candidates. Use generation eval instead.")
     cand_ids_list = [cand_token_ids(tok, s) for s in cands]
+    cand_lens = np.array([max(1, len(x)) for x in cand_ids_list], dtype=np.float32)
 
-    handles, hooks, stats, toggle = register_hooks(
+    answer_prefix = _normalize_answer_prefix(answer_prefix)
+
+    # Register decode-only hooks (seq_len==1 only)
+    handles, _hooks, stats, _toggle = register_hooks(
         model,
         layer_indices=layer_indices,
         basis_np=basis_np,
@@ -903,10 +826,40 @@ def forced_choice_logprob_eval(
         name=f"fc_full@{layer_indices[0]}",
     )
 
-    correct = np.zeros(len(prompts), dtype=np.float32)
+    N = len(prompts)
+    C = len(cands)
+
+    correct = np.zeros(N, dtype=np.float32)
+
+    gold_logprob_sum = np.full(N, np.nan, dtype=np.float32)
+    gold_margin_sum = np.full(N, np.nan, dtype=np.float32)
+    gold_logprob_mean = np.full(N, np.nan, dtype=np.float32)
+    gold_margin_mean = np.full(N, np.nan, dtype=np.float32)
+    entropy = np.full(N, np.nan, dtype=np.float32)
+    top1_gap = np.full(N, np.nan, dtype=np.float32)
+    pred_labels: List[str] = [""] * N
+
+    scores_sum_all: Optional[np.ndarray] = None
+    if bool(save_scores):
+        scores_sum_all = np.full((N, C), np.nan, dtype=np.float32)
+
+    def _gold_index(gold_label: str) -> int:
+        # Prefer benchmark_dataloaders' normalization
+        for j, c in enumerate(cands):
+            try:
+                if is_correct_any(task, c, gold_label):
+                    return j
+            except Exception:
+                pass
+        # Fallback: direct normalized string match
+        g = str(gold_label).strip().upper()
+        for j, c in enumerate(cands):
+            if str(c).strip().upper() == g:
+                return j
+        return -1
 
     try:
-        for i in tqdm(range(0, len(prompts), batch_size), desc=f"ForcedChoice({task})"):
+        for i in tqdm(range(0, N, batch_size), desc=f"ForcedChoice({task})"):
             batch_prompts = prompts[i : i + batch_size]
             batch_golds = golds[i : i + batch_size]
             inputs = tok(batch_prompts, return_tensors="pt", padding=True, truncation=True, max_length=max_prompt_len).to(device)
@@ -914,19 +867,18 @@ def forced_choice_logprob_eval(
             attn = inputs["attention_mask"]
             B = ids.shape[0]
 
-            # Optional warmup tokens: teacher force the same baseline-generated tokens for all conditions.
             warm_ids = None
             W = 0
             if warmup_token_ids is not None:
                 warm = warmup_token_ids[i : i + B]
-                if warm is not None:
+                if warm is not None and warm.size > 0:
                     warm_ids = torch.tensor(warm, dtype=torch.long, device=device)
                     W = int(warm_ids.shape[1])
 
-            # Prompt boundary in decode mode
+            # Decode-aligned boundary: last prompt token is processed with seq_len==1
             past, logits = _cache_advanced_prompt_boundary(model, ids, attn)
 
-            # Teacher-force warmup tokens (decode steps) BEFORE scoring candidates.
+            # Teacher-force warmup tokens before scoring candidates
             if warm_ids is not None and W > 0:
                 for t in range(W):
                     tok_t = warm_ids[:, t : t + 1]
@@ -935,11 +887,24 @@ def forced_choice_logprob_eval(
                     logits = out.logits[:, -1, :]
                     past = out.past_key_values
 
+            # Decide whether to teacher-force answer_prefix before scoring candidates.
+            # auto policy:
+            #   - if warmup was used, ALWAYS add prefix (decision point is deep in decode)
+            #   - else add prefix only if prompt doesn't already end with it (avoid double-prefix)
+            if prefix_mode == "always":
+                do_prefix = bool(answer_prefix)
+            elif prefix_mode == "never":
+                do_prefix = False
+            else:  # auto
+                if bool(answer_prefix):
+                    if W > 0:
+                        do_prefix = True
+                    else:
+                        do_prefix = not _prompt_endswith_prefix(batch_prompts[0], answer_prefix)
+                else:
+                    do_prefix = False
 
-            # Optional: move the decision point to the *answer slot*.
-            # Without this, scoring single-token candidates (A/B/Yes/No) right after warmup
-            # is usually meaningless because the model is still mid-reasoning.
-            if answer_prefix:
+            if do_prefix and answer_prefix:
                 prefix_ids = tok.encode(answer_prefix, add_special_tokens=False)
                 if len(prefix_ids) > 0:
                     for pid in prefix_ids:
@@ -949,8 +914,8 @@ def forced_choice_logprob_eval(
                         logits = out.logits[:, -1, :]
                         past = out.past_key_values
 
-            # Score candidates
-            scores = torch.zeros(B, len(cands), device=device)
+            # Score candidates by logprob sum
+            scores = torch.zeros(B, C, device=device)
             for ci, cand_ids in enumerate(cand_ids_list):
                 if len(cand_ids) == 0:
                     scores[:, ci] = float("-inf")
@@ -962,11 +927,8 @@ def forced_choice_logprob_eval(
 
                 lp = torch.zeros(B, device=device)
                 for ti, tok_id in enumerate(cand_ids):
-                    # logprob for this token under current logits
                     logp = torch.log_softmax(logits_c, dim=-1)
                     lp = lp + logp[:, tok_id]
-
-                    # advance cache with teacher-forced token (unless last)
                     if ti < len(cand_ids) - 1:
                         inp = torch.full((B, 1), tok_id, dtype=torch.long, device=device)
                         attn_c = torch.cat([attn_c, torch.ones((B, 1), device=device, dtype=attn_c.dtype)], dim=1)
@@ -976,14 +938,223 @@ def forced_choice_logprob_eval(
 
                 scores[:, ci] = lp
 
-            pred_idx = torch.argmax(scores, dim=1).detach().cpu().numpy().tolist()
-            preds = [cands[j] for j in pred_idx]
-            for b, (pred, gold) in enumerate(zip(preds, batch_golds)):
-                correct[i + b] = 1.0 if safe_upper(pred) == safe_upper(gold) else 0.0
+            # Predictions
+            pred_idx = torch.argmax(scores, dim=1)
+            preds = [cands[int(j)] for j in pred_idx.detach().cpu().numpy().tolist()]
+
+            # Continuous diagnostics (entropy, top1 gap) from candidate scores
+            probs = torch.softmax(scores, dim=1)
+            ent = -(probs * torch.log(probs.clamp_min(1e-12))).sum(dim=1)  # [B]
+            top2 = torch.topk(scores, k=min(2, C), dim=1).values           # [B, <=2]
+            gap = top2[:, 0] - (top2[:, 1] if top2.shape[1] > 1 else top2[:, 0])
+
+            # Store per-example outputs
+            scores_cpu = scores.detach().cpu().numpy().astype(np.float32, copy=False)
+            ent_cpu = ent.detach().cpu().numpy().astype(np.float32, copy=False)
+            gap_cpu = gap.detach().cpu().numpy().astype(np.float32, copy=False)
+
+            for b in range(B):
+                idx = i + b
+                pred = preds[b]
+                gold = batch_golds[b]
+                pred_labels[idx] = str(pred)
+
+                # Robust correctness from benchmark_dataloaders
+                correct[idx] = 1.0 if is_correct_any(task, pred, gold) else 0.0
+
+                entropy[idx] = float(ent_cpu[b])
+                top1_gap[idx] = float(gap_cpu[b])
+
+                if scores_sum_all is not None:
+                    scores_sum_all[idx, :] = scores_cpu[b, :]
+
+                gi = _gold_index(str(gold))
+                if gi < 0:
+                    continue
+
+                row = scores_cpu[b, :]
+                gold_lp = float(row[gi])
+                # sum-logprob margin
+                if C > 1:
+                    best_wrong = float(np.max(np.delete(row, gi)))
+                else:
+                    best_wrong = float("-inf")
+                gold_logprob_sum[idx] = gold_lp
+                gold_margin_sum[idx] = gold_lp - best_wrong
+
+                # length-normalized (per-token) versions
+                gold_lp_m = gold_lp / float(cand_lens[gi])
+                wrong_m = []
+                for j in range(C):
+                    if j == gi:
+                        continue
+                    wrong_m.append(float(row[j]) / float(cand_lens[j]))
+                best_wrong_m = float(np.max(wrong_m)) if wrong_m else float("-inf")
+                gold_logprob_mean[idx] = gold_lp_m
+                gold_margin_mean[idx] = gold_lp_m - best_wrong_m
+
+        out: Dict[str, Any] = {
+            "acc": float(correct.mean()) if N > 0 else float("nan"),
+            "correct": correct.tolist(),
+            "hook_stats": stats.report(),
+            "cands": cands,
+            "preds": pred_labels,
+            "golds": [str(g) for g in golds],
+            "gold_logprob_sum": gold_logprob_sum.tolist(),
+            "gold_margin_sum": gold_margin_sum.tolist(),
+            "gold_logprob_mean": gold_logprob_mean.tolist(),
+            "gold_margin_mean": gold_margin_mean.tolist(),
+            "entropy": entropy.tolist(),
+            "top1_gap": top1_gap.tolist(),
+            "metrics_summary": {
+                "gold_logprob_sum_mean": float(np.nanmean(gold_logprob_sum)) if N > 0 else float("nan"),
+                "gold_margin_sum_mean": float(np.nanmean(gold_margin_sum)) if N > 0 else float("nan"),
+                "gold_logprob_mean_mean": float(np.nanmean(gold_logprob_mean)) if N > 0 else float("nan"),
+                "gold_margin_mean_mean": float(np.nanmean(gold_margin_mean)) if N > 0 else float("nan"),
+                "entropy_mean": float(np.nanmean(entropy)) if N > 0 else float("nan"),
+                "top1_gap_mean": float(np.nanmean(top1_gap)) if N > 0 else float("nan"),
+            },
+        }
+        if scores_sum_all is not None:
+            out["scores_sum"] = scores_sum_all.tolist()
+        return out
+    finally:
+        remove_hooks(handles)
+
+
+# -----------------------------
+# Free-form generation eval (for gsm8k, or if --do_generation 1)
+# -----------------------------
+@torch.no_grad()
+def generate_decode_aligned(
+    model,
+    tok,
+    prompts: List[str],
+    *,
+    batch_size: int,
+    max_new_tokens: int,
+    max_prompt_len: int,
+    decoding: str,
+    temperature: float,
+    top_p: float,
+    top_k: int,
+    seed: Optional[int] = None,
+) -> List[str]:
+    """Generate continuations using decode-aligned prompt boundary caching (seq_len==1 decode)."""
+    assert decoding in ["greedy", "sample"]
+    device = next(model.parameters()).device
+    eos = tok.eos_token_id
+    model.eval()
+
+    if decoding == "sample" and seed is not None:
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
+    outs: List[str] = []
+    for i in tqdm(range(0, len(prompts), batch_size), desc=f"Gen({decoding})"):
+        batch = prompts[i : i + batch_size]
+        inputs = tok(batch, return_tensors="pt", padding=True, truncation=True, max_length=max_prompt_len).to(device)
+        ids = inputs["input_ids"]
+        attn = inputs["attention_mask"]
+        B = ids.shape[0]
+
+        past, logits = _cache_advanced_prompt_boundary(model, ids, attn)
+
+        unfinished = torch.ones(B, dtype=torch.bool, device=device)
+        gen_steps = torch.zeros(B, dtype=torch.long, device=device)
+        gen = torch.full((B, max_new_tokens), eos, dtype=torch.long, device=device)
+
+        for t in range(max_new_tokens):
+            next_tok = _choose_next_token(
+                logits,
+                decoding=decoding,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                eos_token_id=eos,
+                ban_eos=False,
+            )
+            next_tok = torch.where(unfinished.unsqueeze(-1), next_tok, torch.full_like(next_tok, eos))
+            tok_ids = next_tok.squeeze(-1)
+
+            gen[unfinished, t] = tok_ids[unfinished]
+            gen_steps[unfinished] += 1
+            unfinished = unfinished & (tok_ids != eos)
+            if not bool(unfinished.any().item()):
+                break
+
+            attn = torch.cat([attn, torch.ones((B, 1), device=device, dtype=attn.dtype)], dim=1)
+            out = model(input_ids=next_tok, attention_mask=attn, use_cache=True, past_key_values=past)
+            logits = out.logits[:, -1, :]
+            past = out.past_key_values
+
+        for b in range(B):
+            L = int(gen_steps[b].item())
+            cont_ids = gen[b, :L].tolist()
+            txt = tok.decode(cont_ids, skip_special_tokens=True)
+            outs.append(txt)
+
+    return outs
+
+
+@torch.no_grad()
+def generation_eval(
+    model,
+    tok,
+    examples: List[Example],
+    task: str,
+    *,
+    layer_indices: List[int],
+    basis_np: Optional[np.ndarray],
+    alpha: float,
+    batch_size: int,
+    max_prompt_len: int,
+    max_new_tokens: int,
+    decoding: str,
+    temperature: float,
+    top_p: float,
+    top_k: int,
+    seed: int,
+) -> Dict[str, Any]:
+    """Free-form generation accuracy using benchmark_dataloaders.parse_prediction/is_correct."""
+    prompts = [ex.prompt for ex in examples]
+    golds = [ex.gold for ex in examples]
+
+    handles, _hooks, stats, _toggle = register_hooks(
+        model,
+        layer_indices=layer_indices,
+        basis_np=basis_np,
+        alpha=alpha,
+        name=f"gen_full@{layer_indices[0]}",
+    )
+
+    try:
+        conts = generate_decode_aligned(
+            model,
+            tok,
+            prompts,
+            batch_size=batch_size,
+            max_new_tokens=max_new_tokens,
+            max_prompt_len=max_prompt_len,
+            decoding=decoding,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            seed=seed,
+        )
+        correct = np.zeros(len(examples), dtype=np.float32)
+        extracted = np.zeros(len(examples), dtype=np.float32)
+
+        for i, (cont, gold) in enumerate(zip(conts, golds)):
+            pred = parse_prediction_generation(task, cont)
+            extracted[i] = 1.0 if pred != "" else 0.0
+            correct[i] = 1.0 if is_correct_any(task, pred, gold) else 0.0
 
         return {
             "acc": float(correct.mean()),
             "correct": correct.tolist(),
+            "extraction_rate": float(extracted.mean()),
             "hook_stats": stats.report(),
         }
     finally:
@@ -1005,19 +1176,30 @@ def _build_shared_basis_from_joint(joint: np.ndarray, shared_idx: List[int], k: 
 # -----------------------------
 # Model load
 # -----------------------------
-def load_model_and_tokenizer(model_name: str, device: str, dtype: str):
-    torch_dtype = torch.float32 if dtype == "fp32" else torch.float16
-    try:
-        model = AutoModelForCausalLM.from_pretrained(model_name, dtype=torch_dtype)
-    except TypeError:
-        model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch_dtype)
-    tok = AutoTokenizer.from_pretrained(model_name)
+def load_model_and_tokenizer(model_name: str, device: str, dtype: str, trust_remote_code: bool = False):
+    if dtype == "fp32":
+        torch_dtype = torch.float32
+    elif dtype == "fp16":
+        torch_dtype = torch.float16
+    elif dtype == "bf16":
+        torch_dtype = torch.bfloat16
+    else:
+        raise ValueError(f"Unknown dtype: {dtype}")
+
+    model_kwargs = {"torch_dtype": torch_dtype, "trust_remote_code": trust_remote_code}
+    tok_kwargs = {"trust_remote_code": trust_remote_code}
+
+    model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+    tok = AutoTokenizer.from_pretrained(model_name, **tok_kwargs)
+
     tok.padding_side = "left"
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
+
     model = model.to(device)
     model.eval()
-    model.config.use_cache = True
+    if hasattr(model.config, "use_cache"):
+        model.config.use_cache = True
     return model, tok
 
 
@@ -1034,13 +1216,13 @@ def md_table(rows: List[List[str]], header: List[str]) -> str:
 
 
 def latex_table(rows: List[List[str]], header: List[str], caption: str, label: str, colspec: str) -> str:
-    # Minimal ICML-friendly table (booktabs assumed by ICML style)
     def esc(s: str) -> str:
         return s.replace("%", "\\%").replace("_", "\\_")
+
     header_esc = [esc(h) for h in header]
     body = []
     for r in rows:
-        body.append(" & ".join(esc(x) for x in r) + " \\")
+        body.append(" & ".join(esc(x) for x in r) + " \\\\")
     return (
         "\\begin{table}[t]\n"
         "\\centering\n"
@@ -1048,7 +1230,7 @@ def latex_table(rows: List[List[str]], header: List[str], caption: str, label: s
         f"\\begin{{tabular}}{{{colspec}}}\n"
         "\\toprule\n"
         + " & ".join(header_esc)
-        + " \\\n+\\midrule\n"
+        + " \\\\\n\\midrule\n"
         + "\n".join(body)
         + "\n\\bottomrule\n"
         "\\end{tabular}\n"
@@ -1065,65 +1247,157 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", type=str, default="meta-llama/Llama-2-7b-chat-hf")
     ap.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "fp16"])
+    ap.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "fp16", "bf16"])
+    ap.add_argument("--trust_remote_code", type=int, default=0, choices=[0, 1])
+
     ap.add_argument("--layer", type=int, default=10)
+    ap.add_argument("--tasks", type=str, default=TASK_DEFAULT_9, help=f"Comma-separated tasks. Default: {TASK_DEFAULT_9}")
+
     ap.add_argument("--n_prompts", type=int, default=128)
     ap.add_argument("--eval_n", type=int, default=256)
+    ap.add_argument(
+        "--eval_tasks",
+        type=str,
+        default="",
+        help="Optional: evaluate only these tasks (comma-separated) while still estimating bases on --tasks. Empty means evaluate all tasks.",
+    )
+    ap.add_argument(
+        "--k_eval",
+        type=int,
+        default=0,
+        help="If >0, use this k for dimension-matched evaluation (clamped to <=k_match). 0 means use k_match.",
+    )
+
     ap.add_argument("--calib_decode_max_new_tokens", type=int, default=128)
     ap.add_argument("--per_task_max_states", type=int, default=20000)
+
     ap.add_argument("--pca_var", type=float, default=0.95)
     ap.add_argument("--min_dim", type=int, default=1)
     ap.add_argument("--max_dim", type=int, default=4096)
     ap.add_argument("--tau", type=float, default=0.001)
     ap.add_argument("--m_shared", type=str, default="all")
+
     ap.add_argument("--alpha_remove", type=float, default=1.0)
+
     ap.add_argument("--batch_size", type=int, default=4)
     ap.add_argument("--max_prompt_len", type=int, default=512)
+
     ap.add_argument("--bootstrap_iters", type=int, default=5000)
     ap.add_argument("--perm_iters", type=int, default=10000)
     ap.add_argument("--ci_alpha", type=float, default=0.05)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--do_generation", type=int, default=0)
-    ap.add_argument("--match_state_count", type=int, default=0)
 
-    # Warmup-forced-choice (v3)
-    ap.add_argument("--fc_warmup_tokens", type=int, default=0, help="Teacher-force W baseline-generated decode tokens before scoring candidates (probe deeper decode distribution).")
-    ap.add_argument("--fc_warmup_decoding", type=str, default="greedy", choices=["greedy", "sample"], help="How to generate warmup tokens under baseline.")
-    ap.add_argument("--fc_warmup_seed", type=int, default=123, help="Seed used when generating warmup tokens (if sampling).")
-    ap.add_argument("--fc_warmup_ban_eos", type=int, default=1, help="If 1, ban EOS during warmup token generation.")
+    ap.add_argument("--do_generation", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--match_state_count", type=int, default=0, choices=[0, 1])
+
+    # Prompt-building knobs (passed through to benchmark_dataloaders)
+    ap.add_argument("--template_randomization", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--template_seed", type=int, default=1234)
+    ap.add_argument("--shuffle_choices", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--add_answer_prefix", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
+
+    # Warmup-forced-choice
+    ap.add_argument("--fc_warmup_tokens", type=int, default=0)
+    ap.add_argument("--fc_warmup_decoding", type=str, default="greedy", choices=["greedy", "sample"])
+    ap.add_argument("--fc_warmup_seed", type=int, default=123)
+    ap.add_argument("--fc_warmup_ban_eos", type=int, default=1)
+
+    # NEW: prefix policy for forced-choice scoring
+    ap.add_argument("--fc_prefix_mode", type=str, default="auto", choices=["auto", "always", "never"])
+    ap.add_argument("--fc_answer_prefix", type=str, default="\nFinal answer:")
+    ap.add_argument(
+        "--fc_save_scores",
+        type=int,
+        default=0,
+        choices=[0, 1],
+        help="If 1, save per-example candidate logprob scores in JSON (can increase file size). Metrics like gold_logprob/margin are saved regardless.",
+    )
+
+    # Backward compatibility (deprecated)
     ap.add_argument(
         "--fc_add_answer_prefix",
         type=int,
-        default=1,
-        help="If 1, teacher-force `--fc_answer_prefix` after warmup and BEFORE scoring candidates (recommended). "
-             "Set 0 to reproduce the old (often chance-level) forced-choice protocol.",
-    )
-    ap.add_argument(
-        "--fc_answer_prefix",
-        type=str,
-        default="\nFinal answer:",
-        help="String to teacher-force after warmup before scoring candidates, to align the scoring point with the 'Final answer:' slot.",
+        default=None,
+        choices=[0, 1],
+        help="DEPRECATED. Overrides --fc_prefix_mode: 1->always, 0->auto (old scripts used 0 to mean never; now use --fc_prefix_mode never).",
     )
 
+    # Generation-eval decoding knobs (only used when --do_generation=1 or task has no candidates)
+    ap.add_argument("--gen_decoding", type=str, default="greedy", choices=["greedy", "sample"])
+    ap.add_argument("--gen_temperature", type=float, default=0.7)
+    ap.add_argument("--gen_top_p", type=float, default=0.9)
+    ap.add_argument("--gen_top_k", type=int, default=0)
+    ap.add_argument("--gen_max_new_tokens", type=int, default=256)
+    ap.add_argument("--gen_seed", type=int, default=12345)
 
-    ap.add_argument("--out_json", type=str, default=os.path.join(THIS_DIR, "prefill_vs_decode_alignment.json"))
-    ap.add_argument("--out_txt", type=str, default=os.path.join(THIS_DIR, "prefill_vs_decode_alignment.txt"))
-    ap.add_argument("--out_md", type=str, default=os.path.join(THIS_DIR, "prefill_vs_decode_alignment.md"))
-    ap.add_argument("--out_tex", type=str, default=os.path.join(THIS_DIR, "prefill_vs_decode_alignment.tex"))
+    ap.add_argument("--out_json", type=str, default=os.path.join(THIS_DIR, "prefill_vs_decode_alignment_9tasks_fixed.json"))
+    ap.add_argument("--out_txt", type=str, default=os.path.join(THIS_DIR, "prefill_vs_decode_alignment_9tasks_fixed.txt"))
+    ap.add_argument("--out_md", type=str, default=os.path.join(THIS_DIR, "prefill_vs_decode_alignment_9tasks_fixed.md"))
+    ap.add_argument("--out_tex", type=str, default=os.path.join(THIS_DIR, "prefill_vs_decode_alignment_9tasks_fixed.tex"))
+
     args = ap.parse_args()
-
     set_global_seed(args.seed)
 
-    layer_indices = [args.layer]
-    print(f"[Env] model={args.model} device={args.device} dtype={args.dtype} layer={layer_indices}")
+    tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
+    if len(tasks) < 2:
+        raise RuntimeError("Need at least 2 tasks in --tasks.")
+    for t in tasks:
+        if t not in TASKS_9:
+            raise ValueError(f"Unknown task '{t}'. Supported: {sorted(TASKS_9)}")
 
-    model, tok = load_model_and_tokenizer(args.model, args.device, args.dtype)
+    # Resolve forced-choice prefix policy with backward-compatible flag
+    fc_prefix_mode = (args.fc_prefix_mode or "auto").strip().lower()
+    if args.fc_add_answer_prefix is not None:
+        fc_prefix_mode = "always" if int(args.fc_add_answer_prefix) == 1 else "auto"
+
+    if (not bool(args.do_generation)) and fc_prefix_mode == "never":
+        # Configuration warning: near-chance is expected unless prompts end with answer_prefix already.
+        print("[WARN] Forced-choice prefix_mode=never. If your prompts do NOT already end with an explicit answer prefix, forced-choice accuracy will often be near chance.")
+
+    if (not bool(args.do_generation)) and (args.fc_warmup_tokens > 0) and (fc_prefix_mode == "never"):
+        print("[WARN] fc_warmup_tokens>0 with prefix_mode=never is *almost guaranteed* to produce near-chance accuracy, because you're scoring labels at an arbitrary deep decode position.")
+
+    # Optionally evaluate only a subset of tasks (still estimate bases on full `tasks`)
+    eval_tasks = list(tasks)
+    if getattr(args, "eval_tasks", ""):
+        eval_tasks = [t.strip() for t in str(args.eval_tasks).split(",") if t.strip()]
+        for t in eval_tasks:
+            if t not in tasks:
+                raise ValueError(f"--eval_tasks contains task '{t}' not present in --tasks. tasks={tasks}")
+    if len(eval_tasks) == 0:
+        raise ValueError("--eval_tasks resolved to empty list.")
+    layer_indices = [args.layer]
+    print(f"[Env] model={args.model} device={args.device} dtype={args.dtype} layer={layer_indices} trust_remote_code={bool(args.trust_remote_code)}")
+    print(f"[Env] tasks={tasks}")
+    print(f"[Env] eval_tasks={eval_tasks}")
+    print(f"[Env] prompt template_randomization={bool(args.template_randomization)} shuffle_choices={bool(args.shuffle_choices)} add_answer_prefix={bool(args.add_answer_prefix)}")
+    if not bool(args.do_generation):
+        print(f"[Env] forced-choice warmup_tokens={args.fc_warmup_tokens} prefix_mode={fc_prefix_mode} answer_prefix={args.fc_answer_prefix!r}")
+
+    model, tok = load_model_and_tokenizer(args.model, args.device, args.dtype, trust_remote_code=bool(args.trust_remote_code))
+
+    layers, _ = get_model_layers(model)
+    if args.layer < 0 or args.layer >= len(layers):
+        raise ValueError(f"--layer {args.layer} out of range for this model. num_layers={len(layers)}")
+
     hidden_dim = getattr(model.config, "hidden_size", None) or getattr(model.config, "n_embd", None)
     if hidden_dim is None:
-        raise RuntimeError("Could not infer hidden_dim")
+        raise RuntimeError("Could not infer hidden_dim from model.config")
+    print(f"[Env] hidden_dim={hidden_dim} num_layers={len(layers)}")
 
-    # Load datasets
-    sub_by, eval_by, meta_by = load_all_examples(args.n_prompts, args.eval_n, args.seed)
+    # Load datasets (benchmark_dataloaders)
+    sub_by, eval_by, meta_by = load_selected_tasks_9(
+        tasks=tasks,
+        n_prompts=args.n_prompts,
+        eval_n=args.eval_n,
+        seed=args.seed,
+        template_seed=args.template_seed,
+        template_randomization=bool(args.template_randomization),
+        shuffle_choices=bool(args.shuffle_choices),
+        add_answer_prefix=bool(args.add_answer_prefix),
+        answer_prefix=args.answer_prefix,
+    )
 
     # 1) Collect DECODE states
     print("\n" + "=" * 80)
@@ -1131,7 +1405,6 @@ def main():
     print("=" * 80)
 
     decode_col = DecodeLastTokenCollector(layer_indices)
-    layers, _ = get_model_layers(model)
     handles = []
     for li in layer_indices:
         handles.append(layers[li].register_forward_hook(decode_col.make_hook(li)))
@@ -1207,16 +1480,8 @@ def main():
         print(f"  decode n_min={n_decode_min} prefill n_min={n_prefill_min} => using n_match={n_match}")
         print("=" * 80)
 
-        # downsample decode states to n_match per task
-        new_decode = {}
-        for t, X in decode_task_states.items():
-            new_decode[t] = _subsample_rows_np(X, n_match, seed=stable_int_seed(args.seed, t, "decode_match"))
-        decode_task_states = new_decode
-        # downsample prefill states to n_match per task
-        new_pre = {}
-        for t, X in pre_task_states.items():
-            new_pre[t] = _subsample_rows_np(X, n_match, seed=stable_int_seed(args.seed, t, "prefill_match"))
-        pre_task_states = new_pre
+        decode_task_states = {t: _subsample_rows_np(X, n_match, seed=stable_int_seed(args.seed, t, "decode_match")) for t, X in decode_task_states.items()}
+        pre_task_states = {t: _subsample_rows_np(X, n_match, seed=stable_int_seed(args.seed, t, "prefill_match")) for t, X in pre_task_states.items()}
 
     # Compute bases
     joint_decode, shared_idx_decode, extra_decode = compute_shared_basis_from_states(
@@ -1240,9 +1505,21 @@ def main():
 
     k_decode = len(shared_idx_decode)
     k_prefill = len(shared_idx_prefill)
-    k_match = min(k_decode, k_prefill)
-    if k_match <= 0:
+
+    # Raw dimension match between decode/prefill shared sets
+    k_match_raw = min(k_decode, k_prefill)
+    if k_match_raw <= 0:
         raise RuntimeError("No shared components found (k_match<=0)")
+
+    # Optional override for sweeps (avoid floor effects)
+    k_match = int(k_match_raw)
+    if getattr(args, "k_eval", 0) and int(args.k_eval) > 0:
+        k_req = int(args.k_eval)
+        if k_req > k_match_raw:
+            print(f"[Warn] --k_eval={k_req} > k_match_raw={k_match_raw}; clamping to {k_match_raw}.")
+            k_match = int(k_match_raw)
+        else:
+            k_match = k_req
 
     Q_decode_full = _build_shared_basis_from_joint(joint_decode, shared_idx_decode, k_decode)
     Q_prefill_full = _build_shared_basis_from_joint(joint_prefill, shared_idx_prefill, k_prefill)
@@ -1257,10 +1534,9 @@ def main():
     print("\n[Diag] Subspace similarity (dimension-matched k_match)")
     print(json.dumps(subspace_similarity(Q_decode_km, Q_prefill_km), indent=2))
 
-    # Energy diagnostics on held-out collected states
-    # Use pooled decode states
     decode_pool = np.concatenate([_subsample_rows_np(X, 4000, seed=stable_int_seed(args.seed, t, "er_d")) for t, X in decode_task_states.items()], axis=0)
     pre_pool = np.concatenate([_subsample_rows_np(X, 4000, seed=stable_int_seed(args.seed, t, "er_p")) for t, X in pre_task_states.items()], axis=0)
+
     er_decode_on_decode = energy_ratio_stats(decode_pool, Q_decode_full)
     er_prefill_on_decode = energy_ratio_stats(decode_pool, Q_prefill_full)
     er_prefill_on_prefill = energy_ratio_stats(pre_pool, Q_prefill_full)
@@ -1279,13 +1555,15 @@ def main():
     print(f"  (k={k_match}) On DECODE states:  Q_decode_km mean={er_decode_km_on_decode['mean']:.4f},  Q_prefill_km mean={er_prefill_km_on_decode['mean']:.4f}, rand mean={er_rand_km_on_decode['mean']:.4f}")
     print(f"  (k={k_match}) On PREFILL states: Q_prefill_km mean={er_prefill_km_on_prefill['mean']:.4f}, Q_decode_km mean={er_decode_km_on_prefill['mean']:.4f}")
 
-    # v3: optional forced-choice warmup tokens per task
+    # Warmup tokens per task (only used for forced-choice)
     warmup_by_task: Dict[str, np.ndarray] = {}
-    if args.fc_warmup_tokens > 0:
+    if args.fc_warmup_tokens > 0 and not bool(args.do_generation):
         print("\n" + "=" * 80)
         print(f"[FC Warmup] Precomputing baseline warmup tokens: W={args.fc_warmup_tokens} (decoding={args.fc_warmup_decoding}, ban_eos={bool(args.fc_warmup_ban_eos)})")
         print("=" * 80)
-        for task in ["commonsenseqa", "strategyqa", "aqua"]:
+        for task in eval_tasks:
+            if len(candidate_strings(task)) == 0:
+                continue
             prompts = [ex.prompt for ex in eval_by[task]]
             warm_ids = precompute_fc_warmup_tokens(
                 model,
@@ -1302,163 +1580,254 @@ def main():
                 seed=stable_int_seed(args.seed, args.fc_warmup_seed, task, "warmup"),
             )
             warmup_by_task[task] = warm_ids
-            # print a tiny decoded snippet for sanity
-            if warm_ids.shape[0] > 0:
+            if warm_ids.shape[0] > 0 and warm_ids.shape[1] > 0:
                 demo = tok.decode(warm_ids[0].tolist(), skip_special_tokens=True)
                 print(f"[FC Warmup] {task}: warmup_ids shape={warm_ids.shape}; example[0] warmup text (first 120 chars): {demo[:120]!r}")
 
-    # Forced-choice evaluation (k_match + native-k reference)
-    fc_tasks = ["commonsenseqa", "strategyqa", "aqua"]
-    fc_results = {}
-    for task in fc_tasks:
+    # Evaluation across tasks
+    eval_results: Dict[str, Any] = {}
+    for task in eval_tasks:
         exs = eval_by[task]
         n = len(exs)
         print("\n" + "-" * 80)
         print(f"[Task] {task} n={n}")
         print("-" * 80)
 
-        warm_ids = warmup_by_task.get(task, None) if args.fc_warmup_tokens > 0 else None
+        use_generation = bool(args.do_generation) or (len(candidate_strings(task)) == 0)
+        protocol = "generation" if use_generation else "forced_choice"
+        warm_ids = warmup_by_task.get(task, None) if (not use_generation and args.fc_warmup_tokens > 0) else None
 
         # baseline
-        base = forced_choice_logprob_eval(
-            model,
-            tok,
-            exs,
-            task,
-            layer_indices=layer_indices,
-            basis_np=None,
-            alpha=args.alpha_remove,
-            batch_size=args.batch_size,
-            max_prompt_len=args.max_prompt_len,
-            warmup_token_ids=warm_ids,
-            answer_prefix=(args.fc_answer_prefix if bool(args.fc_add_answer_prefix) else ""),
-        )
-        b_acc, b_lo, b_hi = bootstrap_ci_mean(np.array(base["correct"], dtype=np.float32), args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, "fc", "baseline"))
-        # Quick sanity: if we are near chance, the forced-choice decision point is likely misaligned
-        # (e.g., the model is still mid-reasoning). In that case, decode interventions won't show up clearly.
-        cands_for_task = candidate_strings(task)
-        if cands_for_task:
-            chance = 1.0 / float(len(cands_for_task))
-            if abs(b_acc - chance) < 0.02:
-                print(
-                    f"  [WARN] baseline acc ~ chance (acc={b_acc*100:.1f}%, chance={chance*100:.1f}%). "
-                    "This usually means the scoring point is not aligned with the answer, or warmup is too short. "
-                    "Try: increase --fc_warmup_tokens; keep --fc_add_answer_prefix=1; or switch to full generation eval."
-                )
+        if use_generation:
+            base = generation_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=None,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                max_new_tokens=args.gen_max_new_tokens,
+                decoding=args.gen_decoding,
+                temperature=args.gen_temperature,
+                top_p=args.gen_top_p,
+                top_k=args.gen_top_k,
+                seed=stable_int_seed(args.seed, args.gen_seed, task, "gen_base"),
+            )
+        else:
+            base = forced_choice_logprob_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=None,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                warmup_token_ids=warm_ids,
+                answer_prefix=args.fc_answer_prefix,
+                prefix_mode=fc_prefix_mode,
+                save_scores=bool(args.fc_save_scores),
+            )
 
-        print(f"  [FC] baseline acc={fmt_acc(b_acc, b_lo, b_hi)} {base['hook_stats']}")
-
-        # decode-shared (native)
-        dec_full = forced_choice_logprob_eval(
-            model,
-            tok,
-            exs,
-            task,
-            layer_indices=layer_indices,
-            basis_np=Q_decode_full,
-            alpha=args.alpha_remove,
-            batch_size=args.batch_size,
-            max_prompt_len=args.max_prompt_len,
-            warmup_token_ids=warm_ids,
-            answer_prefix=(args.fc_answer_prefix if bool(args.fc_add_answer_prefix) else ""),
-        )
-        d_acc, d_lo, d_hi = bootstrap_ci_mean(np.array(dec_full["correct"], dtype=np.float32), args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, "fc", "decode_full"))
-        print(f"  [FC] decode_shared_full acc={fmt_acc(d_acc, d_lo, d_hi)} {dec_full['hook_stats']}")
-
-        # prefill-shared (native)
-        pre_full = forced_choice_logprob_eval(
-            model,
-            tok,
-            exs,
-            task,
-            layer_indices=layer_indices,
-            basis_np=Q_prefill_full,
-            alpha=args.alpha_remove,
-            batch_size=args.batch_size,
-            max_prompt_len=args.max_prompt_len,
-            warmup_token_ids=warm_ids,
-            answer_prefix=(args.fc_answer_prefix if bool(args.fc_add_answer_prefix) else ""),
-        )
-        p_acc, p_lo, p_hi = bootstrap_ci_mean(np.array(pre_full["correct"], dtype=np.float32), args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, "fc", "prefill_full"))
-        print(f"  [FC] prefill_shared_full acc={fmt_acc(p_acc, p_lo, p_hi)} {pre_full['hook_stats']}")
-
-        # dimension-matched
-        dec_km = forced_choice_logprob_eval(
-            model,
-            tok,
-            exs,
-            task,
-            layer_indices=layer_indices,
-            basis_np=Q_decode_km,
-            alpha=args.alpha_remove,
-            batch_size=args.batch_size,
-            max_prompt_len=args.max_prompt_len,
-            warmup_token_ids=warm_ids,
-            answer_prefix=(args.fc_answer_prefix if bool(args.fc_add_answer_prefix) else ""),
-        )
-        dk_acc, dk_lo, dk_hi = bootstrap_ci_mean(np.array(dec_km["correct"], dtype=np.float32), args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, "fc", "decode_km"))
-        print(f"  [FC] decode_shared_km acc={fmt_acc(dk_acc, dk_lo, dk_hi)}")
-
-        pre_km = forced_choice_logprob_eval(
-            model,
-            tok,
-            exs,
-            task,
-            layer_indices=layer_indices,
-            basis_np=Q_prefill_km,
-            alpha=args.alpha_remove,
-            batch_size=args.batch_size,
-            max_prompt_len=args.max_prompt_len,
-            warmup_token_ids=warm_ids,
-            answer_prefix=(args.fc_answer_prefix if bool(args.fc_add_answer_prefix) else ""),
-        )
-        pk_acc, pk_lo, pk_hi = bootstrap_ci_mean(np.array(pre_km["correct"], dtype=np.float32), args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, "fc", "prefill_km"))
-        print(f"  [FC] prefill_shared_km acc={fmt_acc(pk_acc, pk_lo, pk_hi)}")
-
-        rand_km = forced_choice_logprob_eval(
-            model,
-            tok,
-            exs,
-            task,
-            layer_indices=layer_indices,
-            basis_np=Q_rand_km,
-            alpha=args.alpha_remove,
-            batch_size=args.batch_size,
-            max_prompt_len=args.max_prompt_len,
-            warmup_token_ids=warm_ids,
-            answer_prefix=(args.fc_answer_prefix if bool(args.fc_add_answer_prefix) else ""),
-        )
-        rk_acc, rk_lo, rk_hi = bootstrap_ci_mean(np.array(rand_km["correct"], dtype=np.float32), args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, "fc", "rand_km"))
-        print(f"  [FC] rand_km acc={fmt_acc(rk_acc, rk_lo, rk_hi)}")
-
-        # Paired tests (decode_km vs prefill_km)
         base_arr = np.array(base["correct"], dtype=np.float32)
-        dk_arr = np.array(dec_km["correct"], dtype=np.float32)
-        pk_arr = np.array(pre_km["correct"], dtype=np.float32)
-        stat_dk_vs_pk = summarize_paired(pk_arr, dk_arr, args.bootstrap_iters, args.perm_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, "paired", "dk_vs_pk"))
+        b_acc, b_lo, b_hi = bootstrap_ci_mean(base_arr, args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, protocol, "baseline"))
+        print(f"  [{protocol}] baseline acc={fmt_acc(b_acc, b_lo, b_hi)} {base.get('hook_stats')}")
 
-        fc_results[task] = {
+        # decode_full
+        if use_generation:
+            dec_full = generation_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=Q_decode_full,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                max_new_tokens=args.gen_max_new_tokens,
+                decoding=args.gen_decoding,
+                temperature=args.gen_temperature,
+                top_p=args.gen_top_p,
+                top_k=args.gen_top_k,
+                seed=stable_int_seed(args.seed, args.gen_seed, task, "gen_dec_full"),
+            )
+        else:
+            dec_full = forced_choice_logprob_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=Q_decode_full,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                warmup_token_ids=warm_ids,
+                answer_prefix=args.fc_answer_prefix,
+                prefix_mode=fc_prefix_mode,
+                save_scores=bool(args.fc_save_scores),
+            )
+        d_arr = np.array(dec_full["correct"], dtype=np.float32)
+        d_acc, d_lo, d_hi = bootstrap_ci_mean(d_arr, args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, protocol, "decode_full"))
+        print(f"  [{protocol}] decode_shared_full acc={fmt_acc(d_acc, d_lo, d_hi)} {dec_full.get('hook_stats')}")
+
+        # prefill_full
+        if use_generation:
+            pre_full = generation_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=Q_prefill_full,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                max_new_tokens=args.gen_max_new_tokens,
+                decoding=args.gen_decoding,
+                temperature=args.gen_temperature,
+                top_p=args.gen_top_p,
+                top_k=args.gen_top_k,
+                seed=stable_int_seed(args.seed, args.gen_seed, task, "gen_pre_full"),
+            )
+        else:
+            pre_full = forced_choice_logprob_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=Q_prefill_full,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                warmup_token_ids=warm_ids,
+                answer_prefix=args.fc_answer_prefix,
+                prefix_mode=fc_prefix_mode,
+                save_scores=bool(args.fc_save_scores),
+            )
+        p_arr = np.array(pre_full["correct"], dtype=np.float32)
+        p_acc, p_lo, p_hi = bootstrap_ci_mean(p_arr, args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, protocol, "prefill_full"))
+        print(f"  [{protocol}] prefill_shared_full acc={fmt_acc(p_acc, p_lo, p_hi)} {pre_full.get('hook_stats')}")
+
+        # decode_km
+        if use_generation:
+            dec_km = generation_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=Q_decode_km,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                max_new_tokens=args.gen_max_new_tokens,
+                decoding=args.gen_decoding,
+                temperature=args.gen_temperature,
+                top_p=args.gen_top_p,
+                top_k=args.gen_top_k,
+                seed=stable_int_seed(args.seed, args.gen_seed, task, "gen_dec_km"),
+            )
+        else:
+            dec_km = forced_choice_logprob_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=Q_decode_km,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                warmup_token_ids=warm_ids,
+                answer_prefix=args.fc_answer_prefix,
+                prefix_mode=fc_prefix_mode,
+                save_scores=bool(args.fc_save_scores),
+            )
+        dk_arr = np.array(dec_km["correct"], dtype=np.float32)
+        dk_acc, dk_lo, dk_hi = bootstrap_ci_mean(dk_arr, args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, protocol, "decode_km"))
+        print(f"  [{protocol}] decode_shared_km acc={fmt_acc(dk_acc, dk_lo, dk_hi)}")
+
+        # prefill_km
+        if use_generation:
+            pre_km = generation_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=Q_prefill_km,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                max_new_tokens=args.gen_max_new_tokens,
+                decoding=args.gen_decoding,
+                temperature=args.gen_temperature,
+                top_p=args.gen_top_p,
+                top_k=args.gen_top_k,
+                seed=stable_int_seed(args.seed, args.gen_seed, task, "gen_pre_km"),
+            )
+        else:
+            pre_km = forced_choice_logprob_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=Q_prefill_km,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                warmup_token_ids=warm_ids,
+                answer_prefix=args.fc_answer_prefix,
+                prefix_mode=fc_prefix_mode,
+                save_scores=bool(args.fc_save_scores),
+            )
+        pk_arr = np.array(pre_km["correct"], dtype=np.float32)
+        pk_acc, pk_lo, pk_hi = bootstrap_ci_mean(pk_arr, args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, protocol, "prefill_km"))
+        print(f"  [{protocol}] prefill_shared_km acc={fmt_acc(pk_acc, pk_lo, pk_hi)}")
+
+        # rand_km
+        if use_generation:
+            rand_km = generation_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=Q_rand_km,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                max_new_tokens=args.gen_max_new_tokens,
+                decoding=args.gen_decoding,
+                temperature=args.gen_temperature,
+                top_p=args.gen_top_p,
+                top_k=args.gen_top_k,
+                seed=stable_int_seed(args.seed, args.gen_seed, task, "gen_rand_km"),
+            )
+        else:
+            rand_km = forced_choice_logprob_eval(
+                model, tok, exs, task,
+                layer_indices=layer_indices,
+                basis_np=Q_rand_km,
+                alpha=args.alpha_remove,
+                batch_size=args.batch_size,
+                max_prompt_len=args.max_prompt_len,
+                warmup_token_ids=warm_ids,
+                answer_prefix=args.fc_answer_prefix,
+                prefix_mode=fc_prefix_mode,
+                save_scores=bool(args.fc_save_scores),
+            )
+        rk_arr = np.array(rand_km["correct"], dtype=np.float32)
+        rk_acc, rk_lo, rk_hi = bootstrap_ci_mean(rk_arr, args.bootstrap_iters, args.ci_alpha, seed=stable_int_seed(args.seed, task, protocol, "rand_km"))
+        print(f"  [{protocol}] rand_km acc={fmt_acc(rk_acc, rk_lo, rk_hi)}")
+
+        # Paired tests (decode_km vs prefill_km; paired by example)
+        stat_dk_vs_pk = summarize_paired(
+            baseline_correct=pk_arr,
+            treat_correct=dk_arr,
+            bootstrap_iters=args.bootstrap_iters,
+            perm_iters=args.perm_iters,
+            alpha=args.ci_alpha,
+            seed=stable_int_seed(args.seed, task, protocol, "paired", "dk_vs_pk"),
+        )
+
+        eval_results[task] = {
+            "protocol": protocol,
             "n": n,
-            "baseline": {"acc": b_acc, "ci": [b_lo, b_hi]},
-            "decode_full": {"acc": d_acc, "ci": [d_lo, d_hi], "k": k_decode},
-            "prefill_full": {"acc": p_acc, "ci": [p_lo, p_hi], "k": k_prefill},
-            "decode_km": {"acc": dk_acc, "ci": [dk_lo, dk_hi], "k": k_match},
-            "prefill_km": {"acc": pk_acc, "ci": [pk_lo, pk_hi], "k": k_match},
-            "rand_km": {"acc": rk_acc, "ci": [rk_lo, rk_hi], "k": k_match},
+            "baseline": {"acc": b_acc, "ci": [b_lo, b_hi], "detail": base},
+            "decode_full": {"acc": d_acc, "ci": [d_lo, d_hi], "k": k_decode, "detail": dec_full},
+            "prefill_full": {"acc": p_acc, "ci": [p_lo, p_hi], "k": k_prefill, "detail": pre_full},
+            "decode_km": {"acc": dk_acc, "ci": [dk_lo, dk_hi], "k": k_match, "detail": dec_km},
+            "prefill_km": {"acc": pk_acc, "ci": [pk_lo, pk_hi], "k": k_match, "detail": pre_km},
+            "rand_km": {"acc": rk_acc, "ci": [rk_lo, rk_hi], "k": k_match, "detail": rand_km},
             "paired": {"decode_km_minus_prefill_km": stat_dk_vs_pk},
         }
 
-    # Build Markdown/LaTeX tables
-    warm_str = f" (warmup W={args.fc_warmup_tokens})" if args.fc_warmup_tokens > 0 else ""
-
-    # k_match table
-    km_rows = []
-    for task in fc_tasks:
-        r = fc_results[task]
+    # Tables: all tasks, dimension-matched
+    warm_str = f"W={args.fc_warmup_tokens}" if (args.fc_warmup_tokens > 0 and not bool(args.do_generation)) else "W=0"
+    rows_km = []
+    for task in eval_tasks:
+        r = eval_results[task]
         stat = r["paired"]["decode_km_minus_prefill_km"]
-        km_rows.append(
+        rows_km.append(
             [
                 task,
+                r["protocol"],
                 str(r["n"]),
                 fmt_acc(r["baseline"]["acc"], r["baseline"]["ci"][0], r["baseline"]["ci"][1]),
                 fmt_acc(r["decode_km"]["acc"], r["decode_km"]["ci"][0], r["decode_km"]["ci"][1]),
@@ -1469,8 +1838,9 @@ def main():
             ]
         )
 
-    km_header = [
+    header_km = [
         "Task",
+        "Protocol",
         "n",
         "Baseline",
         f"Decode-shared (k={k_match})",
@@ -1479,31 +1849,28 @@ def main():
         "Δ(Decode-Prefill) [CI]",
         "p",
     ]
-    md_km = md_table(km_rows, km_header)
-
+    md_km = md_table(rows_km, header_km)
     tex_km = latex_table(
-        km_rows,
-        km_header,
+        rows_km,
+        header_km,
         caption=(
-            f"Forced-choice accuracy after removing a fully-shared subspace during decode steps, using dimension-matched bases (k={k_match})."
-            f" Warmup tokens{warm_str} are baseline-generated and teacher-forced for all conditions."
+            f"Prefill-vs-Decode alignment experiment across 9 benchmarks. "
+            f"Dimension-matched bases (k={k_match}). Forced-choice warmup={warm_str} (if protocol=forced_choice). "
+            f"Forced-choice prefix_mode={fc_prefix_mode}."
         ),
-        label="tab:prefill-vs-decode-kmatch",
-        colspec="lrcccccc",
+        label="tab:prefill-vs-decode-9tasks-kmatch",
+        colspec="llrcccccc",
     )
 
-    # native table
-    nat_rows = []
-    for task in fc_tasks:
-        r = fc_results[task]
-        # paired decode_full - prefill_full (note: different k)
-        base = np.array([1.0] * r["n"], dtype=np.float32)  # dummy, we only report Δ via acc diff? keep simple
-        # We'll compute paired using stored correct arrays? Not stored for nat in this compact v3.
-        # Use acc difference with conservative CI omitted here.
+    # Native-k (decode_full vs prefill_full) reference table
+    rows_nat = []
+    for task in eval_tasks:
+        r = eval_results[task]
         delta = (r["decode_full"]["acc"] - r["prefill_full"]["acc"]) * 100
-        nat_rows.append(
+        rows_nat.append(
             [
                 task,
+                r["protocol"],
                 str(r["n"]),
                 fmt_acc(r["baseline"]["acc"], r["baseline"]["ci"][0], r["baseline"]["ci"][1]),
                 fmt_acc(r["decode_full"]["acc"], r["decode_full"]["ci"][0], r["decode_full"]["ci"][1]),
@@ -1513,8 +1880,9 @@ def main():
             ]
         )
 
-    nat_header = [
+    header_nat = [
         "Task",
+        "Protocol",
         "n",
         "Baseline",
         f"Decode-shared (k={k_decode})",
@@ -1522,27 +1890,27 @@ def main():
         "Δ(Decode-Prefill)",
         "p",
     ]
-    md_nat = md_table(nat_rows, nat_header)
+    md_nat = md_table(rows_nat, header_nat)
     tex_nat = latex_table(
-        nat_rows,
-        nat_header,
-        caption=(
-            "Native shared-k reference table (no dimension matching). "
-            f"Warmup tokens{warm_str} are baseline-generated and teacher-forced for all conditions."
-        ),
-        label="tab:prefill-vs-decode-native",
-        colspec="lrccccc",
+        rows_nat,
+        header_nat,
+        caption="Native shared-k reference table (no dimension matching).",
+        label="tab:prefill-vs-decode-9tasks-native",
+        colspec="llrccccc",
     )
 
-    # Save JSON
     results = {
         "config": {
             "model": args.model,
             "dtype": args.dtype,
             "device": args.device,
+            "trust_remote_code": bool(args.trust_remote_code),
             "layer": args.layer,
+            "tasks": tasks,
+            "eval_tasks": eval_tasks,
             "n_prompts": args.n_prompts,
             "eval_n": args.eval_n,
+            "k_eval": int(getattr(args, "k_eval", 0) or 0),
             "calib_decode_max_new_tokens": args.calib_decode_max_new_tokens,
             "per_task_max_states": args.per_task_max_states,
             "pca_var": args.pca_var,
@@ -1550,19 +1918,39 @@ def main():
             "m_shared": args.m_shared,
             "alpha_remove": args.alpha_remove,
             "match_state_count": state_match_info,
-            "fc_warmup_tokens": args.fc_warmup_tokens,
-            "fc_warmup_decoding": args.fc_warmup_decoding,
-            "fc_warmup_ban_eos": bool(args.fc_warmup_ban_eos),
-            "fc_warmup_seed": args.fc_warmup_seed,
-            "fc_add_answer_prefix": bool(args.fc_add_answer_prefix),
-            "fc_answer_prefix": args.fc_answer_prefix,
+            "prompt": {
+                "template_randomization": bool(args.template_randomization),
+                "template_seed": args.template_seed,
+                "shuffle_choices": bool(args.shuffle_choices),
+                "add_answer_prefix": bool(args.add_answer_prefix),
+                "answer_prefix": args.answer_prefix,
+            },
+            "forced_choice": {
+                "enabled": not bool(args.do_generation),
+                "fc_warmup_tokens": args.fc_warmup_tokens,
+                "fc_warmup_decoding": args.fc_warmup_decoding,
+                "fc_warmup_ban_eos": bool(args.fc_warmup_ban_eos),
+                "fc_warmup_seed": args.fc_warmup_seed,
+                "fc_prefix_mode": fc_prefix_mode,
+                "fc_answer_prefix": args.fc_answer_prefix,
+            },
+            "generation": {
+                "enabled": bool(args.do_generation),
+                "gen_decoding": args.gen_decoding,
+                "gen_temperature": args.gen_temperature,
+                "gen_top_p": args.gen_top_p,
+                "gen_top_k": args.gen_top_k,
+                "gen_max_new_tokens": args.gen_max_new_tokens,
+                "gen_seed": args.gen_seed,
+            },
             "seed": args.seed,
             "dataset_meta": meta_by,
         },
         "basis": {
             "decode": {"cross_dim": extra_decode["cross_dim"], "shared_k": k_decode, "n_balanced": extra_decode["n_balanced"]},
             "prefill": {"cross_dim": extra_prefill["cross_dim"], "shared_k": k_prefill, "n_balanced": extra_prefill["n_balanced"]},
-            "k_match": k_match,
+            "k_match_raw": int(k_match_raw),
+            "k_match": int(k_match),
             "subspace_similarity_full": subspace_similarity(Q_decode_full, Q_prefill_full),
             "subspace_similarity_kmatch": subspace_similarity(Q_decode_km, Q_prefill_km),
             "energy": {
@@ -1581,54 +1969,42 @@ def main():
                 },
             },
         },
-        "forced_choice": fc_results,
+        "eval": eval_results,
         "tables": {"markdown_kmatch": md_km, "markdown_native": md_nat, "latex_kmatch": tex_km, "latex_native": tex_nat},
     }
 
     with open(args.out_json, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2, default=json_default)
 
-    # Save TXT summary
+    # Save TXT/MD/TEX summaries
     summary_lines = []
     summary_lines.append("[Summary]")
-    summary_lines.append(f"Model={args.model} dtype={args.dtype} device={args.device} layer={args.layer}")
+    summary_lines.append(f"Model={args.model} dtype={args.dtype} device={args.device} layer={args.layer} trust_remote_code={bool(args.trust_remote_code)}")
+    summary_lines.append(f"Tasks={tasks}")
     summary_lines.append(f"Decode shared_k={k_decode} Prefill shared_k={k_prefill} k_match={k_match}")
-    if args.match_state_count:
-        summary_lines.append(f"State-count matching: enabled (n_match={state_match_info.get('n_match')})")
+    summary_lines.append(f"State-count matching: {'enabled' if args.match_state_count else 'disabled'}")
+    if not bool(args.do_generation):
+        summary_lines.append(f"Forced-choice warmup tokens: {args.fc_warmup_tokens}")
+        summary_lines.append(f"Forced-choice prefix_mode: {fc_prefix_mode} prefix={args.fc_answer_prefix!r}")
     else:
-        summary_lines.append("State-count matching: disabled")
-    summary_lines.append(f"FC warmup tokens: {args.fc_warmup_tokens}")
-    summary_lines.append(f"FC add answer prefix: {bool(args.fc_add_answer_prefix)}")
-    summary_lines.append(f"FC answer prefix: {args.fc_answer_prefix!r}")
+        summary_lines.append("Evaluation protocol: GENERATION for all tasks (--do_generation=1)")
     summary_lines.append("")
-    summary_lines.append("# PREFILL vs DECODE BASIS (estimation distribution mismatch test)")
-    summary_lines.append("")
-    summary_lines.append(f"- Model: `{args.model}`  layer={args.layer}  dtype={args.dtype}  device={args.device}")
-    summary_lines.append(f"- Decode shared_k={k_decode}, Prefill shared_k={k_prefill}, k_match={k_match}")
-    summary_lines.append(f"- State-count matching: {'enabled' if args.match_state_count else 'disabled'}")
-    summary_lines.append(f"- Forced-choice warmup tokens: {args.fc_warmup_tokens} (baseline-generated, teacher-forced)")
-    summary_lines.append(f"- Forced-choice answer prefix: {args.fc_answer_prefix!r} (teacher-forced before scoring; enabled={bool(args.fc_add_answer_prefix)})")
-    summary_lines.append("")
-    summary_lines.append("## Dimension-matched forced-choice (k_match)")
-    summary_lines.append(f"### Forced-choice accuracy with dimension-matched shared bases (k={k_match})")
+    summary_lines.append("## Dimension-matched results (k_match)")
     summary_lines.append(md_km)
     summary_lines.append("")
-    summary_lines.append("## Native-k forced-choice (reference)")
-    summary_lines.append("### Forced-choice accuracy with native shared-k (reference)")
+    summary_lines.append("## Native-k reference")
     summary_lines.append(md_nat)
     summary_lines.append("")
 
     with open(args.out_txt, "w", encoding="utf-8") as f:
         f.write("\n".join(summary_lines) + "\n")
-
-    # Save MD and TEX
     with open(args.out_md, "w", encoding="utf-8") as f:
         f.write("\n".join(summary_lines) + "\n")
     with open(args.out_tex, "w", encoding="utf-8") as f:
         f.write(tex_km + "\n" + tex_nat + "\n")
 
     print("\n" + "=" * 80)
-    print("\n".join(summary_lines[:10]))
+    print("\n".join(summary_lines[:12]))
     print("...")
     print(f"[Done] JSON: {args.out_json}")
     print(f"[Done] TXT : {args.out_txt}")

@@ -30,7 +30,7 @@ New feature:
     Note: tqdm progress bars default to stderr, so the txt log stays mostly clean.
 
 Run example:
-  CUDA_VISIBLE_DEVICES=1 python prove_sharedness_decode_fair.py \
+  CUDA_VISIBLE_DEVICES=0 python prove_sharedness_decode_fair.py \
     --model meta-llama/Llama-2-7b-chat-hf \
     --device cuda \
     --model_dtype fp32 \
@@ -659,6 +659,37 @@ def load_model_and_tokenizer(model_name: str, device: str, model_dtype: str):
     return model, tok
 
 
+
+def infer_hidden_dim(model) -> Optional[int]:
+    cfg = getattr(model, "config", None)
+
+    # 1) 常见字段（大多数纯文本LM）
+    for k in ("hidden_size", "n_embd", "dim", "d_model", "model_dim", "embed_dim"):
+        v = getattr(cfg, k, None)
+        if isinstance(v, int) and v > 0:
+            return v
+
+    # 2) Gemma3 / 多模态：hidden_size 在 text_config 里
+    text_cfg = getattr(cfg, "text_config", None)
+    if text_cfg is not None:
+        for k in ("hidden_size", "n_embd", "dim", "d_model", "model_dim", "embed_dim"):
+            v = getattr(text_cfg, k, None)
+            if isinstance(v, int) and v > 0:
+                return v
+
+    # 3) 最终兜底：直接从 input embedding 的 weight 维度读
+    try:
+        emb = model.get_input_embeddings()
+        if emb is not None and hasattr(emb, "weight") and isinstance(emb.weight, torch.Tensor) and emb.weight.ndim == 2:
+            return int(emb.weight.shape[1])
+        if emb is not None and hasattr(emb, "embedding_dim"):
+            return int(emb.embedding_dim)
+    except Exception:
+        pass
+
+    return None
+
+
 # -----------------------------
 # Main
 # -----------------------------
@@ -727,10 +758,16 @@ def main():
         if args.layer >= len(layers):
             raise RuntimeError(f"layer={args.layer} out of range, num_layers={len(layers)}")
 
-        hidden_dim = getattr(model.config, "hidden_size", None) or getattr(model.config, "n_embd", None)
+        # hidden_dim = getattr(model.config, "hidden_size", None) or getattr(model.config, "n_embd", None)
+        # if hidden_dim is None:
+        #     raise RuntimeError("Cannot infer hidden_dim")
+        # print(f"[Env] hidden_dim={hidden_dim}")
+        
+        hidden_dim = infer_hidden_dim(model)
         if hidden_dim is None:
-            raise RuntimeError("Cannot infer hidden_dim")
-        print(f"[Env] hidden_dim={hidden_dim}")
+            print(f"[Warn] Could not infer hidden_dim (config_class={type(model.config)}). Continue anyway.")
+        else:
+            print(f"[Env] hidden_dim={hidden_dim}")
 
         # Load calibration prompts
         prompts_by_task = load_calib_prompts(args.n_prompts, args.seed)

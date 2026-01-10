@@ -1,125 +1,54 @@
 # -*- coding: utf-8 -*-
 """
-disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py
+disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8_reasoning.py
 
-Decode-last-token (decode-only) shared-subspace removal with:
-  (1) Energy-balance sanity checks (shared vs random bases).
-  (2) Template randomization (prompt wording + optional choice shuffling).
-  (3) Leave-One-Task-Out (LOTO) basis estimation across 8 CoT-style HF datasets.
+NOTE: n_eval should be 2048, and use_forced_choice should be 1. 这个代码在增加n_eval和use_forced_choice之后，结果就对了。
 
-Default tasks (8):
-  - gsm8k (gsm8k/main)                     [numeric]
-  - commonsenseqa (commonsense_qa)         [MC A-E]
-  - strategyqa (ChilleD/StrategyQA)        [Yes/No]
-  - aqua (aqua_rat)                        [MC A-E]
-  - arc_challenge (ai2_arc/ARC-Challenge)  [MC A-D]
-  - openbookqa (openbookqa/main)           [MC A-D]
-  - qasc (qasc)                            [MC A-H]
-  - logiqa (logiqa)                        [MC A-D]
+This is a *reasoning + LOTO* script with **generation** evaluation (as in your original)
+AND an improved **forced-choice** evaluation path for MC/YesNo tasks.
 
-What LOTO means here:
-  - For each held-out task t, estimate the shared subspace Q_shared using the other (N-1) tasks only.
-  - Then evaluate interventions on the held-out task (and optionally all tasks).
-  - This avoids leakage of the evaluated task into subspace estimation.
+Why this file exists:
+  - In many CoT benchmarks, free-form generation + parsing can be noisy (format sensitivity).
+  - Forced-choice logprob is often a cleaner metric BUT it is very easy to accidentally
+    evaluate at the wrong "decision point" (e.g., after warmup tokens without re-anchoring
+    with an answer prefix), producing chance-level baselines.
 
-Key features inherited from your energy_balance script:
-  - A3 decode-aligned basis: collect decode-phase last-token states (seq_len==1) using KV-cache decode calls.
-  - pooled PCA -> sharedness -> shared basis
-  - intervention: last-token removal only (no rotation), alpha=1.0 default
-  - staged gating by generated token count
-  - evaluation: EM accuracy + bootstrap CI + paired sign-flip permutation test (paired by example)
-  - greedy main + sampling robustness (optional)
-  - SANITY:
-      * orthonormality of shared/rand bases
-      * overlap between shared and rand
-      * energy ratio on calibration decode states (shared vs rand)
-      * hook stats (decode_calls / intervened)
-      * extraction rate, eos rate, avg_new_tokens
-
-Requirements:
-  pip install transformers datasets numpy torch tqdm
-
-Also requires your project utilities:
-  from joint_subspace_large.disturb_cross_task_all_shared import (
-      get_model_layers, compute_cross_task_subspace, find_fully_shared_basis_improved
-  )
-  
-  
-[Data] task=gsm8k loaded_prompts=128
-[Data] task=commonsenseqa loaded_prompts=128
-[Data] task=strategyqa loaded_prompts=128
-[Data] task=aqua loaded_prompts=128
-[Data] task=openbookqa loaded_prompts=128
-[Data] task=qasc loaded_prompts=128
-[Data] task=boolq loaded_prompts=128
-[Data] task=piqa loaded_prompts=128
-
-gsm8k,commonsenseqa,strategyqa,aqua,piqa,arc_challenge,openbookqa,qasc,logiqa,boolq
-
-Example usage:
-
-  # Single (all-tasks) basis estimation + evaluation:
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-    --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
-    --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
-    --mode all \
-    --n_subspace 128 --n_eval 256 --layer 10 \
-    --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-    --reasoning_tokens 128 --max_new_tokens 256 \
-    --template_randomization 1 --shuffle_choices 1 \
-    --do_sample 0 --out_json results/disturb_cot/all_tasks_energy_balance_results_llama2-7b-chat-hf_aligned.json --out_md results/disturb_cot/all_tasks_energy_balance_summary_llama2-7b-chat-hf_aligned.md
-
-  # LOTO (estimate basis on N-1 tasks, evaluate held-out only):
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-    --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
-    --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
-    --mode loto \
-    --loto_eval_mode heldout \
-    --n_subspace 128 --n_eval 256 --layer 10 \
-    --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-    --reasoning_tokens 128 --max_new_tokens 256 \
-    --template_randomization 1 --shuffle_choices 1 \
-    --do_sample 0 --out_json results/disturb_cot/energy_balance_loto8_results_llama2-7b-chat-hf_aligned.json --out_md results/disturb_cot/energy_balance_loto8_summary_llama2-7b-chat-hf_aligned.md
+This version improves the LOTO script's forced-choice so results "make sense":
+  1) Decode-aligned prompt boundary for evaluation:
+        process prompt[:-1] as prefill, then prompt[-1:] as a decode call (seq_len==1).
+     This ensures decode-only hooks (your interventions) can affect the *first* decision logits.
+  2) Optional forced-choice warmup tokens (teacher-forced, shared across conditions).
+  3) Robust answer-prefix policy:
+        --fc_prefix_mode auto|always|never
+     Default "auto" makes forced-choice *hard to accidentally break*:
+        - if warmup_tokens > 0 => ALWAYS add fc_answer_prefix after warmup
+        - else add prefix only if the prompt doesn't already end with it
+  4) Forced-choice correctness uses benchmark_dataloaders.is_correct() for consistency.
 
 Notes:
-  - qasc/logiqa schemas can vary slightly across HF versions; this script includes schema inference + fallbacks.
-  - If a dataset fails to load, you can remove it from --tasks.
+  - gsm8k stays generation-only (numeric free-form).
+  - For MC tasks, you can choose protocol with --use_forced_choice 1 (recommended for debugging).
+  - This script can import from your existing benchmark_dataloaders (no duplication).
 
-# A) LOTO（只评估 heldout），只跑 greedy（最省时间，最适合先出结论）
-CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-  --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
-  --mode loto --loto_eval_mode heldout \
-  --tasks gsm8k,commonsenseqa,strategyqa,aqua,arc_challenge,openbookqa,qasc,logiqa \
-  --layer 10 --n_subspace 128 --n_eval 256 \
-  --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-  --reasoning_tokens 128 --max_new_tokens 256 \
-  --template_randomization 1 --shuffle_choices 1 \
-  --add_answer_prefix 1 --answer_prefix $'\nFinal answer:' \
-  --do_sample 0 --out_json energy_balance_loto8_results_llama2-7b-chat-hf.json --out_md energy_balance_loto8_summary_llama2-7b-chat-hf.md
+Example (LOTO heldout + forced-choice on MC tasks):
+  CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8_reasoning.py \
+    --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
+    --mode loto --loto_eval_mode heldout \
+    --tasks gsm8k,commonsenseqa,strategyqa,aqua,arc_challenge,openbookqa,qasc,logiqa \
+    --layer 10 --n_subspace 128 --n_eval 2048 \
+    --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+    --reasoning_tokens 128 --max_new_tokens 256 \
+    --template_randomization 1 --shuffle_choices 1 \
+    --add_answer_prefix 1 --answer_prefix $'\nFinal answer:' \
+    --use_forced_choice 1 \
+    --fc_warmup_tokens 0 \
+    --fc_prefix_mode auto --fc_answer_prefix $'\nFinal answer:' \
+    --do_sample 0 \
+    --out_json energy_balance_loto8_reasoning_fc_eval2048.json --out_md energy_balance_loto8_reasoning_fc_eval2048.md
 
-# B) 只跑某一个 holdout（debug / 快速迭代）
-CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-  --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
-  --mode loto --loto_eval_mode heldout --loto_only commonsenseqa \
-  --layer 10 --n_subspace 128 --n_eval 256 \
-  --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-  --reasoning_tokens 128 --max_new_tokens 256 \
-  --template_randomization 1 --shuffle_choices 1 \
-  --add_answer_prefix 1 --answer_prefix 0 \
-  --do_sample 0
+If you want the forced-choice "deep decision point" style:
+  --fc_warmup_tokens 128 --fc_prefix_mode auto   # auto will re-anchor with answer prefix after warmup
 
-# C) 非 LOTO（all tasks 一把估 basis）
-CUDA_VISIBLE_DEVICES=0 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-  --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
-  --mode all \
-  --tasks gsm8k,commonsenseqa,strategyqa,aqua,arc_challenge,openbookqa,qasc,logiqa \
-  --layer 10 --n_subspace 128 --n_eval 256 \
-  --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-  --reasoning_tokens 128 --max_new_tokens 256 \
-  --template_randomization 1 --shuffle_choices 1 \
-  --add_answer_prefix 1 --answer_prefix $'\nFinal answer:' \
-  --do_sample 0
-  
 """
 
 import os
@@ -129,7 +58,6 @@ import json
 import math
 import random
 import argparse
-import hashlib
 from typing import Dict, List, Tuple, Optional, Any, DefaultDict
 from collections import defaultdict
 
@@ -153,18 +81,29 @@ from joint_subspace_large.disturb_cross_task_all_shared import (  # noqa: E402
 # ---------------------------------------------------------------------
 # Import data loading and evaluation utilities from benchmark_dataloaders
 # ---------------------------------------------------------------------
-# from benchmark_dataloaders import (  # noqa: E402
-#     Example,
-#     load_selected_tasks,
-#     parse_prediction,
-#     is_correct as is_correct_bool,
-#     stable_int_seed as stable_int_seed_bdl,
-# )
-from benchmark_dataloaders import *
-from benchmark_dataloaders import (
-    stable_int_seed as stable_int_seed_bdl,
-    is_correct as is_correct_bool,
-)
+# You can keep your local benchmark_dataloaders.py in the same dir, or on PYTHONPATH.
+# This script uses Example/load_selected_tasks/parse_prediction/is_correct/stable_int_seed.
+try:
+    from benchmark_dataloaders import *  # noqa: F401,F403
+    from benchmark_dataloaders import (  # noqa: E402
+        stable_int_seed as stable_int_seed_bdl,
+        is_correct as is_correct_bool,
+    )
+except Exception:
+    # Fallback: some users keep renamed copies (e.g., benchmark_dataloaders_aqua_prefix_default.py)
+    try:
+        from benchmark_dataloaders_aqua_prefix_default import *  # type: ignore  # noqa: F401,F403
+        from benchmark_dataloaders_aqua_prefix_default import (  # type: ignore  # noqa: E402
+            stable_int_seed as stable_int_seed_bdl,
+            is_correct as is_correct_bool,
+        )
+    except Exception as e:  # pragma: no cover
+        raise RuntimeError(
+            "Failed to import benchmark_dataloaders.\n"
+            "Put benchmark_dataloaders.py next to this script, or ensure it's on PYTHONPATH.\n"
+            "As a fallback, we also try benchmark_dataloaders_aqua_prefix_default.py."
+        ) from e
+
 
 # -----------------------------
 # Repro / utils
@@ -176,8 +115,10 @@ def set_global_seed(seed: int) -> None:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-# Use stable_int_seed from benchmark_dataloaders
+
+# Use stable_int_seed from benchmark_dataloaders (keeps consistency with your loaders)
 stable_int_seed = stable_int_seed_bdl
+
 
 def json_default(o):
     if isinstance(o, (np.integer,)):
@@ -187,6 +128,22 @@ def json_default(o):
     if isinstance(o, (np.ndarray,)):
         return o.tolist()
     return str(o)
+
+
+def _norm_prefix_arg(x: Any) -> str:
+    """Treat '0'/'none'/'null' as empty prefix (helps with CLI habits)."""
+    if x is None:
+        return ""
+    s = str(x)
+    if s.strip().lower() in {"0", "none", "null", "false"}:
+        return ""
+    return s
+
+
+# Wrapper to convert is_correct bool to int for compatibility
+def is_correct(dataset: str, pred: str, gold: str) -> int:
+    return int(is_correct_bool(dataset, pred, gold))
+
 
 # -----------------------------
 # Stats: bootstrap + paired test
@@ -205,6 +162,7 @@ def bootstrap_ci_mean(values: np.ndarray, iters: int, alpha: float, seed: int) -
     hi = float(np.percentile(boots, 100 * (1 - alpha / 2)))
     return m, lo, hi
 
+
 def paired_bootstrap_ci_diff(baseline: np.ndarray, treatment: np.ndarray, iters: int, alpha: float, seed: int) -> Tuple[float, float, float]:
     assert baseline.shape == treatment.shape
     diffs = treatment - baseline
@@ -218,6 +176,7 @@ def paired_bootstrap_ci_diff(baseline: np.ndarray, treatment: np.ndarray, iters:
     lo = float(np.percentile(boots, 100 * (alpha / 2)))
     hi = float(np.percentile(boots, 100 * (1 - alpha / 2)))
     return obs, lo, hi
+
 
 def signflip_permutation_test(baseline: np.ndarray, treatment: np.ndarray, iters: int, seed: int) -> float:
     """Two-sided sign-flip permutation test on paired diffs."""
@@ -235,6 +194,7 @@ def signflip_permutation_test(baseline: np.ndarray, treatment: np.ndarray, iters
         if abs(perm) >= abs(obs):
             count += 1
     return float((count + 1) / (iters + 1))
+
 
 def summarize_paired(
     baseline_correct: np.ndarray,
@@ -262,12 +222,10 @@ def summarize_paired(
         "p_value": p,
     }
 
+
 def fmt_acc(acc: float, lo: float, hi: float) -> str:
     return f"{acc*100:.1f} [{lo*100:.1f}, {hi*100:.1f}]"
 
-# Wrapper to convert is_correct bool to int for compatibility
-def is_correct(dataset: str, pred: str, gold: str) -> int:
-    return int(is_correct_bool(dataset, pred, gold))
 
 # -----------------------------
 # Decoding utilities (top-p/top-k)
@@ -285,6 +243,7 @@ def top_p_filtering(logits: torch.Tensor, top_p: float) -> torch.Tensor:
     filtered.scatter_(dim=-1, index=sorted_idx, src=sorted_logits)
     return filtered
 
+
 def top_k_filtering(logits: torch.Tensor, top_k: int) -> torch.Tensor:
     if top_k is None or top_k <= 0:
         return logits
@@ -292,6 +251,64 @@ def top_k_filtering(logits: torch.Tensor, top_k: int) -> torch.Tensor:
     values, _ = torch.topk(logits, top_k, dim=-1)
     min_values = values[:, -1].unsqueeze(-1)
     return torch.where(logits < min_values, torch.full_like(logits, float("-inf")), logits)
+
+
+def _choose_next_token(
+    logits: torch.Tensor,
+    *,
+    decoding: str,
+    temperature: float,
+    top_p: float,
+    top_k: int,
+    eos_token_id: int,
+    ban_eos: bool,
+) -> torch.Tensor:
+    """Return next token ids [B,1]."""
+    assert decoding in ["greedy", "sample"]
+    if ban_eos:
+        logits = logits.clone()
+        logits[:, eos_token_id] = float("-inf")
+
+    if decoding == "greedy":
+        return torch.argmax(logits, dim=-1, keepdim=True)
+
+    lt = logits / max(temperature, 1e-6)
+    lt = top_k_filtering(lt, top_k=top_k)
+    lt = top_p_filtering(lt, top_p=top_p)
+    probs = torch.softmax(lt, dim=-1)
+    return torch.multinomial(probs, num_samples=1)
+
+
+# -----------------------------
+# Decode-aligned prompt boundary helper
+# -----------------------------
+@torch.no_grad()
+def _cache_advanced_prompt_boundary(model, ids: torch.Tensor, attn: torch.Tensor):
+    """
+    Compute (past, logits_next) such that the last prompt token is processed with seq_len==1.
+
+    This matters because your interventions are decode-only (seq_len==1). Without this,
+    the *first* next-token logits after the prompt would be produced by a prefill call
+    and would NOT be affected by interventions.
+    """
+    if ids.ndim != 2:
+        raise ValueError(f"ids must be 2D [B,T], got {ids.shape}")
+    _, T = ids.shape
+    if T == 0:
+        raise ValueError("Empty prompt")
+    if T == 1:
+        out1 = model(input_ids=ids, attention_mask=attn, use_cache=True)
+        return out1.past_key_values, out1.logits[:, -1, :]
+
+    out0 = model(input_ids=ids[:, :-1], attention_mask=attn[:, :-1], use_cache=True)
+    out1 = model(
+        input_ids=ids[:, -1:],
+        attention_mask=attn,
+        use_cache=True,
+        past_key_values=out0.past_key_values,
+    )
+    return out1.past_key_values, out1.logits[:, -1, :]
+
 
 # -----------------------------
 # Decode last-token activation collector (A3)
@@ -341,12 +358,14 @@ class DecodeLastTokenActivationCollector:
             return None
         return np.concatenate(chunks, axis=0)
 
+
 def _subsample_rows_np(x: np.ndarray, n_max: int, seed: int) -> np.ndarray:
     if n_max is None or n_max <= 0 or x.shape[0] <= n_max:
         return x
     rng = np.random.default_rng(seed)
     idx = rng.choice(x.shape[0], size=n_max, replace=False)
     return x[idx]
+
 
 @torch.no_grad()
 def collect_decode_last_token_states(
@@ -367,6 +386,10 @@ def collect_decode_last_token_states(
     eos = tokenizer.eos_token_id
     model.eval()
 
+    tokenizer.padding_side = "left"
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
     for i in tqdm(range(0, len(prompts), batch_size), desc="CollectDecode"):
         batch = prompts[i:i+batch_size]
         inputs = tokenizer(
@@ -383,21 +406,20 @@ def collect_decode_last_token_states(
 
         unfinished = torch.ones(B, dtype=torch.bool, device=device)
 
-        # Prefill (no capture)
+        # Decode-aligned boundary: process prompt last token via seq_len==1 call
         collector.set_capture(False, None)
-        out = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True)
-        logits = out.logits[:, -1, :]
-        past = out.past_key_values
+        past, logits = _cache_advanced_prompt_boundary(model, input_ids, attention_mask)
 
         for _ in range(max_new_tokens):
-            if decoding == "greedy":
-                next_token = torch.argmax(logits, dim=-1, keepdim=True)
-            else:
-                lt = logits / max(temperature, 1e-6)
-                lt = top_k_filtering(lt, top_k=top_k)
-                lt = top_p_filtering(lt, top_p=top_p)
-                probs = torch.softmax(lt, dim=-1)
-                next_token = torch.multinomial(probs, num_samples=1)
+            next_token = _choose_next_token(
+                logits,
+                decoding=decoding,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                eos_token_id=eos,
+                ban_eos=False,
+            )
 
             next_token = torch.where(
                 unfinished.unsqueeze(-1),
@@ -426,6 +448,7 @@ def collect_decode_last_token_states(
 
         collector.set_capture(False, None)
 
+
 # -----------------------------
 # Basis utilities
 # -----------------------------
@@ -433,17 +456,20 @@ def orthonormalize_np(basis: np.ndarray) -> np.ndarray:
     q, _ = np.linalg.qr(basis.astype(np.float32, copy=False))
     return q.astype(np.float32, copy=False)
 
+
 def max_offdiag(Q: np.ndarray) -> float:
     G = Q.T @ Q
     k = G.shape[0]
     G = G - np.eye(k, dtype=G.dtype)
     return float(np.max(np.abs(G))) if k > 0 else 0.0
 
+
 def max_overlap(Qa: np.ndarray, Qb: np.ndarray) -> float:
     if Qa.size == 0 or Qb.size == 0:
         return 0.0
     M = Qa.T @ Qb
     return float(np.max(np.abs(M)))
+
 
 def energy_ratio_stats(states: np.ndarray, Q: np.ndarray) -> Dict[str, float]:
     eps = 1e-12
@@ -453,6 +479,7 @@ def energy_ratio_stats(states: np.ndarray, Q: np.ndarray) -> Dict[str, float]:
     den = np.sum(H * H, axis=1) + eps
     r = num / den
     return {"mean": float(np.mean(r)), "p50": float(np.percentile(r, 50)), "p95": float(np.percentile(r, 95))}
+
 
 def infer_component_variances(contributions: Dict[str, Any], tasks: List[str], cross_dim: int) -> np.ndarray:
     candidates = []
@@ -475,6 +502,7 @@ def infer_component_variances(contributions: Dict[str, Any], tasks: List[str], c
         candidates.append(v[:cross_dim])
     pooled = np.mean(np.stack(candidates, axis=0), axis=0)
     return pooled
+
 
 def select_rand_indices(
     rand_type: str,
@@ -532,6 +560,7 @@ def select_rand_indices(
         return chosen
 
     raise ValueError(f"Unknown rand_type={rand_type}")
+
 
 @torch.no_grad()
 def compute_shared_subspace_decode_aligned(
@@ -671,6 +700,7 @@ def compute_shared_subspace_decode_aligned(
     }
     return joint_subspace.astype(np.float32, copy=False), shared_indices, extra, task_activations
 
+
 # -----------------------------
 # Intervention hooks (last-token removal + staged)
 # -----------------------------
@@ -692,11 +722,19 @@ class GenerationState:
         newly_finished = active & (next_tokens == eos_token_id)
         self.unfinished[newly_finished] = False
 
+    def clone(self) -> "GenerationState":
+        st = GenerationState(self.batch_size, self.device, self.reasoning_threshold)
+        st.unfinished = self.unfinished.clone()
+        st.gen_steps = self.gen_steps.clone()
+        return st
+
+
 class HookStats:
     def __init__(self, name: str):
         self.name = name
         self.decode_calls = 0
         self.intervened = 0
+
 
 class LastTokenRemovalHook:
     def __init__(self, Q_np: np.ndarray, alpha: float, stats: HookStats):
@@ -729,6 +767,7 @@ class LastTokenRemovalHook:
         if isinstance(output, tuple):
             return (hs2,) + output[1:]
         return hs2
+
 
 class LastTokenStagedRemovalHook(LastTokenRemovalHook):
     def __init__(self, Q_np: np.ndarray, alpha: float, stats: HookStats, reasoning_threshold: int):
@@ -769,8 +808,63 @@ class LastTokenStagedRemovalHook(LastTokenRemovalHook):
             return (hs2,) + output[1:]
         return hs2
 
+
 # -----------------------------
-# Generation + per-example stats
+# Hook registration
+# -----------------------------
+def register_hooks_for_condition(
+    model,
+    layer_indices: List[int],
+    Q_np: Optional[np.ndarray],
+    condition: str,   # "baseline" | "full" | "staged"
+    alpha: float,
+    reasoning_token_threshold: int,
+) -> Tuple[List[Any], Optional[Any], List[HookStats]]:
+    assert condition in ["baseline", "full", "staged"]
+    if condition == "baseline":
+        return [], None, []
+
+    assert Q_np is not None
+    layers, _ = get_model_layers(model)
+
+    handles = []
+    staged_hooks: List[LastTokenStagedRemovalHook] = []
+    hook_stats: List[HookStats] = []
+
+    for layer_idx in layer_indices:
+        if layer_idx >= len(layers):
+            print(f"[Warn] layer_idx={layer_idx} out of range, skipping")
+            continue
+
+        if condition == "full":
+            stats = HookStats(name=f"full@{layer_idx}")
+            hk = LastTokenRemovalHook(Q_np, alpha=alpha, stats=stats)
+            handles.append(layers[layer_idx].register_forward_hook(hk))
+            hook_stats.append(stats)
+        else:
+            stats = HookStats(name=f"staged@{layer_idx}")
+            hk = LastTokenStagedRemovalHook(Q_np, alpha=alpha, stats=stats, reasoning_threshold=reasoning_token_threshold)
+            staged_hooks.append(hk)
+            handles.append(layers[layer_idx].register_forward_hook(hk))
+            hook_stats.append(stats)
+
+    def setter(state_or_none: Optional[GenerationState]) -> None:
+        for hk in staged_hooks:
+            hk.set_state(state_or_none)
+
+    return handles, (setter if condition == "staged" else None), hook_stats
+
+
+def remove_hooks(handles: List[Any]) -> None:
+    for h in handles:
+        try:
+            h.remove()
+        except Exception:
+            pass
+
+
+# -----------------------------
+# Generation + per-example stats (decode-aligned evaluation)
 # -----------------------------
 @torch.no_grad()
 def generate_continuations(
@@ -823,21 +917,21 @@ def generate_continuations(
         if state_setter is not None:
             state_setter(state)
 
-        out = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True)
-        logits = out.logits[:, -1, :]
-        past = out.past_key_values
+        # Decode-aligned boundary
+        past, logits = _cache_advanced_prompt_boundary(model, input_ids, attention_mask)
 
         generated = input_ids
 
         for _ in range(max_new_tokens):
-            if decoding == "greedy":
-                next_token = torch.argmax(logits, dim=-1, keepdim=True)
-            else:
-                lt = logits / max(temperature, 1e-6)
-                lt = top_k_filtering(lt, top_k=top_k)
-                lt = top_p_filtering(lt, top_p=top_p)
-                probs = torch.softmax(lt, dim=-1)
-                next_token = torch.multinomial(probs, num_samples=1)
+            next_token = _choose_next_token(
+                logits,
+                decoding=decoding,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                eos_token_id=eos,
+                ban_eos=False,
+            )
 
             next_token = torch.where(
                 state.unfinished.unsqueeze(-1),
@@ -878,65 +972,11 @@ def generate_continuations(
 
     return continuations, np.array(eos_hit, dtype=np.int32), np.array(new_tok, dtype=np.int32)
 
-# -----------------------------
-# Hook registration
-# -----------------------------
-def register_hooks_for_condition(
-    model,
-    layer_indices: List[int],
-    Q_np: Optional[np.ndarray],
-    condition: str,   # "baseline" | "full" | "staged"
-    alpha: float,
-    reasoning_token_threshold: int,
-) -> Tuple[List[Any], Optional[Any], List[HookStats]]:
-    assert condition in ["baseline", "full", "staged"]
-    if condition == "baseline":
-        return [], None, []
 
-    assert Q_np is not None
-    layers, _ = get_model_layers(model)
-
-    handles = []
-    staged_hooks: List[LastTokenStagedRemovalHook] = []
-    hook_stats: List[HookStats] = []
-
-    for layer_idx in layer_indices:
-        if layer_idx >= len(layers):
-            print(f"[Warn] layer_idx={layer_idx} out of range, skipping")
-            continue
-
-        if condition == "full":
-            stats = HookStats(name=f"full@{layer_idx}")
-            hk = LastTokenRemovalHook(Q_np, alpha=alpha, stats=stats)
-            handles.append(layers[layer_idx].register_forward_hook(hk))
-            hook_stats.append(stats)
-        else:
-            stats = HookStats(name=f"staged@{layer_idx}")
-            hk = LastTokenStagedRemovalHook(Q_np, alpha=alpha, stats=stats, reasoning_threshold=reasoning_token_threshold)
-            staged_hooks.append(hk)
-            handles.append(layers[layer_idx].register_forward_hook(hk))
-            hook_stats.append(stats)
-
-    def setter(state_or_none: Optional[GenerationState]) -> None:
-        for hk in staged_hooks:
-            hk.set_state(state_or_none)
-
-    return handles, (setter if condition == "staged" else None), hook_stats
-
-def remove_hooks(handles: List[Any]) -> None:
-    for h in handles:
-        try:
-            h.remove()
-        except Exception:
-            pass
-
-# -----------------------------
-# Evaluate
-# -----------------------------
-def evaluate_condition(
+def evaluate_condition_generation(
     model,
     tokenizer,
-    examples: List[Example],
+    examples: List["Example"],
     Q_np: Optional[np.ndarray],
     condition: str,     # baseline/full/staged
     decoding: str,       # greedy/sample
@@ -997,6 +1037,7 @@ def evaluate_condition(
         acc, lo, hi = bootstrap_ci_mean(correct_arr, iters=bootstrap_iters, alpha=ci_alpha, seed=seed)
 
         return {
+            "protocol": "generation",
             "condition": condition,
             "decoding": decoding,
             "sample_seed": sample_seed,
@@ -1011,6 +1052,381 @@ def evaluate_condition(
         }
     finally:
         remove_hooks(handles)
+
+
+# -----------------------------
+# Forced-choice utilities (improved)
+# -----------------------------
+def candidate_strings(task: str) -> List[str]:
+    """
+    Candidate labels/strings for forced-choice scoring.
+    Must match benchmark_dataloaders gold label conventions.
+    """
+    t = task.strip().lower()
+
+    if t in ["commonsenseqa", "aqua"]:
+        return list("ABCDE")
+    if t in ["arc_challenge", "openbookqa", "logiqa"]:
+        return list("ABCD")
+    if t == "qasc":
+        return list("ABCDEFGH")
+    if t == "piqa":
+        return ["A", "B"]
+    if t == "boolq":
+        # many loaders use A/B (A=yes, B=no)
+        return ["A", "B"]
+    if t == "strategyqa":
+        return ["Yes", "No"]
+    return []
+
+
+def _context_ends_with_whitespace(s: str) -> bool:
+    return len(s) > 0 and s[-1].isspace()
+
+
+def cand_token_ids(tokenizer, s: str, *, leading_space: bool) -> List[int]:
+    """
+    Encode candidate string into token ids, optionally with a leading space.
+
+    This is a common source of accidental chance-level baselines:
+      - If your prompt ends with 'Final answer:' (no space), you usually want leading_space=True.
+      - If your prompt already ends with whitespace/newline, leading_space=False is safer.
+    """
+    text = (" " + s) if leading_space else s
+    ids = tokenizer.encode(text, add_special_tokens=False)
+    # Fallback if something weird happens
+    if not ids and leading_space:
+        ids = tokenizer.encode(s, add_special_tokens=False)
+    return ids
+
+
+def _should_add_fc_prefix(
+    *,
+    prompt: str,
+    warmup_tokens: int,
+    prefix_mode: str,
+    fc_answer_prefix: str,
+) -> bool:
+    """
+    Decide whether to teacher-force answer prefix before scoring candidates.
+    """
+    if not fc_answer_prefix:
+        return False
+    assert prefix_mode in {"auto", "always", "never"}
+    if prefix_mode == "never":
+        return False
+    if prefix_mode == "always":
+        return True
+
+    # auto:
+    # If warmup>0, ALWAYS re-anchor the decision point after warmup.
+    if warmup_tokens > 0:
+        return True
+
+    # Otherwise, add prefix only if prompt doesn't already end with it (ignoring trailing whitespace).
+    p = prompt.rstrip()
+    ap = fc_answer_prefix.rstrip()
+    return (ap != "") and (not p.endswith(ap))
+
+
+@torch.no_grad()
+def precompute_fc_warmup_tokens(
+    model,
+    tokenizer,
+    prompts: List[str],
+    *,
+    warmup_tokens: int,
+    batch_size: int,
+    max_prompt_len: int,
+    decoding: str,
+    temperature: float,
+    top_p: float,
+    top_k: int,
+    ban_eos: bool,
+    seed: int,
+) -> np.ndarray:
+    """Generate warmup tokens under baseline (no intervention). Returns [N,W] int64."""
+    assert warmup_tokens >= 0
+    if warmup_tokens == 0:
+        return np.zeros((len(prompts), 0), dtype=np.int64)
+
+    device = next(model.parameters()).device
+    eos = tokenizer.eos_token_id
+    model.eval()
+
+    if decoding == "sample":
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
+    tokenizer.padding_side = "left"
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    out_tokens = np.zeros((len(prompts), warmup_tokens), dtype=np.int64)
+
+    for i in tqdm(range(0, len(prompts), batch_size), desc=f"FCWarmupGen(W={warmup_tokens})"):
+        batch = prompts[i : i + batch_size]
+        inputs = tokenizer(batch, return_tensors="pt", padding=True, truncation=True, max_length=max_prompt_len).to(device)
+        ids = inputs["input_ids"]
+        attn = inputs["attention_mask"]
+        B = ids.shape[0]
+
+        past, logits = _cache_advanced_prompt_boundary(model, ids, attn)
+
+        toks = []
+        for _ in range(warmup_tokens):
+            next_tok = _choose_next_token(
+                logits,
+                decoding=decoding,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                eos_token_id=eos,
+                ban_eos=ban_eos,
+            )
+            toks.append(next_tok)
+            attn = torch.cat([attn, torch.ones((B, 1), device=device, dtype=attn.dtype)], dim=1)
+            out = model(input_ids=next_tok, attention_mask=attn, use_cache=True, past_key_values=past)
+            logits = out.logits[:, -1, :]
+            past = out.past_key_values
+
+        toks_mat = torch.cat(toks, dim=1)  # [B,W]
+        out_tokens[i : i + B, :] = toks_mat.detach().cpu().numpy().astype(np.int64, copy=False)
+
+    return out_tokens
+
+
+@torch.no_grad()
+def evaluate_condition_forced_choice(
+    model,
+    tokenizer,
+    examples: List["Example"],
+    task_name: str,
+    Q_np: Optional[np.ndarray],
+    condition: str,  # baseline/full/staged
+    *,
+    alpha: float,
+    layer_indices: List[int],
+    reasoning_token_threshold: int,
+    batch_size: int,
+    max_prompt_len: int,
+    bootstrap_iters: int,
+    ci_alpha: float,
+    global_seed: int,
+    # forced-choice knobs
+    warmup_token_ids: Optional[np.ndarray],
+    fc_warmup_tokens: int,
+    fc_prefix_mode: str,
+    fc_answer_prefix: str,
+) -> Dict[str, Any]:
+    """
+    Forced-choice accuracy by sum logprob of candidate strings.
+
+    This is decode-aligned and compatible with decode-only interventions.
+    """
+    device = next(model.parameters()).device
+    model.eval()
+
+    tokenizer.padding_side = "left"
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    eos = tokenizer.eos_token_id
+
+    cands = candidate_strings(task_name)
+    if len(cands) == 0:
+        raise ValueError(f"Task '{task_name}' has no forced-choice candidates.")
+
+    # Register hooks (baseline/full/staged)
+    handles, state_setter, hook_stats = register_hooks_for_condition(
+        model=model,
+        layer_indices=layer_indices,
+        Q_np=Q_np,
+        condition=condition,
+        alpha=alpha,
+        reasoning_token_threshold=reasoning_token_threshold,
+    )
+
+    prompts = [ex.prompt for ex in examples]
+    golds = [ex.gold for ex in examples]
+    correct = np.zeros(len(examples), dtype=np.float32)
+
+    # Useful diagnostics
+    avg_margin = []
+    avg_best_lp = []
+
+    try:
+        for i in tqdm(range(0, len(examples), batch_size), desc=f"ForcedChoice({task_name}/{condition})"):
+            batch_ex = examples[i : i + batch_size]
+            batch_prompts = [ex.prompt for ex in batch_ex]
+            batch_golds = [ex.gold for ex in batch_ex]
+
+            inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True, truncation=True, max_length=max_prompt_len).to(device)
+            ids = inputs["input_ids"]
+            attn = inputs["attention_mask"]
+            B = ids.shape[0]
+            # Decide per-example whether to add answer prefix (robust to template randomization).
+            # If prompts are mixed (some already contain the prefix, some not), we split into two
+            # sub-batches to avoid duplicated prefixes (which can tank accuracy).
+            need_prefix = [
+                _should_add_fc_prefix(
+                    prompt=p,
+                    warmup_tokens=fc_warmup_tokens,
+                    prefix_mode=fc_prefix_mode,
+                    fc_answer_prefix=fc_answer_prefix,
+                )
+                for p in batch_prompts
+            ]
+
+            warm_slice = None
+            if warmup_token_ids is not None and fc_warmup_tokens > 0:
+                warm_slice = warmup_token_ids[i : i + B]
+
+            scores_full = torch.full((B, len(cands)), float("-inf"), device=device)
+
+            # Evaluate two groups: add_prefix=False and add_prefix=True
+            for add_prefix in [False, True]:
+                idxs = [j for j, flag in enumerate(need_prefix) if bool(flag) == add_prefix]
+                if not idxs:
+                    continue
+
+                ids_g = ids[idxs]
+                attn_g = attn[idxs]
+                Bg = ids_g.shape[0]
+
+                # Staged state for this sub-batch
+                if state_setter is not None:
+                    st = GenerationState(Bg, ids_g.device, reasoning_token_threshold)
+                    state_setter(st)
+                else:
+                    st = None
+
+                # Decode-aligned boundary for this sub-batch
+                past_g, logits_g = _cache_advanced_prompt_boundary(model, ids_g, attn_g)
+
+                # Teacher-force warmup tokens (baseline-generated, shared across conditions)
+                if warm_slice is not None:
+                    warm_g = torch.tensor(warm_slice[idxs], dtype=torch.long, device=device)
+                    for t in range(warm_g.shape[1]):
+                        tok_t = warm_g[:, t : t + 1]
+                        attn_g = torch.cat(
+                            [attn_g, torch.ones((Bg, 1), device=device, dtype=attn_g.dtype)],
+                            dim=1,
+                        )
+                        out = model(input_ids=tok_t, attention_mask=attn_g, use_cache=True, past_key_values=past_g)
+                        logits_g = out.logits[:, -1, :]
+                        past_g = out.past_key_values
+                        if st is not None:
+                            st.step_update(tok_t, eos_token_id=eos)
+
+                # Teacher-force answer prefix if needed for this sub-batch
+                prefix_used_g = fc_answer_prefix if (add_prefix and fc_answer_prefix) else ""
+                if prefix_used_g:
+                    prefix_ids = tokenizer.encode(prefix_used_g, add_special_tokens=False)
+                    for pid in prefix_ids:
+                        inp = torch.full((Bg, 1), pid, dtype=torch.long, device=device)
+                        attn_g = torch.cat(
+                            [attn_g, torch.ones((Bg, 1), device=device, dtype=attn_g.dtype)],
+                            dim=1,
+                        )
+                        out = model(input_ids=inp, attention_mask=attn_g, use_cache=True, past_key_values=past_g)
+                        logits_g = out.logits[:, -1, :]
+                        past_g = out.past_key_values
+                        if st is not None:
+                            st.step_update(inp, eos_token_id=eos)
+
+                # Determine candidate tokenization (leading space or not) based on the *expected* context end.
+                if prefix_used_g:
+                    leading_space_g = not _context_ends_with_whitespace(prefix_used_g)
+                else:
+                    leading_space_g = not _context_ends_with_whitespace(batch_prompts[idxs[0]])
+
+                cand_ids_list = [cand_token_ids(tokenizer, s, leading_space=leading_space_g) for s in cands]
+
+                # Score candidates by logprob for this sub-batch
+                scores_g = torch.zeros(Bg, len(cands), device=device)
+                for ci, cand_ids in enumerate(cand_ids_list):
+                    if len(cand_ids) == 0:
+                        scores_g[:, ci] = float("-inf")
+                        continue
+
+                    past_c = past_g
+                    attn_c = attn_g
+                    logits_c = logits_g
+
+                    # For staged: each candidate path starts from the same state (before candidate tokens)
+                    if state_setter is not None:
+                        cand_state = st.clone()
+                        state_setter(cand_state)
+                    else:
+                        cand_state = None
+
+                    lp = torch.zeros(Bg, device=device)
+                    for ti, tok_id in enumerate(cand_ids):
+                        logp = torch.log_softmax(logits_c, dim=-1)
+                        lp = lp + logp[:, tok_id]
+                        if ti < len(cand_ids) - 1:
+                            inp = torch.full((Bg, 1), tok_id, dtype=torch.long, device=device)
+                            attn_c = torch.cat(
+                                [attn_c, torch.ones((Bg, 1), device=device, dtype=attn_c.dtype)],
+                                dim=1,
+                            )
+                            out = model(input_ids=inp, attention_mask=attn_c, use_cache=True, past_key_values=past_c)
+                            logits_c = out.logits[:, -1, :]
+                            past_c = out.past_key_values
+                            if cand_state is not None:
+                                cand_state.step_update(inp, eos_token_id=eos)
+
+                    scores_g[:, ci] = lp
+
+                scores_full[idxs, :] = scores_g
+
+            # pick best candidate for each example
+            pred_idx = torch.argmax(scores_full, dim=1).detach().cpu().numpy().tolist()
+            preds = [cands[j] for j in pred_idx]
+
+            # simple margin diagnostics
+            top2 = torch.topk(scores_full, k=min(2, scores_full.shape[1]), dim=1).values.detach().cpu().numpy()
+            if top2.shape[1] >= 2:
+                avg_margin.extend((top2[:, 0] - top2[:, 1]).tolist())
+            avg_best_lp.extend(top2[:, 0].tolist())
+
+            for b, (pred, gold) in enumerate(zip(preds, batch_golds)):
+                correct[i + b] = float(is_correct(task_name, pred, gold))
+
+        # clear state pointer for staged
+        if state_setter is not None:
+            state_setter(None)
+
+        correct_arr = correct.astype(np.float32, copy=False)
+        seed = stable_int_seed(global_seed, task_name, "forced_choice", condition)
+        acc, lo, hi = bootstrap_ci_mean(correct_arr, iters=bootstrap_iters, alpha=ci_alpha, seed=seed)
+
+        return {
+            "protocol": "forced_choice",
+            "condition": condition,
+            "accuracy": float(acc),
+            "ci_low": float(lo),
+            "ci_high": float(hi),
+            "correct": correct_arr.tolist(),
+            "fc": {
+                "candidates": cands,
+                "warmup_tokens": int(fc_warmup_tokens),
+                "prefix_mode": fc_prefix_mode,
+                "answer_prefix": fc_answer_prefix,
+                "leading_space": bool(not _context_ends_with_whitespace((fc_answer_prefix if fc_answer_prefix else (prompts[0] if prompts else "")))),
+                "avg_best_logprob": float(np.mean(avg_best_lp)) if avg_best_lp else float("nan"),
+                "avg_margin": float(np.mean(avg_margin)) if avg_margin else float("nan"),
+            },
+            # generation-only fields: keep for schema compatibility
+            "extraction_rate": 1.0,
+            "eos_rate": float("nan"),
+            "avg_new_tokens": float("nan"),
+            "hook_stats": [{"name": s.name, "decode_calls": s.decode_calls, "intervened": s.intervened} for s in hook_stats],
+        }
+    finally:
+        remove_hooks(handles)
+
 
 # -----------------------------
 # Model loading
@@ -1029,8 +1445,10 @@ def load_model_and_tokenizer(model_name: str, device: str, model_dtype: str):
 
     model = model.to(device)
     model.eval()
-    model.config.use_cache = True
+    if hasattr(model.config, "use_cache"):
+        model.config.use_cache = True
     return model, tok
+
 
 # -----------------------------
 # Running one fold (basis estimation + eval)
@@ -1040,8 +1458,8 @@ def run_fold(
     fold_name: str,
     model,
     tokenizer,
-    sub_by: Dict[str, List[Example]],
-    eval_by: Dict[str, List[Example]],
+    sub_by: Dict[str, List["Example"]],
+    eval_by: Dict[str, List["Example"]],
     train_tasks: List[str],
     eval_tasks: List[str],
     layer_indices: List[int],
@@ -1122,19 +1540,56 @@ def run_fold(
     print(f"[{fold_name}][Sanity] Energy ratio on calib decode states: shared mean={er_s['mean']:.4f}, rand mean={er_r['mean']:.4f}")
 
     # 4) Eval
-    DECODINGS = ["greedy"] + (["sample"] if args.do_sample else [])
     CONDITIONS = ["baseline", "shared_full", "shared_staged", "rand_full", "rand_staged"]
 
     by_dataset: Dict[str, Any] = {}
+
+    # Cache warmup tokens per dataset within this fold (only if forced-choice enabled)
+    warmup_cache: Dict[str, np.ndarray] = {}
+
     for task_name in eval_tasks:
         eval_exs = eval_by[task_name]
         print("\n" + "-" * 80)
         print(f"[{fold_name}][Eval] Dataset={task_name} (n={len(eval_exs)})")
         print("-" * 80)
 
-        block: Dict[str, Any] = {"n": len(eval_exs), "runs": {}, "paired_tests": {}}
+        # Decide protocol:
+        # - gsm8k: generation only
+        # - others: forced-choice if enabled and candidates exist; otherwise generation
+        has_cands = len(candidate_strings(task_name)) > 0
+        use_fc = bool(args.use_forced_choice) and has_cands
 
-        for decoding in DECODINGS:
+        block: Dict[str, Any] = {"n": len(eval_exs), "protocol": ("forced_choice" if use_fc else "generation"), "runs": {}, "paired_tests": {}}
+
+        if use_fc:
+            # Precompute warmup tokens once per dataset (baseline-only)
+            if args.fc_warmup_tokens > 0:
+                if task_name not in warmup_cache:
+                    prompts = [ex.prompt for ex in eval_exs]
+                    warm_ids = precompute_fc_warmup_tokens(
+                        model=model,
+                        tokenizer=tokenizer,
+                        prompts=prompts,
+                        warmup_tokens=args.fc_warmup_tokens,
+                        batch_size=args.batch_size,
+                        max_prompt_len=args.max_prompt_len,
+                        decoding=args.fc_warmup_decoding,
+                        temperature=args.fc_warmup_temperature,
+                        top_p=args.fc_warmup_top_p,
+                        top_k=args.fc_warmup_top_k,
+                        ban_eos=bool(args.fc_warmup_ban_eos),
+                        seed=stable_int_seed(args.seed, args.fc_warmup_seed, fold_name, task_name, "fc_warmup"),
+                    )
+                    warmup_cache[task_name] = warm_ids
+                    if args.fc_debug_print and warm_ids.shape[0] > 0:
+                        demo = tokenizer.decode(warm_ids[0].tolist(), skip_special_tokens=True)
+                        print(f"[{fold_name}][FC Warmup] {task_name}: warmup_ids shape={warm_ids.shape}; demo text[:120]={demo[:120]!r}")
+            else:
+                warmup_cache[task_name] = np.zeros((len(eval_exs), 0), dtype=np.int64)
+
+            warm_ids = warmup_cache.get(task_name, None)
+
+            # Run conditions (no decoding loop for forced-choice)
             for cond in CONDITIONS:
                 if cond == "baseline":
                     Q = None
@@ -1159,43 +1614,45 @@ def run_fold(
                 else:
                     raise ValueError(cond)
 
-                run = evaluate_condition(
+                run = evaluate_condition_forced_choice(
                     model=model,
                     tokenizer=tokenizer,
                     examples=eval_exs,
+                    task_name=task_name,
                     Q_np=Q,
                     condition=cond_name,
-                    decoding=decoding,
                     alpha=args.alpha_remove,
                     layer_indices=layer_indices,
                     reasoning_token_threshold=args.reasoning_tokens,
-                    max_new_tokens=args.max_new_tokens,
-                    temperature=args.temperature,
-                    top_p=args.top_p,
-                    top_k=args.top_k,
-                    device=args.device,
                     batch_size=args.batch_size,
                     max_prompt_len=args.max_prompt_len,
                     bootstrap_iters=args.bootstrap_iters,
                     ci_alpha=args.ci_alpha,
                     global_seed=args.seed,
-                    sample_seed=(args.sample_seed if decoding == "sample" else None),
+                    warmup_token_ids=warm_ids,
+                    fc_warmup_tokens=args.fc_warmup_tokens,
+                    fc_prefix_mode=args.fc_prefix_mode,
+                    fc_answer_prefix=args.fc_answer_prefix,
                 )
-                block["runs"][f"{decoding}/{mode}"] = run
-                print(f"[{fold_name}][{task_name}] {decoding}/{mode}: acc={fmt_acc(run['accuracy'], run['ci_low'], run['ci_high'])} "
-                      f"extr={run['extraction_rate']*100:.1f}% eos={run['eos_rate']*100:.1f}% avg_new_tok={run['avg_new_tokens']:.1f}")
+                block["runs"][f"forced_choice/{mode}"] = run
+                fc_meta = run.get("fc", {})
+                print(
+                    f"[{fold_name}][{task_name}] forced_choice/{mode}: "
+                    f"acc={fmt_acc(run['accuracy'], run['ci_low'], run['ci_high'])} "
+                    f"(W={fc_meta.get('warmup_tokens', 0)}, prefix_mode={fc_meta.get('prefix_mode')}, "
+                    f"avg_margin={fc_meta.get('avg_margin', float('nan')):.3f})"
+                )
 
-        # Paired tests (focus on FULL shared vs baseline/rand)
-        for decoding in DECODINGS:
-            base = np.array(block["runs"][f"{decoding}/baseline"]["correct"], dtype=np.float32)
-            shared_full = np.array(block["runs"][f"{decoding}/shared_full"]["correct"], dtype=np.float32)
-            rand_full = np.array(block["runs"][f"{decoding}/rand_full"]["correct"], dtype=np.float32)
-            seed0 = stable_int_seed(args.seed, fold_name, task_name, decoding, "paired")
+            # Paired tests (forced-choice)
+            base = np.array(block["runs"]["forced_choice/baseline"]["correct"], dtype=np.float32)
+            shared_full = np.array(block["runs"]["forced_choice/shared_full"]["correct"], dtype=np.float32)
+            rand_full = np.array(block["runs"]["forced_choice/rand_full"]["correct"], dtype=np.float32)
+            seed0 = stable_int_seed(args.seed, fold_name, task_name, "forced_choice", "paired")
 
-            block["paired_tests"][decoding] = {
+            block["paired_tests"]["forced_choice"] = {
                 "shared_full_vs_baseline": summarize_paired(
                     base, shared_full,
-                    label=f"{fold_name}:{task_name}:{decoding}:shared_full_vs_baseline",
+                    label=f"{fold_name}:{task_name}:forced_choice:shared_full_vs_baseline",
                     bootstrap_iters=args.bootstrap_iters,
                     perm_iters=args.perm_iters,
                     alpha=args.ci_alpha,
@@ -1203,7 +1660,7 @@ def run_fold(
                 ),
                 "rand_full_vs_baseline": summarize_paired(
                     base, rand_full,
-                    label=f"{fold_name}:{task_name}:{decoding}:rand_full_vs_baseline",
+                    label=f"{fold_name}:{task_name}:forced_choice:rand_full_vs_baseline",
                     bootstrap_iters=args.bootstrap_iters,
                     perm_iters=args.perm_iters,
                     alpha=args.ci_alpha,
@@ -1211,16 +1668,112 @@ def run_fold(
                 ),
                 "shared_full_vs_rand_full": summarize_paired(
                     rand_full, shared_full,
-                    label=f"{fold_name}:{task_name}:{decoding}:shared_full_vs_rand_full",
+                    label=f"{fold_name}:{task_name}:forced_choice:shared_full_vs_rand_full",
                     bootstrap_iters=args.bootstrap_iters,
                     perm_iters=args.perm_iters,
                     alpha=args.ci_alpha,
                     seed=seed0 + 3,
                 ),
             }
-            stat = block["paired_tests"][decoding]["shared_full_vs_baseline"]
-            print(f"[{fold_name}][Stats] {task_name} ({decoding}) shared_full_vs_baseline: "
+            stat = block["paired_tests"]["forced_choice"]["shared_full_vs_baseline"]
+            print(f"[{fold_name}][Stats] {task_name} (forced_choice) shared_full_vs_baseline: "
                   f"Δ={stat['mean_diff']:+.3f} CI[{stat['ci_low']:+.3f}, {stat['ci_high']:+.3f}] p={stat['p_value']:.3g}")
+
+        else:
+            # Generation protocol (original behavior)
+            DECODINGS = ["greedy"] + (["sample"] if args.do_sample else [])
+
+            for decoding in DECODINGS:
+                for cond in CONDITIONS:
+                    if cond == "baseline":
+                        Q = None
+                        cond_name = "baseline"
+                        mode = "baseline"
+                    elif cond == "shared_full":
+                        Q = Q_shared
+                        cond_name = "full"
+                        mode = "shared_full"
+                    elif cond == "shared_staged":
+                        Q = Q_shared
+                        cond_name = "staged"
+                        mode = "shared_staged"
+                    elif cond == "rand_full":
+                        Q = Q_rand
+                        cond_name = "full"
+                        mode = "rand_full"
+                    elif cond == "rand_staged":
+                        Q = Q_rand
+                        cond_name = "staged"
+                        mode = "rand_staged"
+                    else:
+                        raise ValueError(cond)
+
+                    run = evaluate_condition_generation(
+                        model=model,
+                        tokenizer=tokenizer,
+                        examples=eval_exs,
+                        Q_np=Q,
+                        condition=cond_name,
+                        decoding=decoding,
+                        alpha=args.alpha_remove,
+                        layer_indices=layer_indices,
+                        reasoning_token_threshold=args.reasoning_tokens,
+                        max_new_tokens=args.max_new_tokens,
+                        temperature=args.temperature,
+                        top_p=args.top_p,
+                        top_k=args.top_k,
+                        device=args.device,
+                        batch_size=args.batch_size,
+                        max_prompt_len=args.max_prompt_len,
+                        bootstrap_iters=args.bootstrap_iters,
+                        ci_alpha=args.ci_alpha,
+                        global_seed=args.seed,
+                        sample_seed=(args.sample_seed if decoding == "sample" else None),
+                    )
+                    block["runs"][f"{decoding}/{mode}"] = run
+                    print(
+                        f"[{fold_name}][{task_name}] {decoding}/{mode}: "
+                        f"acc={fmt_acc(run['accuracy'], run['ci_low'], run['ci_high'])} "
+                        f"extr={run['extraction_rate']*100:.1f}% eos={run['eos_rate']*100:.1f}% "
+                        f"avg_new_tok={run['avg_new_tokens']:.1f}"
+                    )
+
+            # Paired tests (focus on FULL shared vs baseline/rand)
+            for decoding in DECODINGS:
+                base = np.array(block["runs"][f"{decoding}/baseline"]["correct"], dtype=np.float32)
+                shared_full = np.array(block["runs"][f"{decoding}/shared_full"]["correct"], dtype=np.float32)
+                rand_full = np.array(block["runs"][f"{decoding}/rand_full"]["correct"], dtype=np.float32)
+                seed0 = stable_int_seed(args.seed, fold_name, task_name, decoding, "paired")
+
+                block["paired_tests"][decoding] = {
+                    "shared_full_vs_baseline": summarize_paired(
+                        base, shared_full,
+                        label=f"{fold_name}:{task_name}:{decoding}:shared_full_vs_baseline",
+                        bootstrap_iters=args.bootstrap_iters,
+                        perm_iters=args.perm_iters,
+                        alpha=args.ci_alpha,
+                        seed=seed0 + 1,
+                    ),
+                    "rand_full_vs_baseline": summarize_paired(
+                        base, rand_full,
+                        label=f"{fold_name}:{task_name}:{decoding}:rand_full_vs_baseline",
+                        bootstrap_iters=args.bootstrap_iters,
+                        perm_iters=args.perm_iters,
+                        alpha=args.ci_alpha,
+                        seed=seed0 + 2,
+                    ),
+                    "shared_full_vs_rand_full": summarize_paired(
+                        rand_full, shared_full,
+                        label=f"{fold_name}:{task_name}:{decoding}:shared_full_vs_rand_full",
+                        bootstrap_iters=args.bootstrap_iters,
+                        perm_iters=args.perm_iters,
+                        alpha=args.ci_alpha,
+                        seed=seed0 + 3,
+                    ),
+                }
+                stat = block["paired_tests"][decoding]["shared_full_vs_baseline"]
+                print(f"[{fold_name}][Stats] {task_name} ({decoding}) shared_full_vs_baseline: "
+                      f"Δ={stat['mean_diff']:+.3f} CI[{stat['ci_low']:+.3f}, {stat['ci_high']:+.3f}] p={stat['p_value']:.3g}")
 
         by_dataset[task_name] = block
 
@@ -1239,23 +1792,38 @@ def run_fold(
         "extra": extra,
     }
 
+
 def render_loto_heldout_table(results: Dict[str, Any], decoding: str = "greedy") -> str:
     """
     Simple markdown table: each row is a held-out task, showing baseline vs shared_full on held-out only.
+
+    If the held-out task was evaluated with forced-choice, pass decoding="forced_choice".
     """
     rows = []
-    header = ["Held-out", "n", "Baseline", "Shared(full)", "Rand(full)", "Δ(shared-baseline)", "p(shared-baseline)"]
+    header = ["Held-out", "n", "Protocol", "Baseline", "Shared(full)", "Rand(full)", "Δ(shared-baseline)", "p(shared-baseline)"]
     for holdout, fold in results.get("folds", {}).items():
         block = fold["by_dataset"].get(holdout, None)
         if block is None:
             continue
-        b = block["runs"][f"{decoding}/baseline"]
-        s = block["runs"][f"{decoding}/shared_full"]
-        r = block["runs"][f"{decoding}/rand_full"]
-        stat = block["paired_tests"][decoding]["shared_full_vs_baseline"]
+
+        protocol = block.get("protocol", "generation")
+        if protocol == "forced_choice":
+            key_prefix = "forced_choice"
+            b = block["runs"][f"{key_prefix}/baseline"]
+            s = block["runs"][f"{key_prefix}/shared_full"]
+            r = block["runs"][f"{key_prefix}/rand_full"]
+            stat = block["paired_tests"][key_prefix]["shared_full_vs_baseline"]
+        else:
+            key_prefix = decoding
+            b = block["runs"][f"{key_prefix}/baseline"]
+            s = block["runs"][f"{key_prefix}/shared_full"]
+            r = block["runs"][f"{key_prefix}/rand_full"]
+            stat = block["paired_tests"][key_prefix]["shared_full_vs_baseline"]
+
         rows.append([
             holdout,
             str(block["n"]),
+            protocol,
             fmt_acc(b["accuracy"], b["ci_low"], b["ci_high"]),
             fmt_acc(s["accuracy"], s["ci_low"], s["ci_high"]),
             fmt_acc(r["accuracy"], r["ci_low"], r["ci_high"]),
@@ -1263,30 +1831,28 @@ def render_loto_heldout_table(results: Dict[str, Any], decoding: str = "greedy")
             f"{stat['p_value']:.3g}",
         ])
 
-    # widths
     cols = list(zip(*([header] + rows))) if rows else [header]
     widths = [max(len(str(x)) for x in col) for col in cols]
+
     def fmt_row(r):
         return "| " + " | ".join(str(x).ljust(w) for x, w in zip(r, widths)) + " |"
+
     lines = [fmt_row(header), "|-" + "-|-".join("-"*w for w in widths) + "-|"]
     for r in rows:
         lines.append(fmt_row(r))
     return "\n".join(lines)
 
 
-
-
-
 def infer_hidden_dim(model) -> Optional[int]:
     cfg = getattr(model, "config", None)
 
-    # 1) 常见字段（大多数纯文本LM）
+    # common fields
     for k in ("hidden_size", "n_embd", "dim", "d_model", "model_dim", "embed_dim"):
         v = getattr(cfg, k, None)
         if isinstance(v, int) and v > 0:
             return v
 
-    # 2) Gemma3 / 多模态：hidden_size 在 text_config 里
+    # multimodal / nested text_config
     text_cfg = getattr(cfg, "text_config", None)
     if text_cfg is not None:
         for k in ("hidden_size", "n_embd", "dim", "d_model", "model_dim", "embed_dim"):
@@ -1294,7 +1860,7 @@ def infer_hidden_dim(model) -> Optional[int]:
             if isinstance(v, int) and v > 0:
                 return v
 
-    # 3) 最终兜底：直接从 input embedding 的 weight 维度读
+    # fallback: embedding weight
     try:
         emb = model.get_input_embeddings()
         if emb is not None and hasattr(emb, "weight") and isinstance(emb.weight, torch.Tensor) and emb.weight.ndim == 2:
@@ -1341,7 +1907,7 @@ def main():
     ap.add_argument("--reasoning_tokens", type=int, default=128)
     ap.add_argument("--max_new_tokens", type=int, default=256)
 
-    # Decoding
+    # Decoding (generation)
     ap.add_argument("--temperature", type=float, default=0.7)
     ap.add_argument("--top_p", type=float, default=0.9)
     ap.add_argument("--top_k", type=int, default=0)
@@ -1360,6 +1926,19 @@ def main():
     ap.add_argument("--add_answer_prefix", type=int, default=0, choices=[0, 1])
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
 
+    # Forced-choice (new)
+    ap.add_argument("--use_forced_choice", type=int, default=0, choices=[0, 1], help="If 1, use forced-choice for tasks with discrete candidates (MC/YesNo). gsm8k stays generation.")
+    ap.add_argument("--fc_warmup_tokens", type=int, default=0, help="Teacher-forced warmup tokens before scoring candidates (baseline-generated, shared across conditions).")
+    ap.add_argument("--fc_warmup_decoding", type=str, default="greedy", choices=["greedy", "sample"])
+    ap.add_argument("--fc_warmup_seed", type=int, default=123)
+    ap.add_argument("--fc_warmup_ban_eos", type=int, default=1, choices=[0, 1])
+    ap.add_argument("--fc_warmup_temperature", type=float, default=0.7)
+    ap.add_argument("--fc_warmup_top_p", type=float, default=0.9)
+    ap.add_argument("--fc_warmup_top_k", type=int, default=0)
+    ap.add_argument("--fc_prefix_mode", type=str, default="auto", choices=["auto", "always", "never"])
+    ap.add_argument("--fc_answer_prefix", type=str, default="\nFinal answer:")
+    ap.add_argument("--fc_debug_print", type=int, default=0, choices=[0, 1], help="If 1, print warmup demo text and other FC diagnostics.")
+
     # Stats
     ap.add_argument("--bootstrap_iters", type=int, default=5000)
     ap.add_argument("--perm_iters", type=int, default=10000)
@@ -1368,11 +1947,15 @@ def main():
     ap.add_argument("--sample_seed", type=int, default=12345)
 
     # Output
-    ap.add_argument("--out_json", type=str, default=os.path.join(THIS_DIR, "energy_balance_loto8_results.json"))
-    ap.add_argument("--out_md", type=str, default=os.path.join(THIS_DIR, "energy_balance_loto8_summary.md"))
+    ap.add_argument("--out_json", type=str, default=os.path.join(THIS_DIR, "energy_balance_loto8_reasoning_results.json"))
+    ap.add_argument("--out_md", type=str, default=os.path.join(THIS_DIR, "energy_balance_loto8_reasoning_summary.md"))
 
     args = ap.parse_args()
     set_global_seed(args.seed)
+
+    # Normalize prefix args
+    args.answer_prefix = _norm_prefix_arg(args.answer_prefix)
+    args.fc_answer_prefix = _norm_prefix_arg(args.fc_answer_prefix)
 
     tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
     if len(tasks) < 2:
@@ -1382,6 +1965,16 @@ def main():
     args.template_randomization = bool(args.template_randomization)
     args.shuffle_choices = bool(args.shuffle_choices)
     args.add_answer_prefix = bool(args.add_answer_prefix)
+    args.use_forced_choice = bool(args.use_forced_choice)
+    args.fc_debug_print = bool(args.fc_debug_print)
+
+    # Guardrails for forced-choice
+    if args.use_forced_choice and args.fc_warmup_tokens > 0 and args.fc_prefix_mode == "never" and args.fc_answer_prefix:
+        print(
+            "[Warn][ForcedChoice] fc_warmup_tokens>0 but fc_prefix_mode=never.\n"
+            "  This often evaluates at a 'random mid-continuation' position and can yield chance-level baselines.\n"
+            "  Recommended: --fc_prefix_mode auto (default) or always."
+        )
 
     layer_indices = [args.layer]
 
@@ -1391,15 +1984,9 @@ def main():
     print(f"[Env] tasks={tasks}")
     print(f"[Env] mode={args.mode} loto_eval_mode={args.loto_eval_mode}")
     print(f"[Env] template_randomization={args.template_randomization} shuffle_choices={args.shuffle_choices} add_answer_prefix={args.add_answer_prefix}")
+    print(f"[Env] forced_choice={args.use_forced_choice} fc_warmup_tokens={args.fc_warmup_tokens} fc_prefix_mode={args.fc_prefix_mode} fc_answer_prefix={args.fc_answer_prefix!r}")
 
     model, tokenizer = load_model_and_tokenizer(args.model, args.device, args.model_dtype)
-
-
-
-    # hidden_dim = getattr(model.config, "hidden_size", None) or getattr(model.config, "n_embd", None)
-    # if hidden_dim is None:
-    #     raise RuntimeError("Could not infer hidden_dim from model.config")
-    # print(f"[Env] hidden_dim={hidden_dim}")
 
     hidden_dim = infer_hidden_dim(model)
     if hidden_dim is None:
@@ -1461,6 +2048,18 @@ def main():
             "seed": args.seed,
             "sample_seed": args.sample_seed,
             "dataset_meta": meta_by,
+            "forced_choice": {
+                "use_forced_choice": args.use_forced_choice,
+                "fc_warmup_tokens": args.fc_warmup_tokens,
+                "fc_warmup_decoding": args.fc_warmup_decoding,
+                "fc_warmup_seed": args.fc_warmup_seed,
+                "fc_warmup_ban_eos": bool(args.fc_warmup_ban_eos),
+                "fc_warmup_temperature": args.fc_warmup_temperature,
+                "fc_warmup_top_p": args.fc_warmup_top_p,
+                "fc_warmup_top_k": args.fc_warmup_top_k,
+                "fc_prefix_mode": args.fc_prefix_mode,
+                "fc_answer_prefix": args.fc_answer_prefix,
+            },
         }
     }
 
@@ -1522,10 +2121,12 @@ def main():
     md_lines.append(f"- Template randomization: {args.template_randomization} (seed={args.template_seed}), shuffle_choices={args.shuffle_choices}\n")
     md_lines.append(f"- Sharedness: pca_var={args.pca_var}, tau={args.tau}, m_shared={args.m_shared}\n")
     md_lines.append(f"- Calibration decode max_new_tokens={args.calib_decode_max_new_tokens}, per_task_max_states={args.per_task_max_states}\n")
+    md_lines.append(f"- Evaluation: forced_choice={args.use_forced_choice} (MC tasks only)\n")
     md_lines.append("")
 
     if args.mode == "loto" and args.loto_eval_mode == "heldout" and "folds" in results:
-        md_lines.append("## LOTO held-out performance (greedy)\n")
+        md_lines.append("## LOTO held-out performance\n")
+        # If forced-choice is enabled, many heldouts (except gsm8k) will be forced-choice
         md_lines.append(render_loto_heldout_table(results, decoding="greedy"))
         md_lines.append("")
 
@@ -1537,6 +2138,7 @@ def main():
     print(f"[Done] JSON: {args.out_json}")
     print(f"[Done] MD  : {args.out_md}")
     print("=" * 80)
+
 
 if __name__ == "__main__":
     main()

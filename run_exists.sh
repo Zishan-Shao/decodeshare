@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /home/zs89/decodeshare/src/
-source ~/miniconda3/etc/profile.d/conda.sh
-conda activate flashsvd
+source "$HOME/miniconda3/etc/profile.d/conda.sh"
 
+conda activate flashsvd
+cd /home/zs89/decodeshare/src
 
 # 建议关掉 tokenizer 并行提示
 export TOKENIZERS_PARALLELISM=false
@@ -13,25 +13,26 @@ GPU_ID="${GPU_ID:-1}"
 
 # models（用数组，不要反复覆盖 MODEL_NAME）
 MODEL_NAMES=(
-  "meta-llama/Llama-2-7b-chat-hf"
-  "meta-llama/Llama-2-7b-hf"
-  "facebook/opt-6.7b"
-  "Qwen/Qwen2.5-7B"
-  "Qwen/Qwen2.5-7B-Instruct"
+  # "Qwen/Qwen2.5-7B-Instruct"
   "google/gemma-3-12b-it"
-  "google/gemma-2-2b-it"
 )
 
+  # "meta-llama/Llama-2-7b-chat-hf",
+  # "meta-llama/Llama-2-7b-hf"
+  # "facebook/opt-6.7b"
+  # "Qwen/Qwen2.5-7B"
+  # "google/gemma-2-2b-it"
+
 # sweeps（bash 数组写法）
-LAYERS=(2 8 10 18 20 24)
-TAUS=(0.001 0.01 0.1)
-N_PROMPTS_LIST=(128 256 512)
-CALIB_MAX_NEW_TOKENS_LIST=(128 256 512)
+LAYERS=(10)
+TAUS=(0.001)
+N_PROMPTS_LIST=(128)
+CALIB_MAX_NEW_TOKENS_LIST=(256)
 MAX_PROMPT_LEN_LIST=(512)
 PER_TASK_MAX_STATES_LIST=(20000)
 
 NULL_PERM_TRIALS=2000
-NULL_SCRAMBLE_TRIALS=100   # 你原来的 TRIALS=100 实际对应这个
+NULL_SCRAMBLE_TRIALS=50   # 你原来的 TRIALS=100 实际对应这个
 
 mkdir -p results/exists
 
@@ -51,7 +52,7 @@ for MODEL_NAME in "${MODEL_NAMES[@]}"; do
 
               echo "[Run] model=${MODEL_NAME} layer=${LAYER} tau=${TAU} n=${N_PROMPTS} new=${CALIB_MAX_NEW_TOKENS} maxlen=${MAX_PROMPT_LEN} states=${PER_TASK_MAX_STATES}"
 
-              CUDA_VISIBLE_DEVICES=4  python prove_sharedness_decode_fair.py \
+                python prove_sharedness_decode_fair.py \
                 --model "${MODEL_NAME}" \
                 --device cuda \
                 --model_dtype fp32 \
