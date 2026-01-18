@@ -750,7 +750,9 @@ class CrossTaskActivationCollector:
             if self.activation_strategy == "all_tokens":
                 if len(hidden_states.shape) == 3:
                     batch_size, seq_len, hidden_dim = hidden_states.shape
-                    act = hidden_states.view(-1, hidden_dim).detach().cpu()
+                    #act = hidden_states.view(-1, hidden_dim).detach().cpu()
+                    act = hidden_states.reshape(-1, hidden_dim).detach().cpu()
+                    # 或者 hidden_states.contiguous().view(-1, hidden_dim)
                 elif len(hidden_states.shape) == 2:
                     act = hidden_states.detach().cpu()
                 else:
@@ -1226,7 +1228,10 @@ def compute_loss(model, tokenizer, texts, hooks=None, device=DEVICE):
 
                 # 前向传播，确保使用稳定的数值
                 with torch.cuda.amp.autocast(enabled=False):  # 禁用混合精度以确保稳定性
-                    outputs = model(**inputs, labels=inputs["input_ids"])
+                    #outputs = model(**inputs, labels=inputs["input_ids"])
+                    labels = inputs["input_ids"].clone()
+                    labels[inputs["attention_mask"] == 0] = -100
+                    outputs = model(**inputs, labels=labels)
 
                 loss = outputs.loss
 
@@ -1274,7 +1279,8 @@ def compute_loss(model, tokenizer, texts, hooks=None, device=DEVICE):
                     non_pad_mask = shift_labels != pad_token_id
 
                     # Combine masks
-                    final_mask = valid_mask & non_pad_mask
+                    # final_mask = valid_mask & non_pad_mask
+                    final_mask = attention_mask_shifted.bool()
 
                     # Count correct predictions
                     correct = (predictions == shift_labels) & final_mask
@@ -1422,20 +1428,22 @@ def run_cross_task_experiment_fast_55(model_name, datasets):
             if acts is not None and acts.shape[0] > 0:
                 # Calculate optimal samples for PCA (ensure sufficient data for PCA computation)
                 max_available = acts.shape[0]
-                optimal_samples = calculate_optimal_samples(max_available, MAX_SEQ_LEN, hidden_dim)
+                #optimal_samples = calculate_optimal_samples(max_available, MAX_SEQ_LEN, hidden_dim)
+                n_samples = min(max_available, 20000)
+                indices = np.random.choice(max_available, size=n_samples, replace=False)
 
-                n_samples = min(max_available, optimal_samples)
+                # n_samples = min(max_available, optimal_samples)
 
-                if n_samples < optimal_samples:
-                    print(
-                        f"  Warning: {dataset_name} only has {acts.shape[0]} activations (need {optimal_samples} for optimal PCA)"
-                    )
+                # if n_samples < optimal_samples:
+                #     print(
+                #         f"  Warning: {dataset_name} only has {acts.shape[0]} activations (need {optimal_samples} for optimal PCA)"
+                #     )
 
-                # Use all available samples or subsample if too many
-                if max_available <= optimal_samples:
-                    indices = np.arange(max_available)
-                else:
-                    indices = np.random.choice(max_available, size=n_samples, replace=False)
+                # # Use all available samples or subsample if too many
+                # if max_available <= optimal_samples:
+                #     indices = np.arange(max_available)
+                # else:
+                #     indices = np.random.choice(max_available, size=n_samples, replace=False)
 
                 layer_activations[layer_idx] = acts[indices]
 

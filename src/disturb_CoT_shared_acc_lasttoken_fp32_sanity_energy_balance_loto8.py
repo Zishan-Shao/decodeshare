@@ -236,6 +236,31 @@ def signflip_permutation_test(baseline: np.ndarray, treatment: np.ndarray, iters
             count += 1
     return float((count + 1) / (iters + 1))
 
+
+def render_prompt(tokenizer, user_prompt: str, *, add_generation_prompt: bool = True, system_prompt: str | None = None):
+    """
+    返回最终送进 tokenizer 的字符串。
+    - 有 chat_template：用 apply_chat_template 包起来
+    - 没有：原样返回
+    - Gemma-7b-it 不支持 system：自动降级到无 system
+    """
+    tmpl = getattr(tokenizer, "chat_template", None)
+    if not tmpl:
+        return user_prompt
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": user_prompt})
+
+    try:
+        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=add_generation_prompt)
+    except Exception:
+        # 常见：Gemma-7b-it 会报 “System role not supported”
+        messages = [{"role": "user", "content": user_prompt}]
+        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=add_generation_prompt)
+
+
 def summarize_paired(
     baseline_correct: np.ndarray,
     treat_correct: np.ndarray,
@@ -368,13 +393,26 @@ def collect_decode_last_token_states(
     model.eval()
 
     for i in tqdm(range(0, len(prompts), batch_size), desc="CollectDecode"):
+        # batch = prompts[i:i+batch_size]
+        # batch = [render_prompt(tokenizer, p, add_generation_prompt=True) for p in batch]
+        # inputs = tokenizer(
+        #     batch,
+        #     return_tensors="pt",
+        #     padding=True,
+        #     truncation=True,
+        #     max_length=max_prompt_len,
+        # ).to(device)
+        use_template = bool(getattr(tokenizer, "chat_template", None))
         batch = prompts[i:i+batch_size]
+        batch = [render_prompt(tokenizer, p, add_generation_prompt=True) for p in batch]
+
         inputs = tokenizer(
             batch,
             return_tensors="pt",
             padding=True,
             truncation=True,
             max_length=max_prompt_len,
+            add_special_tokens=not use_template,   # ⭐关键：有 template 就关掉 special tokens
         ).to(device)
 
         input_ids = inputs["input_ids"]
@@ -806,13 +844,26 @@ def generate_continuations(
     new_tok: List[int] = []
 
     for i in tqdm(range(0, len(prompts), batch_size), desc=f"Generate({decoding})"):
+        # batch = prompts[i:i+batch_size]
+        # batch = [render_prompt(tokenizer, p, add_generation_prompt=True) for p in batch]
+        # inputs = tokenizer(
+        #     batch,
+        #     return_tensors="pt",
+        #     padding=True,
+        #     truncation=True,
+        #     max_length=max_prompt_len,
+        # ).to(device)
+        use_template = bool(getattr(tokenizer, "chat_template", None))
         batch = prompts[i:i+batch_size]
+        batch = [render_prompt(tokenizer, p, add_generation_prompt=True) for p in batch]
+
         inputs = tokenizer(
             batch,
             return_tensors="pt",
             padding=True,
             truncation=True,
             max_length=max_prompt_len,
+            add_special_tokens=not use_template,   # ⭐同样要加
         ).to(device)
 
         input_ids = inputs["input_ids"]
@@ -1024,6 +1075,7 @@ def load_model_and_tokenizer(model_name: str, device: str, model_dtype: str):
 
     tok = AutoTokenizer.from_pretrained(model_name)
     tok.padding_side = "left"
+    # tok.truncation_side = "left"   
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
@@ -1323,7 +1375,7 @@ def main():
 
     # Subspace estimation sizes
     ap.add_argument("--n_subspace", type=int, default=128)
-    ap.add_argument("--n_eval", type=int, default=256)
+    ap.add_argument("--n_eval", type=int, default=2048)
 
     # PCA/sharedness
     ap.add_argument("--pca_var", type=float, default=0.95)

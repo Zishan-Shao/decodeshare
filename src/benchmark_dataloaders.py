@@ -5,7 +5,7 @@ benchmark_dataloaders.py
 Robust dataset loading + prompt construction for common HF benchmarks.
 
 Key features:
-  - No trust_remote_code.
+  - No trust_remote_code (explicitly enforced with compatibility fallback).
   - Robust schema inference for MC choices / answer keys.
   - Automatic eval split fallback (prevents eval=0 -> NaNs).
   - Template randomization + deterministic choice shuffling.
@@ -47,7 +47,31 @@ AUTO_PARQUET_REVISION = "refs/convert/parquet"
 
 def _is_dataset_script_unsupported_error(e: Exception) -> bool:
     msg = str(e)
-    return "Dataset scripts are no longer supported" in msg
+    # 更鲁棒一些：不同版本可能有大小写/措辞差异
+    needles = [
+        "Dataset scripts are no longer supported",
+        "dataset scripts are no longer supported",
+        "Loading a dataset script is no longer supported",
+        "loading a dataset script is no longer supported",
+    ]
+    return any(x in msg for x in needles)
+
+
+def _load_dataset_compat(*args, **kwargs):
+    """
+    兼容不同 datasets 版本的参数差异。
+    重点：trust_remote_code 在部分版本里不存在；若报 TypeError，则去掉该参数重试。
+    """
+    try:
+        return load_dataset(*args, **kwargs)
+    except TypeError as te:
+        msg = str(te)
+        # 只对 trust_remote_code 这个参数做兼容兜底，避免吞掉其它真实错误
+        if "trust_remote_code" in msg and ("unexpected keyword" in msg or "got an unexpected keyword argument" in msg):
+            kwargs2 = dict(kwargs)
+            kwargs2.pop("trust_remote_code", None)
+            return load_dataset(*args, **kwargs2)
+        raise
 
 
 def load_hf_dataset(
@@ -67,16 +91,21 @@ def load_hf_dataset(
       - Try (hf_id, cfg, revision) first.
       - If it fails with "Dataset scripts are no longer supported" and revision is None,
         retry with revision="refs/convert/parquet".
+      - Explicitly enforces trust_remote_code=False (with compat fallback).
     """
+    # 显式禁止 remote code（并允许在老版本 datasets 下自动去掉该参数重试）
+    if "trust_remote_code" not in kwargs:
+        kwargs["trust_remote_code"] = False
+
     def _call(rev: Optional[str]):
         if cfg is None:
             if rev is None:
-                return load_dataset(hf_id, **kwargs)
-            return load_dataset(hf_id, revision=rev, **kwargs)
+                return _load_dataset_compat(hf_id, **kwargs)
+            return _load_dataset_compat(hf_id, revision=rev, **kwargs)
         else:
             if rev is None:
-                return load_dataset(hf_id, cfg, **kwargs)
-            return load_dataset(hf_id, cfg, revision=rev, **kwargs)
+                return _load_dataset_compat(hf_id, cfg, **kwargs)
+            return _load_dataset_compat(hf_id, cfg, revision=rev, **kwargs)
 
     try:
         ds = _call(revision)
@@ -568,6 +597,7 @@ def _build_from_splits_with_fallback(
         )
 
     meta = {
+        "prompt_format": "raw_text",  # ⭐明确：loader 只输出纯文本 prompt
         "subspace_split": sub_split,
         "eval_split": eval_split,
         "available_splits": list(ds.keys()),
@@ -580,12 +610,6 @@ def _build_from_splits_with_fallback(
 # ============================================================
 
 def _maybe_parse_json_blob_example(ex: dict) -> dict:
-    """
-    Some datasets store each row as a single string column 'text' that itself is a JSON object.
-    e.g. datatune/LogiQA2.0 often shows this pattern in the dataset viewer.
-
-    If ex["text"] looks like JSON and parses to dict, return that dict; otherwise return ex.
-    """
     if not isinstance(ex, dict):
         return ex
     if "text" not in ex or not isinstance(ex["text"], str):
@@ -638,12 +662,6 @@ def _first_nonempty_line(text: str) -> str:
 
 
 def _strip_repeated_choice_prefix(opt: Any, letters: str) -> str:
-    """
-    Remove repeated leading choice prefixes like:
-      'A)21' -> '21'
-      'a ) 140' -> '140'
-      'A)A)$60.00' -> '$60.00'   (important for shuffle_choices)
-    """
     s = "" if opt is None else str(opt).strip()
     if not s:
         return ""
@@ -841,26 +859,22 @@ def load_aqua(
 
     def build_one(ex: dict, ex_id: str) -> Tuple[str, str]:
         q = str(ex.get("question", "") or "")
-        # opts = ex.get("options", [])
-        # if not isinstance(opts, list) or len(opts) == 0:
-        #     return "", ""
+
         opts = ex.get("options", [])
         if isinstance(opts, str):
-            # split by "A)"..."E)" markers
-            import re, json
+            import json as _json
             s = opts.strip()
             if s.startswith("["):
                 try:
-                    opts = json.loads(s)
+                    opts = _json.loads(s)
                 except Exception:
                     pass
             if isinstance(opts, str):
-                # find "A) ... B) ... C) ..." spans
                 marks = list(re.finditer(r"\b[A-E]\)", s))
                 parts = []
-                for i,m in enumerate(marks):
+                for i, m in enumerate(marks):
                     a = m.end()
-                    b = marks[i+1].start() if i+1 < len(marks) else len(s)
+                    b = marks[i + 1].start() if i + 1 < len(marks) else len(s)
                     parts.append(s[a:b].strip())
                 opts = [p for p in parts if p]
 
@@ -882,7 +896,8 @@ def load_aqua(
         texts2, labels2, gold2 = shuffle_choices_if_needed(texts, labels, gold, shuffle_choices, seed, ex_id)
         tid = choose_template_id(ex_id, len(MC_TEMPLATES), template_seed) if template_randomization else 0
         p = build_prompt_mc(q, texts2, labels2, tid)
-        p = maybe_add_answer_prefix(p, True, answer_prefix)  # force for AQuA (improves extraction)
+        # force for AQuA (improves extraction)
+        p = maybe_add_answer_prefix(p, True, answer_prefix)
         return p, gold2
 
     sub_exs, eval_exs, meta = _build_from_splits_with_fallback(
@@ -1038,11 +1053,6 @@ def load_logiqa(
     add_answer_prefix: bool,
     answer_prefix: str,
 ) -> Tuple[List[Example], List[Example], Dict[str, Any]]:
-    """
-    LogiQA loader compatible with datasets>=4.x:
-      - Prefer loading from auto parquet branch when a dataset repo has loading scripts.
-      - Also supports datasets that store JSON per-row in a single 'text' column (e.g. LogiQA2.0 variants).
-    """
     candidates: List[Tuple[str, Optional[str], Optional[str]]] = [
         ("lucasmccabe/logiqa", None, AUTO_PARQUET_REVISION),
         ("EleutherAI/logiqa", "logiqa", AUTO_PARQUET_REVISION),
@@ -1251,9 +1261,23 @@ def load_wikitext(
     answer_prefix: str,
     prefix_words: int = 32,
 ) -> Tuple[List[Example], List[Example], Dict[str, Any]]:
-    hf_id = "Salesforce/wikitext"
+    # 更稳的 id：优先用官方 wikitext（很多环境没有 Salesforce/wikitext）
     cfg = "wikitext-2-raw-v1"
-    ds, used_rev = load_hf_dataset(hf_id, cfg)
+    tried = []
+    ds = None
+    used_rev = None
+    hf_id = None
+
+    for _hf_id in ["wikitext", "Salesforce/wikitext"]:
+        try:
+            _ds, _used_rev = load_hf_dataset(_hf_id, cfg)
+            ds, used_rev, hf_id = _ds, _used_rev, _hf_id
+            break
+        except Exception as e:
+            tried.append(f"{_hf_id}/{cfg} -> {repr(e)}")
+
+    if ds is None:
+        raise RuntimeError("Failed to load wikitext. Tried:\n" + "\n".join(tried))
 
     def build_one(ex: dict, ex_id: str) -> Tuple[str, str]:
         txt = str(ex.get("text", "") or "")

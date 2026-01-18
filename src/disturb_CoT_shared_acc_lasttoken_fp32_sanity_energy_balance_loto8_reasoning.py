@@ -391,13 +391,26 @@ def collect_decode_last_token_states(
         tokenizer.pad_token = tokenizer.eos_token
 
     for i in tqdm(range(0, len(prompts), batch_size), desc="CollectDecode"):
+        # batch = prompts[i:i+batch_size]
+        # inputs = tokenizer(
+        #     batch,
+        #     return_tensors="pt",
+        #     padding=True,
+        #     truncation=True,
+        #     max_length=max_prompt_len,
+        # ).to(device)
+        use_template = bool(getattr(tokenizer, "chat_template", None))
+
         batch = prompts[i:i+batch_size]
+        batch = [render_prompt(tokenizer, p, add_generation_prompt=True) for p in batch]
+
         inputs = tokenizer(
             batch,
             return_tensors="pt",
             padding=True,
             truncation=True,
             max_length=max_prompt_len,
+            add_special_tokens=not use_template,
         ).to(device)
 
         input_ids = inputs["input_ids"]
@@ -447,6 +460,24 @@ def collect_decode_last_token_states(
             past = out.past_key_values
 
         collector.set_capture(False, None)
+
+
+def render_prompt(tokenizer, user_prompt: str, *, add_generation_prompt: bool = True, system_prompt: str | None = None):
+    tmpl = getattr(tokenizer, "chat_template", None)
+    if not tmpl:
+        return user_prompt
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": user_prompt})
+
+    try:
+        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=add_generation_prompt)
+    except Exception:
+        # 常见：Gemma-7b-it 报 system role unsupported
+        messages = [{"role": "user", "content": user_prompt}]
+        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=add_generation_prompt)
 
 
 # -----------------------------
@@ -900,13 +931,26 @@ def generate_continuations(
     new_tok: List[int] = []
 
     for i in tqdm(range(0, len(prompts), batch_size), desc=f"Generate({decoding})"):
+        # batch = prompts[i:i+batch_size]
+        # inputs = tokenizer(
+        #     batch,
+        #     return_tensors="pt",
+        #     padding=True,
+        #     truncation=True,
+        #     max_length=max_prompt_len,
+        # ).to(device)
+        use_template = bool(getattr(tokenizer, "chat_template", None))
+
         batch = prompts[i:i+batch_size]
+        batch = [render_prompt(tokenizer, p, add_generation_prompt=True) for p in batch]
+
         inputs = tokenizer(
             batch,
             return_tensors="pt",
             padding=True,
             truncation=True,
             max_length=max_prompt_len,
+            add_special_tokens=not use_template,
         ).to(device)
 
         input_ids = inputs["input_ids"]
@@ -1100,31 +1144,70 @@ def cand_token_ids(tokenizer, s: str, *, leading_space: bool) -> List[int]:
     return ids
 
 
+# def _should_add_fc_prefix(
+#     *,
+#     prompt: str,
+#     warmup_tokens: int,
+#     prefix_mode: str,
+#     fc_answer_prefix: str,
+# ) -> bool:
+#     """
+#     Decide whether to teacher-force answer prefix before scoring candidates.
+#     """
+#     if not fc_answer_prefix:
+#         return False
+#     assert prefix_mode in {"auto", "always", "never"}
+#     if prefix_mode == "never":
+#         return False
+#     if prefix_mode == "always":
+#         return True
+
+#     # auto:
+#     # If warmup>0, ALWAYS re-anchor the decision point after warmup.
+#     if warmup_tokens > 0:
+#         return True
+
+#     # Otherwise, add prefix only if prompt doesn't already end with it (ignoring trailing whitespace).
+#     p = prompt.rstrip()
+#     ap = fc_answer_prefix.rstrip()
+#     return (ap != "") and (not p.endswith(ap))
+
 def _should_add_fc_prefix(
     *,
     prompt: str,
     warmup_tokens: int,
     prefix_mode: str,
     fc_answer_prefix: str,
+    use_chat_template: bool,
 ) -> bool:
     """
     Decide whether to teacher-force answer prefix before scoring candidates.
+
+    IMPORTANT:
+    - For chat-template models (Gemma-it / Llama-chat), generation starts at the assistant turn,
+      so checking whether the *raw prompt string* endswith(prefix) is NOT a reliable decision-point test.
+      In that case, 'auto' should default to adding the prefix (unless prefix_mode=='never').
     """
     if not fc_answer_prefix:
         return False
     assert prefix_mode in {"auto", "always", "never"}
+
     if prefix_mode == "never":
         return False
     if prefix_mode == "always":
         return True
 
     # auto:
-    # If warmup>0, ALWAYS re-anchor the decision point after warmup.
+    # If using chat template, ALWAYS add prefix to anchor decision point in assistant turn.
+    if use_chat_template:
+        return True
+
+    # Non-chat: if warmup>0, always re-anchor after warmup.
     if warmup_tokens > 0:
         return True
 
     # Otherwise, add prefix only if prompt doesn't already end with it (ignoring trailing whitespace).
-    p = prompt.rstrip()
+    p = (prompt or "").rstrip()
     ap = fc_answer_prefix.rstrip()
     return (ap != "") and (not p.endswith(ap))
 
@@ -1166,8 +1249,20 @@ def precompute_fc_warmup_tokens(
     out_tokens = np.zeros((len(prompts), warmup_tokens), dtype=np.int64)
 
     for i in tqdm(range(0, len(prompts), batch_size), desc=f"FCWarmupGen(W={warmup_tokens})"):
-        batch = prompts[i : i + batch_size]
-        inputs = tokenizer(batch, return_tensors="pt", padding=True, truncation=True, max_length=max_prompt_len).to(device)
+        # batch = prompts[i : i + batch_size]
+        # inputs = tokenizer(batch, return_tensors="pt", padding=True, truncation=True, max_length=max_prompt_len).to(device)
+        use_template = bool(getattr(tokenizer, "chat_template", None))
+        batch = prompts[i:i+batch_size]
+        batch = [render_prompt(tokenizer, p, add_generation_prompt=True) for p in batch]
+        inputs = tokenizer(
+            batch,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=max_prompt_len,
+            add_special_tokens=not use_template,
+        ).to(device)
+
         ids = inputs["input_ids"]
         attn = inputs["attention_mask"]
         B = ids.shape[0]
@@ -1197,6 +1292,250 @@ def precompute_fc_warmup_tokens(
     return out_tokens
 
 
+# @torch.no_grad()
+# def evaluate_condition_forced_choice(
+#     model,
+#     tokenizer,
+#     examples: List["Example"],
+#     task_name: str,
+#     Q_np: Optional[np.ndarray],
+#     condition: str,  # baseline/full/staged
+#     *,
+#     alpha: float,
+#     layer_indices: List[int],
+#     reasoning_token_threshold: int,
+#     batch_size: int,
+#     max_prompt_len: int,
+#     bootstrap_iters: int,
+#     ci_alpha: float,
+#     global_seed: int,
+#     # forced-choice knobs
+#     warmup_token_ids: Optional[np.ndarray],
+#     fc_warmup_tokens: int,
+#     fc_prefix_mode: str,
+#     fc_answer_prefix: str,
+# ) -> Dict[str, Any]:
+#     """
+#     Forced-choice accuracy by sum logprob of candidate strings.
+
+#     This is decode-aligned and compatible with decode-only interventions.
+#     """
+#     device = next(model.parameters()).device
+#     model.eval()
+
+#     tokenizer.padding_side = "left"
+#     if tokenizer.pad_token is None:
+#         tokenizer.pad_token = tokenizer.eos_token
+#     eos = tokenizer.eos_token_id
+
+#     cands = candidate_strings(task_name)
+#     if len(cands) == 0:
+#         raise ValueError(f"Task '{task_name}' has no forced-choice candidates.")
+
+#     # Register hooks (baseline/full/staged)
+#     handles, state_setter, hook_stats = register_hooks_for_condition(
+#         model=model,
+#         layer_indices=layer_indices,
+#         Q_np=Q_np,
+#         condition=condition,
+#         alpha=alpha,
+#         reasoning_token_threshold=reasoning_token_threshold,
+#     )
+
+#     prompts = [ex.prompt for ex in examples]
+#     golds = [ex.gold for ex in examples]
+#     correct = np.zeros(len(examples), dtype=np.float32)
+
+#     # Useful diagnostics
+#     avg_margin = []
+#     avg_best_lp = []
+
+#     try:
+#         for i in tqdm(range(0, len(examples), batch_size), desc=f"ForcedChoice({task_name}/{condition})"):
+#             batch_ex = examples[i : i + batch_size]
+#             batch_prompts = [ex.prompt for ex in batch_ex]
+#             batch_golds = [ex.gold for ex in batch_ex]
+
+#             # inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True, truncation=True, max_length=max_prompt_len).to(device)
+#             use_template = bool(getattr(tokenizer, "chat_template", None))
+#             batch = prompts[i:i+batch_size]
+#             batch = [render_prompt(tokenizer, p, add_generation_prompt=True) for p in batch]
+
+#             inputs = tokenizer(
+#                 batch,
+#                 return_tensors="pt",
+#                 padding=True,
+#                 truncation=True,
+#                 max_length=max_prompt_len,
+#                 add_special_tokens=not use_template,
+#             ).to(device)
+
+#             ids = inputs["input_ids"]
+#             attn = inputs["attention_mask"]
+#             B = ids.shape[0]
+#             # Decide per-example whether to add answer prefix (robust to template randomization).
+#             # If prompts are mixed (some already contain the prefix, some not), we split into two
+#             # sub-batches to avoid duplicated prefixes (which can tank accuracy).
+#             batch_prompts_raw = [ex.prompt for ex in batch]  # 用于 need_prefix 判断
+#             need_prefix = [
+#                 _should_add_fc_prefix(
+#                     prompt=p,
+#                     warmup_tokens=fc_warmup_tokens,
+#                     prefix_mode=fc_prefix_mode,
+#                     fc_answer_prefix=fc_answer_prefix,
+#                 )
+#                 for p in batch_prompts
+#             ]
+
+#             warm_slice = None
+#             if warmup_token_ids is not None and fc_warmup_tokens > 0:
+#                 warm_slice = warmup_token_ids[i : i + B]
+
+#             scores_full = torch.full((B, len(cands)), float("-inf"), device=device)
+
+#             # Evaluate two groups: add_prefix=False and add_prefix=True
+#             for add_prefix in [False, True]:
+#                 idxs = [j for j, flag in enumerate(need_prefix) if bool(flag) == add_prefix]
+#                 if not idxs:
+#                     continue
+
+#                 ids_g = ids[idxs]
+#                 attn_g = attn[idxs]
+#                 Bg = ids_g.shape[0]
+
+#                 # Staged state for this sub-batch
+#                 if state_setter is not None:
+#                     st = GenerationState(Bg, ids_g.device, reasoning_token_threshold)
+#                     state_setter(st)
+#                 else:
+#                     st = None
+
+#                 # Decode-aligned boundary for this sub-batch
+#                 past_g, logits_g = _cache_advanced_prompt_boundary(model, ids_g, attn_g)
+
+#                 # Teacher-force warmup tokens (baseline-generated, shared across conditions)
+#                 if warm_slice is not None:
+#                     warm_g = torch.tensor(warm_slice[idxs], dtype=torch.long, device=device)
+#                     for t in range(warm_g.shape[1]):
+#                         tok_t = warm_g[:, t : t + 1]
+#                         attn_g = torch.cat(
+#                             [attn_g, torch.ones((Bg, 1), device=device, dtype=attn_g.dtype)],
+#                             dim=1,
+#                         )
+#                         out = model(input_ids=tok_t, attention_mask=attn_g, use_cache=True, past_key_values=past_g)
+#                         logits_g = out.logits[:, -1, :]
+#                         past_g = out.past_key_values
+#                         if st is not None:
+#                             st.step_update(tok_t, eos_token_id=eos)
+
+#                 # Teacher-force answer prefix if needed for this sub-batch
+#                 prefix_used_g = fc_answer_prefix if (add_prefix and fc_answer_prefix) else ""
+#                 if prefix_used_g:
+#                     prefix_ids = tokenizer.encode(prefix_used_g, add_special_tokens=False)
+#                     for pid in prefix_ids:
+#                         inp = torch.full((Bg, 1), pid, dtype=torch.long, device=device)
+#                         attn_g = torch.cat(
+#                             [attn_g, torch.ones((Bg, 1), device=device, dtype=attn_g.dtype)],
+#                             dim=1,
+#                         )
+#                         out = model(input_ids=inp, attention_mask=attn_g, use_cache=True, past_key_values=past_g)
+#                         logits_g = out.logits[:, -1, :]
+#                         past_g = out.past_key_values
+#                         if st is not None:
+#                             st.step_update(inp, eos_token_id=eos)
+
+#                 # Determine candidate tokenization (leading space or not) based on the *expected* context end.
+#                 if prefix_used_g:
+#                     leading_space_g = not _context_ends_with_whitespace(prefix_used_g)
+#                 else:
+#                     leading_space_g = not _context_ends_with_whitespace(batch_prompts[idxs[0]])
+
+#                 cand_ids_list = [cand_token_ids(tokenizer, s, leading_space=leading_space_g) for s in cands]
+
+#                 # Score candidates by logprob for this sub-batch
+#                 scores_g = torch.zeros(Bg, len(cands), device=device)
+#                 for ci, cand_ids in enumerate(cand_ids_list):
+#                     if len(cand_ids) == 0:
+#                         scores_g[:, ci] = float("-inf")
+#                         continue
+
+#                     past_c = past_g
+#                     attn_c = attn_g
+#                     logits_c = logits_g
+
+#                     # For staged: each candidate path starts from the same state (before candidate tokens)
+#                     if state_setter is not None:
+#                         cand_state = st.clone()
+#                         state_setter(cand_state)
+#                     else:
+#                         cand_state = None
+
+#                     lp = torch.zeros(Bg, device=device)
+#                     for ti, tok_id in enumerate(cand_ids):
+#                         logp = torch.log_softmax(logits_c, dim=-1)
+#                         lp = lp + logp[:, tok_id]
+#                         if ti < len(cand_ids) - 1:
+#                             inp = torch.full((Bg, 1), tok_id, dtype=torch.long, device=device)
+#                             attn_c = torch.cat(
+#                                 [attn_c, torch.ones((Bg, 1), device=device, dtype=attn_c.dtype)],
+#                                 dim=1,
+#                             )
+#                             out = model(input_ids=inp, attention_mask=attn_c, use_cache=True, past_key_values=past_c)
+#                             logits_c = out.logits[:, -1, :]
+#                             past_c = out.past_key_values
+#                             if cand_state is not None:
+#                                 cand_state.step_update(inp, eos_token_id=eos)
+
+#                     scores_g[:, ci] = lp
+
+#                 scores_full[idxs, :] = scores_g
+
+#             # pick best candidate for each example
+#             pred_idx = torch.argmax(scores_full, dim=1).detach().cpu().numpy().tolist()
+#             preds = [cands[j] for j in pred_idx]
+
+#             # simple margin diagnostics
+#             top2 = torch.topk(scores_full, k=min(2, scores_full.shape[1]), dim=1).values.detach().cpu().numpy()
+#             if top2.shape[1] >= 2:
+#                 avg_margin.extend((top2[:, 0] - top2[:, 1]).tolist())
+#             avg_best_lp.extend(top2[:, 0].tolist())
+
+#             for b, (pred, gold) in enumerate(zip(preds, batch_golds)):
+#                 correct[i + b] = float(is_correct(task_name, pred, gold))
+
+#         # clear state pointer for staged
+#         if state_setter is not None:
+#             state_setter(None)
+
+#         correct_arr = correct.astype(np.float32, copy=False)
+#         seed = stable_int_seed(global_seed, task_name, "forced_choice", condition)
+#         acc, lo, hi = bootstrap_ci_mean(correct_arr, iters=bootstrap_iters, alpha=ci_alpha, seed=seed)
+
+#         return {
+#             "protocol": "forced_choice",
+#             "condition": condition,
+#             "accuracy": float(acc),
+#             "ci_low": float(lo),
+#             "ci_high": float(hi),
+#             "correct": correct_arr.tolist(),
+#             "fc": {
+#                 "candidates": cands,
+#                 "warmup_tokens": int(fc_warmup_tokens),
+#                 "prefix_mode": fc_prefix_mode,
+#                 "answer_prefix": fc_answer_prefix,
+#                 "leading_space": bool(not _context_ends_with_whitespace((fc_answer_prefix if fc_answer_prefix else (prompts[0] if prompts else "")))),
+#                 "avg_best_logprob": float(np.mean(avg_best_lp)) if avg_best_lp else float("nan"),
+#                 "avg_margin": float(np.mean(avg_margin)) if avg_margin else float("nan"),
+#             },
+#             # generation-only fields: keep for schema compatibility
+#             "extraction_rate": 1.0,
+#             "eos_rate": float("nan"),
+#             "avg_new_tokens": float("nan"),
+#             "hook_stats": [{"name": s.name, "decode_calls": s.decode_calls, "intervened": s.intervened} for s in hook_stats],
+#         }
+#     finally:
+#         remove_hooks(handles)
+
 @torch.no_grad()
 def evaluate_condition_forced_choice(
     model,
@@ -1223,12 +1562,16 @@ def evaluate_condition_forced_choice(
     """
     Forced-choice accuracy by sum logprob of candidate strings.
 
-    This is decode-aligned and compatible with decode-only interventions.
+    Fixes vs your current version:
+      - Keep RAW prompts (for prefix decision) separate from RENDERED prompts (for tokenization / whitespace).
+      - For chat_template models, auto-prefix defaults to True (anchors decision point in assistant turn).
+      - Remove buggy 'batch_prompts_raw = [ex.prompt for ex in batch]' usage.
     """
     device = next(model.parameters()).device
     model.eval()
 
     tokenizer.padding_side = "left"
+    tokenizer.truncation_side = "left"
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     eos = tokenizer.eos_token_id
@@ -1237,7 +1580,6 @@ def evaluate_condition_forced_choice(
     if len(cands) == 0:
         raise ValueError(f"Task '{task_name}' has no forced-choice candidates.")
 
-    # Register hooks (baseline/full/staged)
     handles, state_setter, hook_stats = register_hooks_for_condition(
         model=model,
         layer_indices=layer_indices,
@@ -1247,46 +1589,55 @@ def evaluate_condition_forced_choice(
         reasoning_token_threshold=reasoning_token_threshold,
     )
 
-    prompts = [ex.prompt for ex in examples]
-    golds = [ex.gold for ex in examples]
     correct = np.zeros(len(examples), dtype=np.float32)
 
-    # Useful diagnostics
-    avg_margin = []
-    avg_best_lp = []
+    # diagnostics
+    avg_margin: List[float] = []
+    avg_best_lp: List[float] = []
 
     try:
         for i in tqdm(range(0, len(examples), batch_size), desc=f"ForcedChoice({task_name}/{condition})"):
             batch_ex = examples[i : i + batch_size]
-            batch_prompts = [ex.prompt for ex in batch_ex]
+            batch_prompts_raw = [ex.prompt for ex in batch_ex]   # for prefix decision
             batch_golds = [ex.gold for ex in batch_ex]
 
-            inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True, truncation=True, max_length=max_prompt_len).to(device)
+            use_template = bool(getattr(tokenizer, "chat_template", None))
+            batch_prompts_rendered = [render_prompt(tokenizer, p, add_generation_prompt=True) for p in batch_prompts_raw]
+
+            inputs = tokenizer(
+                batch_prompts_rendered,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=max_prompt_len,
+                add_special_tokens=not use_template,  # IMPORTANT: avoid double BOS when apply_chat_template used
+            ).to(device)
+
             ids = inputs["input_ids"]
             attn = inputs["attention_mask"]
             B = ids.shape[0]
-            # Decide per-example whether to add answer prefix (robust to template randomization).
-            # If prompts are mixed (some already contain the prefix, some not), we split into two
-            # sub-batches to avoid duplicated prefixes (which can tank accuracy).
+
+            # per-example: whether we should teacher-force answer prefix before scoring candidates
             need_prefix = [
                 _should_add_fc_prefix(
                     prompt=p,
                     warmup_tokens=fc_warmup_tokens,
                     prefix_mode=fc_prefix_mode,
                     fc_answer_prefix=fc_answer_prefix,
+                    use_chat_template=use_template,
                 )
-                for p in batch_prompts
+                for p in batch_prompts_raw
             ]
 
             warm_slice = None
             if warmup_token_ids is not None and fc_warmup_tokens > 0:
-                warm_slice = warmup_token_ids[i : i + B]
+                warm_slice = warmup_token_ids[i : i + B]  # [B,W]
 
             scores_full = torch.full((B, len(cands)), float("-inf"), device=device)
 
-            # Evaluate two groups: add_prefix=False and add_prefix=True
-            for add_prefix in [False, True]:
-                idxs = [j for j, flag in enumerate(need_prefix) if bool(flag) == add_prefix]
+            # Evaluate two groups to avoid duplicated prefix: need_prefix False / True
+            for add_prefix_flag in [False, True]:
+                idxs = [j for j, flag in enumerate(need_prefix) if bool(flag) == add_prefix_flag]
                 if not idxs:
                     continue
 
@@ -1294,19 +1645,19 @@ def evaluate_condition_forced_choice(
                 attn_g = attn[idxs]
                 Bg = ids_g.shape[0]
 
-                # Staged state for this sub-batch
+                # staged state for this sub-batch
                 if state_setter is not None:
                     st = GenerationState(Bg, ids_g.device, reasoning_token_threshold)
                     state_setter(st)
                 else:
                     st = None
 
-                # Decode-aligned boundary for this sub-batch
+                # decode-aligned boundary
                 past_g, logits_g = _cache_advanced_prompt_boundary(model, ids_g, attn_g)
 
-                # Teacher-force warmup tokens (baseline-generated, shared across conditions)
+                # teacher-force warmup tokens (baseline-generated, shared across conditions)
                 if warm_slice is not None:
-                    warm_g = torch.tensor(warm_slice[idxs], dtype=torch.long, device=device)
+                    warm_g = torch.tensor(warm_slice[idxs], dtype=torch.long, device=device)  # [Bg,W]
                     for t in range(warm_g.shape[1]):
                         tok_t = warm_g[:, t : t + 1]
                         attn_g = torch.cat(
@@ -1319,8 +1670,8 @@ def evaluate_condition_forced_choice(
                         if st is not None:
                             st.step_update(tok_t, eos_token_id=eos)
 
-                # Teacher-force answer prefix if needed for this sub-batch
-                prefix_used_g = fc_answer_prefix if (add_prefix and fc_answer_prefix) else ""
+                # teacher-force answer prefix (anchors decision point)
+                prefix_used_g = fc_answer_prefix if (add_prefix_flag and fc_answer_prefix) else ""
                 if prefix_used_g:
                     prefix_ids = tokenizer.encode(prefix_used_g, add_special_tokens=False)
                     for pid in prefix_ids:
@@ -1335,15 +1686,16 @@ def evaluate_condition_forced_choice(
                         if st is not None:
                             st.step_update(inp, eos_token_id=eos)
 
-                # Determine candidate tokenization (leading space or not) based on the *expected* context end.
+                # Determine whether candidates should be tokenized with a leading space
+                # (should reflect the REAL context end: prefix (if used) else rendered prompt end).
                 if prefix_used_g:
                     leading_space_g = not _context_ends_with_whitespace(prefix_used_g)
                 else:
-                    leading_space_g = not _context_ends_with_whitespace(batch_prompts[idxs[0]])
+                    leading_space_g = not _context_ends_with_whitespace(batch_prompts_rendered[idxs[0]])
 
                 cand_ids_list = [cand_token_ids(tokenizer, s, leading_space=leading_space_g) for s in cands]
 
-                # Score candidates by logprob for this sub-batch
+                # Score candidates
                 scores_g = torch.zeros(Bg, len(cands), device=device)
                 for ci, cand_ids in enumerate(cand_ids_list):
                     if len(cand_ids) == 0:
@@ -1354,8 +1706,8 @@ def evaluate_condition_forced_choice(
                     attn_c = attn_g
                     logits_c = logits_g
 
-                    # For staged: each candidate path starts from the same state (before candidate tokens)
-                    if state_setter is not None:
+                    # for staged: each candidate path starts from the same state
+                    if state_setter is not None and st is not None:
                         cand_state = st.clone()
                         state_setter(cand_state)
                     else:
@@ -1365,6 +1717,7 @@ def evaluate_condition_forced_choice(
                     for ti, tok_id in enumerate(cand_ids):
                         logp = torch.log_softmax(logits_c, dim=-1)
                         lp = lp + logp[:, tok_id]
+
                         if ti < len(cand_ids) - 1:
                             inp = torch.full((Bg, 1), tok_id, dtype=torch.long, device=device)
                             attn_c = torch.cat(
@@ -1381,11 +1734,15 @@ def evaluate_condition_forced_choice(
 
                 scores_full[idxs, :] = scores_g
 
+                # restore staged pointer (hygiene)
+                if state_setter is not None:
+                    state_setter(st)
+
             # pick best candidate for each example
             pred_idx = torch.argmax(scores_full, dim=1).detach().cpu().numpy().tolist()
             preds = [cands[j] for j in pred_idx]
 
-            # simple margin diagnostics
+            # margin diagnostics
             top2 = torch.topk(scores_full, k=min(2, scores_full.shape[1]), dim=1).values.detach().cpu().numpy()
             if top2.shape[1] >= 2:
                 avg_margin.extend((top2[:, 0] - top2[:, 1]).tolist())
@@ -1394,13 +1751,23 @@ def evaluate_condition_forced_choice(
             for b, (pred, gold) in enumerate(zip(preds, batch_golds)):
                 correct[i + b] = float(is_correct(task_name, pred, gold))
 
-        # clear state pointer for staged
         if state_setter is not None:
             state_setter(None)
 
         correct_arr = correct.astype(np.float32, copy=False)
         seed = stable_int_seed(global_seed, task_name, "forced_choice", condition)
         acc, lo, hi = bootstrap_ci_mean(correct_arr, iters=bootstrap_iters, alpha=ci_alpha, seed=seed)
+
+        # diagnostic leading_space (best-effort)
+        if fc_answer_prefix and fc_prefix_mode != "never":
+            diag_leading_space = bool(not _context_ends_with_whitespace(fc_answer_prefix))
+        else:
+            if examples:
+                use_template0 = bool(getattr(tokenizer, "chat_template", None))
+                p0 = render_prompt(tokenizer, examples[0].prompt, add_generation_prompt=True) if use_template0 else examples[0].prompt
+                diag_leading_space = bool(not _context_ends_with_whitespace(p0))
+            else:
+                diag_leading_space = False
 
         return {
             "protocol": "forced_choice",
@@ -1414,16 +1781,18 @@ def evaluate_condition_forced_choice(
                 "warmup_tokens": int(fc_warmup_tokens),
                 "prefix_mode": fc_prefix_mode,
                 "answer_prefix": fc_answer_prefix,
-                "leading_space": bool(not _context_ends_with_whitespace((fc_answer_prefix if fc_answer_prefix else (prompts[0] if prompts else "")))),
+                "leading_space": diag_leading_space,
                 "avg_best_logprob": float(np.mean(avg_best_lp)) if avg_best_lp else float("nan"),
                 "avg_margin": float(np.mean(avg_margin)) if avg_margin else float("nan"),
+                "use_chat_template": bool(getattr(tokenizer, "chat_template", None)),
             },
-            # generation-only fields: keep for schema compatibility
+            # keep schema compatibility
             "extraction_rate": 1.0,
             "eos_rate": float("nan"),
             "avg_new_tokens": float("nan"),
             "hook_stats": [{"name": s.name, "decode_calls": s.decode_calls, "intervened": s.intervened} for s in hook_stats],
         }
+
     finally:
         remove_hooks(handles)
 
@@ -1431,6 +1800,24 @@ def evaluate_condition_forced_choice(
 # -----------------------------
 # Model loading
 # -----------------------------
+# def load_model_and_tokenizer(model_name: str, device: str, model_dtype: str):
+#     dtype = torch.float32 if model_dtype == "fp32" else torch.float16
+#     try:
+#         model = AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
+#     except TypeError:
+#         model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype)
+
+#     tok = AutoTokenizer.from_pretrained(model_name)
+#     tok.padding_side = "left"
+#     if tok.pad_token is None:
+#         tok.pad_token = tok.eos_token
+
+#     model = model.to(device)
+#     model.eval()
+#     if hasattr(model.config, "use_cache"):
+#         model.config.use_cache = True
+#     return model, tok
+
 def load_model_and_tokenizer(model_name: str, device: str, model_dtype: str):
     dtype = torch.float32 if model_dtype == "fp32" else torch.float16
     try:
@@ -1439,7 +1826,11 @@ def load_model_and_tokenizer(model_name: str, device: str, model_dtype: str):
         model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=dtype)
 
     tok = AutoTokenizer.from_pretrained(model_name)
+
+    # IMPORTANT for left padding + truncation:
     tok.padding_side = "left"
+    tok.truncation_side = "left"
+
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
@@ -1873,9 +2264,272 @@ def infer_hidden_dim(model) -> Optional[int]:
     return None
 
 
-# -----------------------------
-# Main
-# -----------------------------
+# # -----------------------------
+# # Main
+# # -----------------------------
+# def main():
+#     ap = argparse.ArgumentParser()
+#     ap.add_argument("--model", type=str, default="meta-llama/Llama-2-7b-chat-hf")
+#     ap.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+#     ap.add_argument("--model_dtype", type=str, default="fp32", choices=["fp32", "fp16"])
+#     ap.add_argument("--layer", type=int, default=10)
+#     ap.add_argument("--tasks", type=str, default="gsm8k,commonsenseqa,strategyqa,aqua,arc_challenge,openbookqa,qasc,logiqa")
+#     ap.add_argument("--mode", type=str, default="loto", choices=["all", "loto"])
+#     ap.add_argument("--loto_eval_mode", type=str, default="heldout", choices=["heldout", "all"])
+#     ap.add_argument("--loto_only", type=str, default="", help="Optional: only run this held-out task (e.g., 'gsm8k'). Empty means run all folds.")
+
+#     # Subspace estimation sizes
+#     ap.add_argument("--n_subspace", type=int, default=128)
+#     ap.add_argument("--n_eval", type=int, default=256)
+
+#     # PCA/sharedness
+#     ap.add_argument("--pca_var", type=float, default=0.95)
+#     ap.add_argument("--min_dim", type=int, default=1)
+#     ap.add_argument("--max_dim", type=int, default=4096)
+#     ap.add_argument("--tau", type=float, default=0.001, help="Relative threshold for shared component selection.")
+#     ap.add_argument("--m_shared", type=str, default="all", help="Sharedness requirement: 'all' or an int (>=2).")
+
+#     # Activation collection
+#     ap.add_argument("--calib_decode_max_new_tokens", type=int, default=128)
+#     ap.add_argument("--per_task_max_states", type=int, default=20000)
+
+#     # Intervention
+#     ap.add_argument("--alpha_remove", type=float, default=1.0)
+#     ap.add_argument("--reasoning_tokens", type=int, default=128)
+#     ap.add_argument("--max_new_tokens", type=int, default=256)
+
+#     # Decoding (generation)
+#     ap.add_argument("--temperature", type=float, default=0.7)
+#     ap.add_argument("--top_p", type=float, default=0.9)
+#     ap.add_argument("--top_k", type=int, default=0)
+#     ap.add_argument("--batch_size", type=int, default=4)
+#     ap.add_argument("--max_prompt_len", type=int, default=512)
+#     ap.add_argument("--do_sample", type=int, default=0, choices=[0, 1])
+
+#     # Random controls
+#     ap.add_argument("--rand_type", type=str, default="joint_nonshared_varmatch",
+#                     choices=["joint_nonshared_uniform", "joint_nonshared_topk", "joint_nonshared_varmatch"])
+
+#     # Template randomization
+#     ap.add_argument("--template_randomization", type=int, default=1, choices=[0, 1])
+#     ap.add_argument("--template_seed", type=int, default=1234)
+#     ap.add_argument("--shuffle_choices", type=int, default=0, choices=[0, 1])
+#     ap.add_argument("--add_answer_prefix", type=int, default=0, choices=[0, 1])
+#     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
+
+#     # Forced-choice (new)
+#     ap.add_argument("--use_forced_choice", type=int, default=0, choices=[0, 1], help="If 1, use forced-choice for tasks with discrete candidates (MC/YesNo). gsm8k stays generation.")
+#     ap.add_argument("--fc_warmup_tokens", type=int, default=0, help="Teacher-forced warmup tokens before scoring candidates (baseline-generated, shared across conditions).")
+#     ap.add_argument("--fc_warmup_decoding", type=str, default="greedy", choices=["greedy", "sample"])
+#     ap.add_argument("--fc_warmup_seed", type=int, default=123)
+#     ap.add_argument("--fc_warmup_ban_eos", type=int, default=1, choices=[0, 1])
+#     ap.add_argument("--fc_warmup_temperature", type=float, default=0.7)
+#     ap.add_argument("--fc_warmup_top_p", type=float, default=0.9)
+#     ap.add_argument("--fc_warmup_top_k", type=int, default=0)
+#     ap.add_argument("--fc_prefix_mode", type=str, default="auto", choices=["auto", "always", "never"])
+#     ap.add_argument("--fc_answer_prefix", type=str, default="\nFinal answer:")
+#     ap.add_argument("--fc_debug_print", type=int, default=0, choices=[0, 1], help="If 1, print warmup demo text and other FC diagnostics.")
+
+#     # Stats
+#     ap.add_argument("--bootstrap_iters", type=int, default=5000)
+#     ap.add_argument("--perm_iters", type=int, default=10000)
+#     ap.add_argument("--ci_alpha", type=float, default=0.05)
+#     ap.add_argument("--seed", type=int, default=42)
+#     ap.add_argument("--sample_seed", type=int, default=12345)
+
+#     # Output
+#     ap.add_argument("--out_json", type=str, default=os.path.join(THIS_DIR, "energy_balance_loto8_reasoning_results.json"))
+#     ap.add_argument("--out_md", type=str, default=os.path.join(THIS_DIR, "energy_balance_loto8_reasoning_summary.md"))
+
+#     args = ap.parse_args()
+#     set_global_seed(args.seed)
+
+#     # Normalize prefix args
+#     args.answer_prefix = _norm_prefix_arg(args.answer_prefix)
+#     args.fc_answer_prefix = _norm_prefix_arg(args.fc_answer_prefix)
+
+#     tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
+#     if len(tasks) < 2:
+#         raise RuntimeError("Need at least 2 tasks in --tasks.")
+
+#     args.do_sample = bool(args.do_sample)
+#     args.template_randomization = bool(args.template_randomization)
+#     args.shuffle_choices = bool(args.shuffle_choices)
+#     args.add_answer_prefix = bool(args.add_answer_prefix)
+#     args.use_forced_choice = bool(args.use_forced_choice)
+#     args.fc_debug_print = bool(args.fc_debug_print)
+
+#     # Guardrails for forced-choice
+#     if args.use_forced_choice and args.fc_warmup_tokens > 0 and args.fc_prefix_mode == "never" and args.fc_answer_prefix:
+#         print(
+#             "[Warn][ForcedChoice] fc_warmup_tokens>0 but fc_prefix_mode=never.\n"
+#             "  This often evaluates at a 'random mid-continuation' position and can yield chance-level baselines.\n"
+#             "  Recommended: --fc_prefix_mode auto (default) or always."
+#         )
+
+#     layer_indices = [args.layer]
+
+#     print(f"[Env] DEVICE={args.device}")
+#     print(f"[Env] MODEL={args.model} dtype={args.model_dtype}")
+#     print(f"[Env] layer_indices={layer_indices}")
+#     print(f"[Env] tasks={tasks}")
+#     print(f"[Env] mode={args.mode} loto_eval_mode={args.loto_eval_mode}")
+#     print(f"[Env] template_randomization={args.template_randomization} shuffle_choices={args.shuffle_choices} add_answer_prefix={args.add_answer_prefix}")
+#     print(f"[Env] forced_choice={args.use_forced_choice} fc_warmup_tokens={args.fc_warmup_tokens} fc_prefix_mode={args.fc_prefix_mode} fc_answer_prefix={args.fc_answer_prefix!r}")
+
+#     model, tokenizer = load_model_and_tokenizer(args.model, args.device, args.model_dtype)
+
+#     hidden_dim = infer_hidden_dim(model)
+#     if hidden_dim is None:
+#         print(f"[Warn] Could not infer hidden_dim (config_class={type(model.config)}). Continue anyway.")
+#     else:
+#         print(f"[Env] hidden_dim={hidden_dim}")
+
+#     # Load datasets using benchmark_dataloaders
+#     sub_by, eval_by, meta_by = load_selected_tasks(
+#         tasks=tasks,
+#         n_subspace=args.n_subspace,
+#         n_eval=args.n_eval,
+#         seed=args.seed,
+#         template_seed=args.template_seed,
+#         template_randomization=args.template_randomization,
+#         shuffle_choices=args.shuffle_choices,
+#         add_answer_prefix=args.add_answer_prefix,
+#         answer_prefix=args.answer_prefix,
+#     )
+#     print("\n" + "=" * 80)
+#     print(f"[Data] Loaded tasks: {list(sub_by.keys())}")
+#     print(f"[Data] Meta: {json.dumps(meta_by, indent=2, ensure_ascii=False)}")
+#     print("=" * 80)
+
+#     results: Dict[str, Any] = {
+#         "config": {
+#             "model": args.model,
+#             "device": args.device,
+#             "model_dtype": args.model_dtype,
+#             "layer_indices": layer_indices,
+#             "tasks": tasks,
+#             "mode": args.mode,
+#             "loto_eval_mode": args.loto_eval_mode,
+#             "n_subspace": args.n_subspace,
+#             "n_eval": args.n_eval,
+#             "pca_var": args.pca_var,
+#             "tau": args.tau,
+#             "m_shared": args.m_shared,
+#             "per_task_max_states": args.per_task_max_states,
+#             "calib_decode_max_new_tokens": args.calib_decode_max_new_tokens,
+#             "reasoning_tokens": args.reasoning_tokens,
+#             "max_new_tokens": args.max_new_tokens,
+#             "alpha_remove": args.alpha_remove,
+#             "rand_type": args.rand_type,
+#             "template_randomization": args.template_randomization,
+#             "template_seed": args.template_seed,
+#             "shuffle_choices": args.shuffle_choices,
+#             "add_answer_prefix": args.add_answer_prefix,
+#             "answer_prefix": args.answer_prefix,
+#             "do_sample": args.do_sample,
+#             "temperature": args.temperature,
+#             "top_p": args.top_p,
+#             "top_k": args.top_k,
+#             "batch_size": args.batch_size,
+#             "max_prompt_len": args.max_prompt_len,
+#             "bootstrap_iters": args.bootstrap_iters,
+#             "perm_iters": args.perm_iters,
+#             "ci_alpha": args.ci_alpha,
+#             "seed": args.seed,
+#             "sample_seed": args.sample_seed,
+#             "dataset_meta": meta_by,
+#             "forced_choice": {
+#                 "use_forced_choice": args.use_forced_choice,
+#                 "fc_warmup_tokens": args.fc_warmup_tokens,
+#                 "fc_warmup_decoding": args.fc_warmup_decoding,
+#                 "fc_warmup_seed": args.fc_warmup_seed,
+#                 "fc_warmup_ban_eos": bool(args.fc_warmup_ban_eos),
+#                 "fc_warmup_temperature": args.fc_warmup_temperature,
+#                 "fc_warmup_top_p": args.fc_warmup_top_p,
+#                 "fc_warmup_top_k": args.fc_warmup_top_k,
+#                 "fc_prefix_mode": args.fc_prefix_mode,
+#                 "fc_answer_prefix": args.fc_answer_prefix,
+#             },
+#         }
+#     }
+
+#     if args.mode == "all":
+#         fold = run_fold(
+#             fold_name="all_tasks",
+#             model=model,
+#             tokenizer=tokenizer,
+#             sub_by=sub_by,
+#             eval_by=eval_by,
+#             train_tasks=tasks,
+#             eval_tasks=tasks,
+#             layer_indices=layer_indices,
+#             args=args,
+#         )
+#         results["all_tasks"] = fold
+
+#     else:
+#         folds = {}
+#         for holdout in tasks:
+#             if args.loto_only and holdout != args.loto_only:
+#                 continue
+#             train_tasks = [t for t in tasks if t != holdout]
+#             eval_tasks = [holdout] if args.loto_eval_mode == "heldout" else list(tasks)
+#             fold_name = f"loto_holdout={holdout}"
+#             print("\n" + "=" * 90)
+#             print(f"[LOTO] Running fold: holdout={holdout} train={train_tasks} eval={eval_tasks}")
+#             print("=" * 90)
+
+#             fold = run_fold(
+#                 fold_name=fold_name,
+#                 model=model,
+#                 tokenizer=tokenizer,
+#                 sub_by=sub_by,
+#                 eval_by=eval_by,
+#                 train_tasks=train_tasks,
+#                 eval_tasks=eval_tasks,
+#                 layer_indices=layer_indices,
+#                 args=args,
+#             )
+#             folds[holdout] = fold
+
+#             # Mild hygiene between folds
+#             if torch.cuda.is_available():
+#                 torch.cuda.empty_cache()
+
+#         results["folds"] = folds
+
+#     # Save JSON
+#     with open(args.out_json, "w", encoding="utf-8") as f:
+#         json.dump(results, f, ensure_ascii=False, indent=2, default=json_default)
+
+#     # Save a small markdown summary (especially useful for LOTO heldout-mode)
+#     md_lines = []
+#     md_lines.append("# Energy-balance + LOTO(8) Summary\n")
+#     md_lines.append(f"- Model: `{args.model}` dtype={args.model_dtype} device={args.device}\n")
+#     md_lines.append(f"- Tasks: {tasks}\n")
+#     md_lines.append(f"- Mode: {args.mode}\n")
+#     md_lines.append(f"- Template randomization: {args.template_randomization} (seed={args.template_seed}), shuffle_choices={args.shuffle_choices}\n")
+#     md_lines.append(f"- Sharedness: pca_var={args.pca_var}, tau={args.tau}, m_shared={args.m_shared}\n")
+#     md_lines.append(f"- Calibration decode max_new_tokens={args.calib_decode_max_new_tokens}, per_task_max_states={args.per_task_max_states}\n")
+#     md_lines.append(f"- Evaluation: forced_choice={args.use_forced_choice} (MC tasks only)\n")
+#     md_lines.append("")
+
+#     if args.mode == "loto" and args.loto_eval_mode == "heldout" and "folds" in results:
+#         md_lines.append("## LOTO held-out performance\n")
+#         # If forced-choice is enabled, many heldouts (except gsm8k) will be forced-choice
+#         md_lines.append(render_loto_heldout_table(results, decoding="greedy"))
+#         md_lines.append("")
+
+#     with open(args.out_md, "w", encoding="utf-8") as f:
+#         f.write("\n".join(md_lines))
+
+#     print("\n" + "=" * 80)
+#     print("[Done]")
+#     print(f"[Done] JSON: {args.out_json}")
+#     print(f"[Done] MD  : {args.out_md}")
+#     print("=" * 80)
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", type=str, default="meta-llama/Llama-2-7b-chat-hf")
@@ -1889,7 +2543,9 @@ def main():
 
     # Subspace estimation sizes
     ap.add_argument("--n_subspace", type=int, default=128)
-    ap.add_argument("--n_eval", type=int, default=256)
+
+    # ✅ 改动1：默认 n_eval=2048（你注释里说这是正确设置）
+    ap.add_argument("--n_eval", type=int, default=2048)
 
     # PCA/sharedness
     ap.add_argument("--pca_var", type=float, default=0.95)
@@ -1927,8 +2583,11 @@ def main():
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
 
     # Forced-choice (new)
-    ap.add_argument("--use_forced_choice", type=int, default=0, choices=[0, 1], help="If 1, use forced-choice for tasks with discrete candidates (MC/YesNo). gsm8k stays generation.")
-    ap.add_argument("--fc_warmup_tokens", type=int, default=0, help="Teacher-forced warmup tokens before scoring candidates (baseline-generated, shared across conditions).")
+    # ✅ 改动2：默认 use_forced_choice=1（你注释里说这是正确设置）
+    ap.add_argument("--use_forced_choice", type=int, default=1, choices=[0, 1],
+                    help="If 1, use forced-choice for tasks with discrete candidates (MC/YesNo). gsm8k stays generation.")
+    ap.add_argument("--fc_warmup_tokens", type=int, default=0,
+                    help="Teacher-forced warmup tokens before scoring candidates (baseline-generated, shared across conditions).")
     ap.add_argument("--fc_warmup_decoding", type=str, default="greedy", choices=["greedy", "sample"])
     ap.add_argument("--fc_warmup_seed", type=int, default=123)
     ap.add_argument("--fc_warmup_ban_eos", type=int, default=1, choices=[0, 1])
@@ -1937,7 +2596,8 @@ def main():
     ap.add_argument("--fc_warmup_top_k", type=int, default=0)
     ap.add_argument("--fc_prefix_mode", type=str, default="auto", choices=["auto", "always", "never"])
     ap.add_argument("--fc_answer_prefix", type=str, default="\nFinal answer:")
-    ap.add_argument("--fc_debug_print", type=int, default=0, choices=[0, 1], help="If 1, print warmup demo text and other FC diagnostics.")
+    ap.add_argument("--fc_debug_print", type=int, default=0, choices=[0, 1],
+                    help="If 1, print warmup demo text and other FC diagnostics.")
 
     # Stats
     ap.add_argument("--bootstrap_iters", type=int, default=5000)
@@ -2126,7 +2786,6 @@ def main():
 
     if args.mode == "loto" and args.loto_eval_mode == "heldout" and "folds" in results:
         md_lines.append("## LOTO held-out performance\n")
-        # If forced-choice is enabled, many heldouts (except gsm8k) will be forced-choice
         md_lines.append(render_loto_heldout_table(results, decoding="greedy"))
         md_lines.append("")
 
