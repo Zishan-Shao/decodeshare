@@ -380,7 +380,7 @@ def main() -> None:
     ap.add_argument(
         "--fc_save_scores",
         type=int,
-        default=0,
+        default=1,
         choices=[0, 1],
         help="If 1, save per-example candidate score sums (can make JSON very large).",
     )

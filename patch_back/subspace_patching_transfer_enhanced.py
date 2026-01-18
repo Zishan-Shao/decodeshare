@@ -69,7 +69,9 @@ from typing import Any, Dict, List, Optional, Tuple, Iterable, Set
 import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
+from collections import Counter, defaultdict
+from collections import Counter
+import math
 
 # =============================================================================
 # Dynamic imports: reuse the two attached scripts
@@ -1151,6 +1153,30 @@ def main():
             raise RuntimeError("Failed to capture step0 hidden state. Check hook/layer compatibility.")
         flip_donor_shared_step0.append(project_cpu(h0, Qs))
 
+    # --- diagnostics (print once) ---
+    flip_golds = [ex.gold.strip().upper() for ex in flip_examples_used]
+    print("[Flip gold distribution]", Counter(flip_golds))
+
+    # # donor cosine sim (print once)
+    # def _cos(u: torch.Tensor, v: torch.Tensor, eps: float = 1e-12) -> float:
+    #     uu = float(torch.linalg.norm(u) + eps)
+    #     vv = float(torch.linalg.norm(v) + eps)
+    #     return float((u @ v.T).item() / (uu * vv))
+
+    # cos_vals = []
+    # for i in range(len(flip_donor_shared_step0)):
+    #     for j in range(i + 1, len(flip_donor_shared_step0)):
+    #         cos_vals.append(_cos(flip_donor_shared_step0[i], flip_donor_shared_step0[j]))
+    # if cos_vals:
+    #     cos_vals = np.array(cos_vals, dtype=np.float32)
+    #     print(f"[Donor cos sim] mean={cos_vals.mean():.3f}  median={np.median(cos_vals):.3f}  p90={np.quantile(cos_vals,0.9):.3f}")
+
+    # donor pools for label-mismatch control
+    donors_by_gold = defaultdict(list)
+    for g, p in zip(flip_golds, flip_donor_shared_step0):
+        donors_by_gold[g].append(p)
+    all_donors = list(flip_donor_shared_step0)
+
     # Patching runs on flips_used
     flip_rows: List[Dict[str, Any]] = []
 
@@ -1271,8 +1297,7 @@ def main():
             patch_hook=SubspacePatchHook(Qs, donor_by_step={0: shuffled_p0}, patch_steps={0}),
             add_special_tokens_prompt=bool(args.add_special_tokens_prompt),
         )
-        from collections import Counter
-        import math
+        
 
         def _cos(u: torch.Tensor, v: torch.Tensor, eps: float = 1e-12) -> float:
             # u,v: [1,d] CPU float32
@@ -1289,7 +1314,7 @@ def main():
             donors_by_gold[g].append(p)
         all_donors = list(flip_donor_shared_step0)
         
-                # (2b) label-mismatched donor
+        # (2b) label-mismatched donor
         rng = np.random.default_rng(args.seed + 9500 + idx)
         other_labels = [lab for lab in donors_by_gold.keys() if lab != gold and len(donors_by_gold[lab]) > 0]
         if other_labels:
@@ -1343,7 +1368,6 @@ def main():
             add_special_tokens_prompt=bool(args.add_special_tokens_prompt),
         )
 
-
         flip_rows.append({
             "ex_id": ex.ex_id,
             "gold": gold,
@@ -1353,11 +1377,16 @@ def main():
             "patched_01": patched01.__dict__,
             "patched_full": patched_full.__dict__,
             "debug_max_abs_diff_patched01_vs_full": float(diff_01_full),
+
             "control_rand_subspace": ctrl_rand.__dict__,
             "control_time_shuffled": ctrl_shuffled.__dict__,
+            "control_shared_mismatch": ctrl_shared_mismatch.__dict__,
+            "control_shared_perm": ctrl_shared_perm.__dict__,
+            "control_shared_signflip": ctrl_shared_signflip.__dict__,
             "control_shared_randvec": ctrl_shared_randvec.__dict__,
             "control_patch_nonshared": ctrl_nonshared.__dict__,
         })
+
 
         print(
             f"[Flip {idx+1}/{len(flip_examples_used)}] ex_id={ex.ex_id} gold={gold} "
@@ -1372,8 +1401,12 @@ def main():
         "control_rand_subspace": summarize_rescue(flip_rows, "control_rand_subspace"),
         "control_shared_randvec": summarize_rescue(flip_rows, "control_shared_randvec"),
         "control_time_shuffled": summarize_rescue(flip_rows, "control_time_shuffled"),
+        "control_shared_mismatch": summarize_rescue(flip_rows, "control_shared_mismatch"),
+        "control_shared_perm": summarize_rescue(flip_rows, "control_shared_perm"),
+        "control_shared_signflip": summarize_rescue(flip_rows, "control_shared_signflip"),
         "control_patch_nonshared": summarize_rescue(flip_rows, "control_patch_nonshared"),
     }
+
 
     print("\n[Summary on flips_used]")
     for name, v in summary.items():

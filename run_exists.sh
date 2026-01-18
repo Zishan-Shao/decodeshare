@@ -13,8 +13,18 @@ GPU_ID="${GPU_ID:-1}"
 
 # models（用数组，不要反复覆盖 MODEL_NAME）
 MODEL_NAMES=(
+  "tiiuae/falcon-7b-instruct"
+  "mistralai/Mistral-7B-Instruct-v0.3"
+  "meta-llama/Llama-3.1-8B-Instruct"
+  #"meta-llama/Llama-3.2-7B-Instruct"
+  "meta-llama/Llama-3.2-3B-Instruct"
+  # "meta-llama/Llama-3.2-1B-Instruct"
+  # "meta-llama/Llama-3.2-0.5B-Instruct"
+  "Qwen/Qwen2.5-1.5B-Instruct"
+  # “Qwen/Qwen3.5-7B-Instruct”
+  # "meta-llama/Llama-2-7b-chat-hf"
   # "Qwen/Qwen2.5-7B-Instruct"
-  "google/gemma-3-12b-it"
+  # "facebook/opt-6.7b"
 )
 
   # "meta-llama/Llama-2-7b-chat-hf",
@@ -22,9 +32,10 @@ MODEL_NAMES=(
   # "facebook/opt-6.7b"
   # "Qwen/Qwen2.5-7B"
   # "google/gemma-2-2b-it"
+  # "google/gemma-3-12b-it"
 
 # sweeps（bash 数组写法）
-LAYERS=(10)
+LAYERS=(4 10 20 24)
 TAUS=(0.001)
 N_PROMPTS_LIST=(128)
 CALIB_MAX_NEW_TOKENS_LIST=(256)

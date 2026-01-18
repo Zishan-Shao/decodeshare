@@ -29,7 +29,7 @@ python flipset_alpha_sweep_and_transfer.py \
   --model meta-llama/Llama-2-7b-chat-hf \
   --device cuda --dtype fp16 \
   --layer 10 \
-  --task aqua --n_eval 256 --flipset_max 128 \
+  --task aqua --n_eval 1024 --flipset_max 128 \
   --Qs_path Q_shared_layer10.npy \
   --alpha_list 0,0.05,0.1,0.2,0.5,1.0 \
   --run_alpha_sweep 1 \
@@ -120,16 +120,40 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# -----------------------------------------------------------------------------
-# Dynamic import of your existing script
-# -----------------------------------------------------------------------------
 def import_module_from_path(module_name: str, file_path: str):
+    import sys
+    import os
+    import importlib.util
+
+    file_path = os.path.abspath(file_path)
     spec = importlib.util.spec_from_file_location(module_name, file_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot import {module_name} from {file_path}")
+
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+
+    # 关键：先注册到 sys.modules，dataclasses/typing 才能找到模块命名空间
+    sys.modules[module_name] = mod
+    try:
+        spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+    except Exception:
+        # 失败就清理，避免 sys.modules 里残留半初始化模块
+        sys.modules.pop(module_name, None)
+        raise
+
     return mod
+
+
+# # -----------------------------------------------------------------------------
+# # Dynamic import of your existing script
+# # -----------------------------------------------------------------------------
+# def import_module_from_path(module_name: str, file_path: str):
+#     spec = importlib.util.spec_from_file_location(module_name, file_path)
+#     if spec is None or spec.loader is None:
+#         raise ImportError(f"Cannot import {module_name} from {file_path}")
+#     mod = importlib.util.module_from_spec(spec)
+#     spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+#     return mod
 
 
 def parse_csv_list(s: str) -> List[str]:

@@ -285,7 +285,7 @@ def main() -> None:
 
     # Intervention control
     ap.add_argument("--alpha_remove", type=float, default=1.0)
-    ap.add_argument("--fc_save_scores", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--fc_save_scores", type=int, default=1, choices=[0, 1])
 
     # Stats
     ap.add_argument("--bootstrap_iters", type=int, default=2000)

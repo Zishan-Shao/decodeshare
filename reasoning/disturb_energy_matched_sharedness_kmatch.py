@@ -307,7 +307,7 @@ def main() -> None:
     ap.add_argument("--template_randomization", type=int, default=0)
     ap.add_argument("--shuffle_choices", type=int, default=0)
     ap.add_argument("--template_seed", type=int, default=123)
-    ap.add_argument("--save_scores", type=int, default=0, help="Include scores_sum in JSON (bigger files).")
+    ap.add_argument("--save_scores", type=int, default=1, help="Include scores_sum in JSON (bigger files).")
 
     # Alpha sweep / kmatch
     ap.add_argument("--alphas", type=str, default="1.0")

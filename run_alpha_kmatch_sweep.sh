@@ -50,11 +50,11 @@ SEED=42
 # forced-choice probing details (new script arg names)
 FC_PREFIX_MODE="auto"
 ANSWER_PREFIX=$'\nFinal answer:'     # used for both dataset templates + forced-choice anchor in this script
-WARMUP_TOKENS=0                      # new arg: --warmup_tokens
+WARMUP_TOKENS=128                      # new arg: --warmup_tokens
 WARMUP_PHRASE=" Let's think step by step."
 
 # alpha sweep list (shared vs ctrl_struct with same k)
-ALPHAS="0,0.25,0.5,0.75,1.0,1.25,1.5"
+ALPHAS="0,0.25,0.5,0.75,1.0,1.25,1.5,2.0"
 
 # If 1: per-alpha k-match (k_c(alpha)) is computed (otherwise reuse k_c(alpha=1))
 KMATCH_PER_ALPHA=1
@@ -71,11 +71,11 @@ OUT_MD="${OUT_PREFIX}.md"
 OUT_TEX="${OUT_PREFIX}.tex"
 
 echo "[Run] OUT_PREFIX=${OUT_PREFIX}"
-echo "[Run] MODEL=${MODEL_NAME} LAYER=${LAYER} DTYPE=${DTYPE} CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
+echo "[Run] MODEL=${MODEL_NAME} LAYER=${LAYER} DTYPE=${DTYPE}" #CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 echo "[Run] TASKS=${TASKS}"
 echo "[Run] ALPHAS=${ALPHAS} KMATCH_PER_ALPHA=${KMATCH_PER_ALPHA}"
 
-CUDA_VISIBLE_DEVICES=3 python "${SCRIPT}" \
+CUDA_VISIBLE_DEVICES=0 python "${SCRIPT}" \
   --model "${MODEL_NAME}" \
   --device cuda \
   --dtype "${DTYPE}" \

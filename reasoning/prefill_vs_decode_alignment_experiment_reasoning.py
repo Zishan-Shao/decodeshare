@@ -250,7 +250,7 @@ def main():
 
     ap.add_argument("--fc_prefix_mode", type=str, default="auto", choices=["auto", "always", "never"])
     ap.add_argument("--fc_answer_prefix", type=str, default="\nFinal answer:")
-    ap.add_argument("--fc_save_scores", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--fc_save_scores", type=int, default=1, choices=[0, 1])
 
     # Important: strip prompts to keep scoring at answer slot
     ap.add_argument(

@@ -156,36 +156,84 @@ def safe_upper(x: Any) -> str:
     return str(x).strip().upper()
 
 
+
 # -----------------------------------------------------------------------------
 # Stats: bootstrap + paired sign-flip test
 # -----------------------------------------------------------------------------
-def bootstrap_ci_mean(values: np.ndarray, iters: int, alpha: float, seed: int) -> Tuple[float, float, float]:
-    rng = np.random.default_rng(seed)
+
+def _coerce_seed_to_uint32(seed):
+    """
+    Make seed compatible with np.random.default_rng / SeedSequence.
+    Accepts int/float/np scalar/other objects; returns uint32 int (or None).
+    """
+    if seed is None:
+        return None
+
+    # python int / numpy int
+    if isinstance(seed, (int, np.integer)):
+        return int(seed) & 0xFFFFFFFF
+
+    # float seeds: keep fractional info (e.g. 123.05 -> 123050000)
+    if isinstance(seed, (float, np.floating)):
+        v = int(np.round(float(seed) * 1_000_000.0))
+        return v & 0xFFFFFFFF
+
+    # fallback: stable hash -> uint32
+    import hashlib
+    s = str(seed).encode("utf-8")
+    digest = hashlib.blake2b(s, digest_size=8).digest()
+    return int.from_bytes(digest, "little") & 0xFFFFFFFF
+
+
+def bootstrap_ci_mean(values: np.ndarray, iters: int, alpha: float, seed: int):
+    values = np.asarray(values, dtype=np.float32)
+    iters = int(iters)
+    alpha = float(alpha)
+    rng = np.random.default_rng(_coerce_seed_to_uint32(seed))
+
     n = int(values.shape[0])
-    if n == 0:
+    if n == 0 or iters <= 0:
         return float("nan"), float("nan"), float("nan")
+
     m = float(values.mean())
     boots = np.empty(iters, dtype=np.float64)
     for t in range(iters):
         idx = rng.integers(0, n, size=n)
         boots[t] = float(values[idx].mean())
+
     lo = float(np.percentile(boots, 100 * (alpha / 2)))
     hi = float(np.percentile(boots, 100 * (1 - alpha / 2)))
     return m, lo, hi
 
 
 def paired_bootstrap_ci_diff(
-    baseline: np.ndarray, treatment: np.ndarray, iters: int, alpha: float, seed: int
-) -> Tuple[float, float, float]:
-    assert baseline.shape == treatment.shape
+    baseline: np.ndarray,
+    treatment: np.ndarray,
+    iters: int,
+    alpha: float,
+    seed: int,
+):
+    baseline = np.asarray(baseline, dtype=np.float32)
+    treatment = np.asarray(treatment, dtype=np.float32)
+    if baseline.shape != treatment.shape:
+        raise ValueError(f"Shape mismatch: baseline{baseline.shape} vs treatment{treatment.shape}")
+
+    iters = int(iters)
+    alpha = float(alpha)
+    rng = np.random.default_rng(_coerce_seed_to_uint32(seed))
+
+    n = int(baseline.shape[0])
+    if n == 0 or iters <= 0:
+        return float("nan"), float("nan"), float("nan")
+
     diffs = treatment - baseline
     obs = float(diffs.mean())
-    rng = np.random.default_rng(seed)
-    n = int(diffs.shape[0])
+
     boots = np.empty(iters, dtype=np.float64)
     for t in range(iters):
         idx = rng.integers(0, n, size=n)
         boots[t] = float(diffs[idx].mean())
+
     lo = float(np.percentile(boots, 100 * (alpha / 2)))
     hi = float(np.percentile(boots, 100 * (1 - alpha / 2)))
     return obs, lo, hi
@@ -193,13 +241,20 @@ def paired_bootstrap_ci_diff(
 
 def signflip_permutation_test(baseline: np.ndarray, treatment: np.ndarray, iters: int, seed: int) -> float:
     """Two-sided sign-flip permutation test on paired diffs."""
-    assert baseline.shape == treatment.shape
+    baseline = np.asarray(baseline, dtype=np.float32)
+    treatment = np.asarray(treatment, dtype=np.float32)
+    if baseline.shape != treatment.shape:
+        raise ValueError(f"Shape mismatch: baseline{baseline.shape} vs treatment{treatment.shape}")
+
+    iters = int(iters)
+    rng = np.random.default_rng(_coerce_seed_to_uint32(seed))
+
     diffs = treatment - baseline
-    obs = float(diffs.mean())
-    rng = np.random.default_rng(seed)
     n = int(diffs.shape[0])
-    if n == 0:
+    if n == 0 or iters <= 0:
         return float("nan")
+
+    obs = float(diffs.mean())
     count = 0
     for _ in range(iters):
         signs = rng.choice([-1.0, 1.0], size=n)
@@ -209,45 +264,77 @@ def signflip_permutation_test(baseline: np.ndarray, treatment: np.ndarray, iters
     return float((count + 1) / (iters + 1))
 
 
-# def summarize_paired(
-#     baseline_correct: np.ndarray,
-#     treat_correct: np.ndarray,
-#     bootstrap_iters: int,
-#     perm_iters: int,
-#     alpha: float,
-#     seed: int,
-# ) -> Dict[str, Any]:
-#     md, lo, hi = paired_bootstrap_ci_diff(baseline_correct, treat_correct, iters=bootstrap_iters, alpha=alpha, seed=seed + 123)
-#     p = signflip_permutation_test(baseline_correct, treat_correct, iters=perm_iters, seed=seed + 456)
-#     return {"mean_diff": md, "ci_low": lo, "ci_high": hi, "p_value": p}
-
 def summarize_paired(
     baseline_correct: np.ndarray,
     treat_correct: np.ndarray,
-    bootstrap_iters: int,
-    perm_iters: int,
-    alpha: float,
-    seed: int,
-    label: Optional[str] = None,   # NEW: backward-compatible
-    **_ignored_kwargs,             # NEW: tolerate extra kwargs
+    *args,
+    **kwargs,
 ) -> Dict[str, Any]:
+    """
+    Backward-compatible.
+
+    Supports BOTH call styles:
+
+    (A) Your script style (positional label as 3rd arg):
+        summarize_paired(base, treat, label, bootstrap_iters, perm_iters, alpha, seed)
+
+    (B) Keyword style:
+        summarize_paired(baseline_correct=..., treat_correct=..., bootstrap_iters=..., perm_iters=..., alpha=..., seed=..., label=...)
+    """
+    label = kwargs.pop("label", None)
+
+    if len(args) == 5:
+        # (label, bootstrap_iters, perm_iters, alpha, seed)
+        label = str(args[0])
+        bootstrap_iters = int(args[1])
+        perm_iters = int(args[2])
+        alpha = float(args[3])
+        seed = args[4]
+    elif len(args) == 4:
+        # (bootstrap_iters, perm_iters, alpha, seed)  -- no label
+        bootstrap_iters = int(args[0])
+        perm_iters = int(args[1])
+        alpha = float(args[2])
+        seed = args[3]
+    elif len(args) == 0:
+        # keyword-only
+        bootstrap_iters = int(kwargs.pop("bootstrap_iters"))
+        perm_iters = int(kwargs.pop("perm_iters"))
+        alpha = float(kwargs.pop("alpha"))
+        seed = kwargs.pop("seed")
+    else:
+        raise TypeError(
+            "summarize_paired expects 0, 4, or 5 positional args after "
+            "(baseline_correct, treat_correct)."
+        )
+
+    # Make seeds deterministic and integer-only
+    seed0 = _coerce_seed_to_uint32(seed)
+    base_seed = int(seed0 or 0)
+    seed_ci = _coerce_seed_to_uint32(base_seed + 123)
+    seed_perm = _coerce_seed_to_uint32(base_seed + 456)
+
     md, lo, hi = paired_bootstrap_ci_diff(
         baseline_correct,
         treat_correct,
         iters=bootstrap_iters,
         alpha=alpha,
-        seed=seed + 123,
+        seed=seed_ci,
     )
     p = signflip_permutation_test(
         baseline_correct,
         treat_correct,
         iters=perm_iters,
-        seed=seed + 456,
+        seed=seed_perm,
     )
-    out = {"mean_diff": md, "ci_low": lo, "ci_high": hi, "p_value": p}
+
+    out = {"mean_diff": float(md), "ci_low": float(lo), "ci_high": float(hi), "p_value": float(p)}
     if label is not None:
         out["label"] = str(label)
     return out
+
+
+
 
 
 def fmt_acc(acc: float, lo: float, hi: float) -> str:
@@ -1466,6 +1553,71 @@ def md_table(rows: List[List[str]], header: List[str]) -> str:
     out.append("|" + "---|" * len(header))
     for r in rows:
         out.append("| " + " | ".join(r) + " |")
+    return "\n".join(out)
+
+def latex_table(
+    headers: List[str],
+    rows: List[List[str]],
+    caption: str = "",
+    label: str = "",
+    colspec: Optional[str] = None,
+    escape_cells: bool = True,
+) -> str:
+    """
+    Minimal LaTeX table generator.
+
+    - headers/rows: plain strings (will escape LaTeX special chars by default)
+    - caption: assumed to be *LaTeX-ready* (we do NOT escape it, so you can use $\\alpha$ etc.)
+    - label: used as-is
+    - colspec: e.g. 'lccc'
+    """
+
+    if colspec is None:
+        colspec = "l" + "c" * max(0, (len(headers) - 1))
+
+    def _esc(s: str) -> str:
+        if not escape_cells:
+            return s
+        # escape LaTeX special chars in table cells/headers
+        repl = {
+            "\\": r"\textbackslash{}",
+            "&": r"\&",
+            "%": r"\%",
+            "$": r"\$",
+            "#": r"\#",
+            "_": r"\_",
+            "{": r"\{",
+            "}": r"\}",
+            "~": r"\textasciitilde{}",
+            "^": r"\textasciicircum{}",
+        }
+        out = str(s)
+        for k, v in repl.items():
+            out = out.replace(k, v)
+        return out
+
+    hdr_line = " & ".join(_esc(h) for h in headers) + r" \\"
+    body_lines = []
+    for r in rows:
+        body_lines.append(" & ".join(_esc(x) for x in r) + r" \\")
+    body = "\n".join(body_lines)
+
+    out: List[str] = []
+    out.append(r"\begin{table}[t]")
+    out.append(r"\centering")
+    if caption:
+        # caption is assumed LaTeX-ready (do not escape)
+        out.append(rf"\caption{{{caption}}}")
+    if label:
+        out.append(rf"\label{{{label}}}")
+    out.append(rf"\begin{{tabular}}{{{colspec}}}")
+    out.append(r"\hline")
+    out.append(hdr_line)
+    out.append(r"\hline")
+    out.append(body)
+    out.append(r"\hline")
+    out.append(r"\end{tabular}")
+    out.append(r"\end{table}")
     return "\n".join(out)
 
 

@@ -14,107 +14,187 @@ export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
 
 
-# run qwen2.5-7b-instruct version
-  # Single (all-tasks) basis estimation + evaluation:
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-    --model Qwen/Qwen2.5-7B-Instruct --device cuda --model_dtype fp32 \
-    --tasks gsm8k,commonsenseqa,strategyqa,openbookqa,qasc,boolq,piqa \
-    --mode all \
-    --n_subspace 128 --n_eval 256 --layer 10 \
-    --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-    --reasoning_tokens 128 --max_new_tokens 256 \
-    --template_randomization 1 --shuffle_choices 1 \
-    --do_sample 0 --out_json results/disturb_cot/all_tasks_energy_balance_results_Qwen2.5-7B-Instruct_no_aqua.json --out_md results/disturb_cot/all_tasks_energy_balance_summary_Qwen2.5-7B-Instruct_no_aqua.md
 
-  # LOTO (estimate basis on N-1 tasks, evaluate held-out only):
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-    --model Qwen/Qwen2.5-7B-Instruct --device cuda --model_dtype fp32 \
-    --tasks gsm8k,commonsenseqa,strategyqa,openbookqa,qasc,boolq,piqa \
-    --mode loto \
-    --loto_eval_mode heldout \
-    --n_subspace 128 --n_eval 256 --layer 10 \
-    --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-    --reasoning_tokens 128 --max_new_tokens 256 \
-    --template_randomization 1 --shuffle_choices 1 \
-    --do_sample 0 --out_json results/disturb_cot/energy_balance_loto8_results_Qwen2.5-7B-Instruct_no_aqua.json --out_md results/disturb_cot/energy_balance_loto8_summary_Qwen2.5-7B-Instruct_no_aqua.md 
 
 
 # run the with-aqua version
   # Single (all-tasks) basis estimation + evaluation:
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-    --model Qwen/Qwen2.5-7B-Instruct --device cuda --model_dtype fp32 \
-    --tasks gsm8k,commonsenseqa,strategyqa,openbookqa,qasc,boolq,piqa \
-    --mode all \
-    --n_subspace 128 --n_eval 256 --layer 10 \
+  CUDA_VISIBLE_DEVICES=0 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+    --model google/gemma-3-12b-it --device cuda --model_dtype fp32 \
+    --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+    --mode all --batch_size 16 \
+    --n_subspace 128 --n_eval 2048 --layer 10 \
     --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
     --reasoning_tokens 128 --max_new_tokens 256 \
     --template_randomization 1 --shuffle_choices 1 \
-    --do_sample 0 --out_json results/disturb_cot/all_tasks_energy_balance_results_Qwen2.5-7B-Instruct.json --out_md results/disturb_cot/all_tasks_energy_balance_summary_Qwen2.5-7B-Instruct.md
+    --do_sample 0 --out_json results/disturb_cot_reason/all_tasks_energy_balance_greedy_results_google-gemma-3-12b-it.json --out_md results/disturb_cot_reason/all_tasks_energy_balance_greedy_summary_google-gemma-3-12b-it.md
 
   # LOTO (estimate basis on N-1 tasks, evaluate held-out only):
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-    --model Qwen/Qwen2.5-7B-Instruct --device cuda --model_dtype fp32 \
-    --tasks gsm8k,commonsenseqa,strategyqa,openbookqa,qasc,boolq,piqa \
-    --mode loto \
+  CUDA_VISIBLE_DEVICES=0 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+    --model google/gemma-3-12b-it --device cuda --model_dtype fp32 \
+    --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+    --mode loto --batch_size 16 \
     --loto_eval_mode heldout \
-    --n_subspace 128 --n_eval 256 --layer 10 \
+    --n_subspace 128 --n_eval 2048 --layer 10 \
     --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
     --reasoning_tokens 128 --max_new_tokens 256 \
     --template_randomization 1 --shuffle_choices 1 \
-    --do_sample 0 --out_json results/disturb_cot/energy_balance_loto8_results_Qwen2.5-7B-Instruct.json --out_md results/disturb_cot/energy_balance_loto8_summary_Qwen2.5-7B-Instruct.md 
+    --do_sample 0 --out_json results/disturb_cot_reason/energy_balance_loto8_results_google-gemma-3-12b-it.json --out_md results/disturb_cot_reason/energy_balance_loto8_summary_google-gemma-3-12b-it.md 
+
+
+
+
+# # run the with-aqua version
+#   # Single (all-tasks) basis estimation + evaluation:
+#   CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#     --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
+#     --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#     --mode all --batch_size 16 \
+#     --n_subspace 128 --n_eval 2048 --layer 10 \
+#     --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#     --reasoning_tokens 128 --max_new_tokens 256 \
+#     --template_randomization 1 --shuffle_choices 1 \
+#     --do_sample 0 --out_json results/disturb_cot_full/all_tasks_energy_balance_greedy_results_Llama-2-7b-chat-hf.json --out_md results/disturb_cot_full/all_tasks_energy_balance_greedy_summary_Llama-2-7b-chat-hf.md
+
+#   # CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#   #   --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
+#   #   --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#   #   --mode all --batch_size 16 \
+#   #   --n_subspace 128 --n_eval 2048 --layer 10 \
+#   #   --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#   #   --reasoning_tokens 128 --max_new_tokens 256 \
+#   #   --template_randomization 1 --shuffle_choices 1 \
+#   #   --do_sample 1 --out_json results/disturb_cot_full/all_tasks_energy_balance_sample_results_Llama-2-7b-chat-hf.json --out_md results/disturb_cot_full/all_tasks_energy_balance_sample_summary_Llama-2-7b-chat-hf.md
+
+#   # LOTO (estimate basis on N-1 tasks, evaluate held-out only):
+#   CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#     --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
+#     --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#     --mode loto --batch_size 16 \
+#     --loto_eval_mode heldout \
+#     --n_subspace 128 --n_eval 2048 --layer 10 \
+#     --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#     --reasoning_tokens 128 --max_new_tokens 256 \
+#     --template_randomization 1 --shuffle_choices 1 \
+#     --do_sample 0 --out_json results/disturb_cot_full/energy_balance_loto8_results_Llama-2-7b-chat-hf.json --out_md results/disturb_cot_full/energy_balance_loto8_summary_Llama-2-7b-chat-hf.md 
 
 
 
 
 
-# run gemma-2-13b-it version
-  # Single (all-tasks) basis estimation + evaluation:
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-    --model google/gemma-3-12b-it --device cuda --model_dtype fp32 \
-    --tasks gsm8k,commonsenseqa,strategyqa,openbookqa,qasc,boolq,piqa \
-    --mode all \
-    --n_subspace 128 --n_eval 256 --layer 10 \
-    --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-    --reasoning_tokens 128 --max_new_tokens 256 \
-    --template_randomization 1 --shuffle_choices 1 \
-    --do_sample 0 --out_json results/disturb_cot/all_tasks_energy_balance_results_gemma-3-12b-it_no_aqua.json --out_md results/disturb_cot/all_tasks_energy_balance_summary_gemma-3-12b-it_no_aqua.md
-
-  # LOTO (estimate basis on N-1 tasks, evaluate held-out only):
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-    --model google/gemma-3-12b-it --device cuda --model_dtype fp32 \
-    --tasks gsm8k,commonsenseqa,strategyqa,openbookqa,qasc,boolq,piqa \
-    --mode loto \
-    --loto_eval_mode heldout \
-    --n_subspace 128 --n_eval 256 --layer 10 \
-    --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-    --reasoning_tokens 128 --max_new_tokens 256 \
-    --template_randomization 1 --shuffle_choices 1 \
-    --do_sample 0 --out_json results/disturb_cot/energy_balance_loto8_results_gemma-3-12b-it_no_aqua.json --out_md results/disturb_cot/energy_balance_loto8_summary_gemma-3-12b-it_no_aqua.md 
 
 
-# run the with-aqua version
-  # Single (all-tasks) basis estimation + evaluation:
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-    --model google/gemma-3-12b-it --device cuda --model_dtype fp32 \
-    --tasks gsm8k,commonsenseqa,strategyqa,openbookqa,qasc,boolq,piqa \
-    --mode all \
-    --n_subspace 128 --n_eval 256 --layer 10 \
-    --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-    --reasoning_tokens 128 --max_new_tokens 256 \
-    --template_randomization 1 --shuffle_choices 1 \
-    --do_sample 0 --out_json results/disturb_cot/all_tasks_energy_balance_results_gemma-3-12b-it.json --out_md results/disturb_cot/all_tasks_energy_balance_summary_gemma-3-12b-it.md
+# # run the with-aqua version
+#   # Single (all-tasks) basis estimation + evaluation:
+#   CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#     --model Qwen/Qwen2.5-7B-Instruct --device cuda --model_dtype fp32 \
+#     --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#     --mode all --batch_size 16 \
+#     --n_subspace 128 --n_eval 2048 --layer 10 \
+#     --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#     --reasoning_tokens 128 --max_new_tokens 256 \
+#     --template_randomization 1 --shuffle_choices 1 \
+#     --do_sample 0 --out_json results/disturb_cot_full/all_tasks_energy_balance_greedy_results_Qwen2.5-7B-Instruct.json --out_md results/disturb_cot_full/all_tasks_energy_balance_greedy_summary_Qwen2.5-7B-Instruct.md
 
-  # LOTO (estimate basis on N-1 tasks, evaluate held-out only):
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
-    --model google/gemma-3-12b-it --device cuda --model_dtype fp32 \
-    --tasks gsm8k,commonsenseqa,strategyqa,openbookqa,qasc,boolq,piqa \
-    --mode loto \
-    --loto_eval_mode heldout \
-    --n_subspace 128 --n_eval 256 --layer 10 \
-    --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
-    --reasoning_tokens 128 --max_new_tokens 256 \
-    --template_randomization 1 --shuffle_choices 1 \
-    --do_sample 0 --out_json results/disturb_cot/energy_balance_loto8_results_gemma-3-12b-it.json --out_md results/disturb_cot/energy_balance_loto8_summary_gemma-3-12b-it.md 
+#   # CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#   #   --model Qwen/Qwen2.5-7B-Instruct --device cuda --model_dtype fp32 \
+#   #   --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#   #   --mode all \
+#   #   --n_subspace 128 --n_eval 2048 --layer 10 \
+#   #   --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#   #   --reasoning_tokens 128 --max_new_tokens 256 \
+#   #   --template_randomization 1 --shuffle_choices 1 \
+#   #   --do_sample 1 --out_json results/disturb_cot_full/all_tasks_energy_balance_sample_results_Qwen2.5-7B-Instruct.json --out_md results/disturb_cot_full/all_tasks_energy_balance_sample_summary_Qwen2.5-7B-Instruct.md
+
+#   # LOTO (estimate basis on N-1 tasks, evaluate held-out only):
+#   CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#     --model Qwen/Qwen2.5-7B-Instruct --device cuda --model_dtype fp32 \
+#     --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#     --mode loto --batch_size 16 \
+#     --loto_eval_mode heldout \
+#     --n_subspace 128 --n_eval 2048 --layer 10 \
+#     --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#     --reasoning_tokens 128 --max_new_tokens 256 \
+#     --template_randomization 1 --shuffle_choices 1 \
+#     --do_sample 0 --out_json results/disturb_cot_full/energy_balance_loto8_results_Qwen2.5-7B-Instruct.json --out_md results/disturb_cot_full/energy_balance_loto8_summary_Qwen2.5-7B-Instruct.md 
+
+
+
+
+
+
+# # run the with-aqua version
+#   # Single (all-tasks) basis estimation + evaluation:
+#   CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#     --model facebook/opt-6.7b --device cuda --model_dtype fp32 \
+#     --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#     --mode all --batch_size 16 \
+#     --n_subspace 128 --n_eval 2048 --layer 10 \
+#     --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#     --reasoning_tokens 128 --max_new_tokens 256 \
+#     --template_randomization 1 --shuffle_choices 1 \
+#     --do_sample 0 --out_json results/disturb_cot_full/all_tasks_energy_balance_greedy_results_opt-6.7b.json --out_md results/disturb_cot_full/all_tasks_energy_balance_greedy_summary_opt-6.7b.md
+
+#   # CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#   #   --model google/gemma-3-12b-it --device cuda --model_dtype fp32 \
+#   #   --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#   #   --mode all \
+#   #   --n_subspace 128 --n_eval 2048 --layer 10 \
+#   #   --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#   #   --reasoning_tokens 128 --max_new_tokens 256 \
+#   #   --template_randomization 1 --shuffle_choices 1 \
+#   #   --do_sample 1 --out_json results/disturb_cot_full/all_tasks_energy_balance_sample_results_gemma-3-12b-it.json --out_md results/disturb_cot_full/all_tasks_energy_balance_sample_summary_gemma-3-12b-it.md
+
+#   # LOTO (estimate basis on N-1 tasks, evaluate held-out only):
+#   CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#     --model facebook/opt-6.7b --device cuda --model_dtype fp32 \
+#     --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#     --mode loto --batch_size 16 \
+#     --loto_eval_mode heldout \
+#     --n_subspace 128 --n_eval 2048 --layer 10 \
+#     --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#     --reasoning_tokens 128 --max_new_tokens 256 \
+#     --template_randomization 1 --shuffle_choices 1 \
+#     --do_sample 0 --out_json results/disturb_cot_full/energy_balance_loto8_results_opt-6.7b.json --out_md results/disturb_cot_full/energy_balance_loto8_summary_opt-6.7b.md 
+
+
+
+
+
+
+# # run the with-aqua version
+#   # Single (all-tasks) basis estimation + evaluation:
+#   CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#     --model google/gemma-3-12b-it --device cuda --model_dtype fp32 \
+#     --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#     --mode all --batch_size 16 \
+#     --n_subspace 128 --n_eval 2048 --layer 10 \
+#     --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#     --reasoning_tokens 128 --max_new_tokens 256 \
+#     --template_randomization 1 --shuffle_choices 1 \
+#     --do_sample 0 --out_json results/disturb_cot_full/all_tasks_energy_balance_greedy_results_gemma-3-12b-it.json --out_md results/disturb_cot_full/all_tasks_energy_balance_greedy_summary_gemma-3-12b-it.md
+
+#   # CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#   #   --model google/gemma-3-12b-it --device cuda --model_dtype fp32 \
+#   #   --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#   #   --mode all \
+#   #   --n_subspace 128 --n_eval 2048 --layer 10 \
+#   #   --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#   #   --reasoning_tokens 128 --max_new_tokens 256 \
+#   #   --template_randomization 1 --shuffle_choices 1 \
+#   #   --do_sample 1 --out_json results/disturb_cot_full/all_tasks_energy_balance_sample_results_gemma-3-12b-it.json --out_md results/disturb_cot_full/all_tasks_energy_balance_sample_summary_gemma-3-12b-it.md
+
+#   # LOTO (estimate basis on N-1 tasks, evaluate held-out only):
+#   CUDA_VISIBLE_DEVICES=3 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+#     --model google/gemma-3-12b-it --device cuda --model_dtype fp32 \
+#     --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
+#     --mode loto --batch_size 16 \
+#     --loto_eval_mode heldout \
+#     --n_subspace 128 --n_eval 2048 --layer 10 \
+#     --calib_decode_max_new_tokens 128 --per_task_max_states 20000 \
+#     --reasoning_tokens 128 --max_new_tokens 256 \
+#     --template_randomization 1 --shuffle_choices 1 \
+#     --do_sample 0 --out_json results/disturb_cot_full/energy_balance_loto8_results_gemma-3-12b-it.json --out_md results/disturb_cot_full/energy_balance_loto8_summary_gemma-3-12b-it.md 
 
 
 
