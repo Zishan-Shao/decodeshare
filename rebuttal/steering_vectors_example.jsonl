@@ -1,0 +1,5 @@
+# Example steering vectors manifest (JSONL; one JSON object per line).
+# Paths are resolved relative to this file.
+{"name":"pirate_decode_l10","concept":"pirate","layer":10,"alpha":1.0,"path":"../brittleness/old/result/v_pirate_decode_layer10.npy"}
+{"name":"boolq_decode_l10","concept":"boolq","layer":10,"alpha":1.0,"path":"../brittleness/old/steer_repair_multibench/boolq/boolq_v_decode.npy"}
+{"name":"boolq_prefill_l10","concept":"boolq","layer":10,"alpha":1.0,"path":"../brittleness/old/steer_repair_multibench/boolq/boolq_v_prefill.npy"}

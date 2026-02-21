@@ -1,0 +1,151 @@
+{
+  "pool": "CAA",
+  "manifest": "results/A1_cross_method/manifests/caa.jsonl",
+  "config": {
+    "tasks": [
+      "commonsenseqa",
+      "arc_challenge",
+      "openbookqa",
+      "qasc",
+      "logiqa"
+    ],
+    "n_eval": 128,
+    "template_seeds_rank": [
+      1234,
+      2345,
+      3456
+    ],
+    "template_seeds_real": [
+      4567,
+      5678,
+      6789
+    ],
+    "decoding": "greedy",
+    "max_new_tokens": 256,
+    "reasoning_tokens": 128,
+    "staged": true,
+    "trad_mode": "prefill",
+    "decode_mode": "decode",
+    "agg": "mean"
+  },
+  "correlations": {
+    "spearman_trad_vs_decode": 0.16265060240963855,
+    "spearman_trad_vs_real": 0.45509797952703845,
+    "spearman_decode_vs_real": 0.5628843430992317
+  },
+  "selection": {
+    "best_real": 0.004166666666666667,
+    "chosen_by_trad": "CAA_correct_vs_wrong_0002_l28",
+    "chosen_by_decode": "CAA_correct_vs_wrong_0005_l28",
+    "regret_at_1_trad": 0.0046875,
+    "regret_at_1_decode": 0.0,
+    "top10_overlap_trad_real": 8,
+    "top10_overlap_decode_real": 8
+  },
+  "vectors": {
+    "CAA_correct_vs_wrong_0000_l28": {
+      "method": "CAA",
+      "concept": "correct_vs_wrong",
+      "layer": 28,
+      "alpha": 1.0,
+      "path": "results/A1_cross_method/vectors/caa/caa_vec_0000_l28.npy",
+      "score_rank_trad_mean": -0.0031250000000000006,
+      "score_rank_trad_std": 0.0033753857804207604,
+      "score_rank_decode_mean": -0.0010416666666666667,
+      "score_rank_decode_std": 0.0026557393299962424,
+      "score_real_mean": -0.0031249999999999997,
+      "score_real_std": 0.0033753857804207604
+    },
+    "CAA_correct_vs_wrong_0001_l28": {
+      "method": "CAA",
+      "concept": "correct_vs_wrong",
+      "layer": 28,
+      "alpha": 1.0,
+      "path": "results/A1_cross_method/vectors/caa/caa_vec_0001_l28.npy",
+      "score_rank_trad_mean": -0.0010416666666666667,
+      "score_rank_trad_std": 0.0026557393299962424,
+      "score_rank_decode_mean": -0.005729166666666667,
+      "score_rank_decode_std": 0.008494534599114631,
+      "score_real_mean": -0.005208333333333333,
+      "score_real_std": 0.008494534599114631
+    },
+    "CAA_correct_vs_wrong_0002_l28": {
+      "method": "CAA",
+      "concept": "correct_vs_wrong",
+      "layer": 28,
+      "alpha": 1.0,
+      "path": "results/A1_cross_method/vectors/caa/caa_vec_0002_l28.npy",
+      "score_rank_trad_mean": 0.0010416666666666667,
+      "score_rank_trad_std": 0.0032106322932130087,
+      "score_rank_decode_mean": 0.001041666666666667,
+      "score_rank_decode_std": 0.007795119555779044,
+      "score_real_mean": -0.0005208333333333332,
+      "score_real_std": 0.01085034721666649
+    },
+    "CAA_correct_vs_wrong_0003_l28": {
+      "method": "CAA",
+      "concept": "correct_vs_wrong",
+      "layer": 28,
+      "alpha": 1.0,
+      "path": "results/A1_cross_method/vectors/caa/caa_vec_0003_l28.npy",
+      "score_rank_trad_mean": -0.0020833333333333333,
+      "score_rank_trad_std": 0.0019487798889447612,
+      "score_rank_decode_mean": -0.0031249999999999997,
+      "score_rank_decode_std": 0.009631896879639026,
+      "score_real_mean": 0.0020833333333333333,
+      "score_real_std": 0.003210632293213009
+    },
+    "CAA_correct_vs_wrong_0004_l28": {
+      "method": "CAA",
+      "concept": "correct_vs_wrong",
+      "layer": 28,
+      "alpha": 1.0,
+      "path": "results/A1_cross_method/vectors/caa/caa_vec_0004_l28.npy",
+      "score_rank_trad_mean": -0.0026041666666666665,
+      "score_rank_trad_std": 0.0019487798889447612,
+      "score_rank_decode_mean": -0.0031250000000000006,
+      "score_rank_decode_std": 0.002551551815399144,
+      "score_real_mean": -0.0026041666666666665,
+      "score_real_std": 0.00820209153542897
+    },
+    "CAA_correct_vs_wrong_0005_l28": {
+      "method": "CAA",
+      "concept": "correct_vs_wrong",
+      "layer": 28,
+      "alpha": 1.0,
+      "path": "results/A1_cross_method/vectors/caa/caa_vec_0005_l28.npy",
+      "score_rank_trad_mean": -0.0015625000000000003,
+      "score_rank_trad_std": 0.001275775907699572,
+      "score_rank_decode_mean": 0.0062499999999999995,
+      "score_rank_decode_std": 0.00337538578042076,
+      "score_real_mean": 0.004166666666666667,
+      "score_real_std": 0.0026557393299962424
+    },
+    "CAA_correct_vs_wrong_0006_l28": {
+      "method": "CAA",
+      "concept": "correct_vs_wrong",
+      "layer": 28,
+      "alpha": 1.0,
+      "path": "results/A1_cross_method/vectors/caa/caa_vec_0006_l28.npy",
+      "score_rank_trad_mean": -0.0020833333333333333,
+      "score_rank_trad_std": 0.000736569563735987,
+      "score_rank_decode_mean": 0.001041666666666667,
+      "score_rank_decode_std": 0.01239101797226075,
+      "score_real_mean": -0.0020833333333333333,
+      "score_real_std": 0.009909529995021068
+    },
+    "CAA_correct_vs_wrong_0007_l28": {
+      "method": "CAA",
+      "concept": "correct_vs_wrong",
+      "layer": 28,
+      "alpha": 1.0,
+      "path": "results/A1_cross_method/vectors/caa/caa_vec_0007_l28.npy",
+      "score_rank_trad_mean": -0.0031249999999999997,
+      "score_rank_trad_std": 0.002209708691207961,
+      "score_rank_decode_mean": -0.0026041666666666665,
+      "score_rank_decode_std": 0.0038975597778895224,
+      "score_real_mean": -0.005729166666666667,
+      "score_real_std": 0.008494534599114631
+    }
+  }
+}
