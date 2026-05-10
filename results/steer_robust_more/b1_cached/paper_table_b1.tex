@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\begin{tabular}{lllllll}
+\toprule
+pool & comparison & $\Delta$ Mean $\uparrow$ & $\Delta$ Worst $\uparrow$ & $\Delta$ Flip $\downarrow$ & $\Delta$ Cat. $\downarrow$ & $\Delta$ MarginVar $\downarrow$ \\
+\midrule
+OVERALL & Repair - Orig & 0.001 [-0.005, 0.005] & 0.005 [-0.001, 0.009] & 0.040 [-0.240, 0.360] & 0.080 [-0.200, 0.360] & -0.000 [-0.000, -0.000] \\
+OVERALL & Repair - RandProj & 0.001 [-0.003, 0.004] & 0.000 [-0.004, 0.003] & -0.120 [-0.320, 0.160] & -0.120 [-0.320, 0.160] & -0.000 [-0.000, -0.000] \\
+OVERALL & Repair - Shrink & 0.000 [-0.004, 0.004] & 0.001 [-0.004, 0.004] & 0.000 [-0.200, 0.240] & 0.040 [-0.160, 0.240] & -0.000 [-0.000, -0.000] \\
+repair_controls_l28 & Repair - Orig & 0.001 [-0.005, 0.005] & 0.005 [-0.001, 0.009] & 0.040 [-0.240, 0.360] & 0.080 [-0.200, 0.360] & -0.000 [-0.000, -0.000] \\
+repair_controls_l28 & Repair - RandProj & 0.001 [-0.003, 0.004] & 0.000 [-0.004, 0.003] & -0.120 [-0.320, 0.160] & -0.120 [-0.320, 0.160] & -0.000 [-0.000, -0.000] \\
+repair_controls_l28 & Repair - Shrink & 0.000 [-0.004, 0.004] & 0.001 [-0.004, 0.004] & 0.000 [-0.200, 0.240] & 0.040 [-0.160, 0.240] & -0.000 [-0.000, -0.000] \\
+\bottomrule
+\end{tabular}
+
+\caption{Exp-B1 paired repair robustness benchmark. Cells show mean paired deltas with bootstrap 95\% CIs over candidates.}
+\label{tab:b1_repair}
+\end{table}

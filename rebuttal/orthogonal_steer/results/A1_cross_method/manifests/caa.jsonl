@@ -1,0 +1,8 @@
+{"name": "CAA_correct_vs_wrong_0000_l28", "concept": "correct_vs_wrong", "method": "CAA", "layer": 28, "alpha": 1.0, "path": "results/A1_cross_method/vectors/caa/caa_vec_0000_l28.npy", "subset_size": 96, "seed": 42}
+{"name": "CAA_correct_vs_wrong_0001_l28", "concept": "correct_vs_wrong", "method": "CAA", "layer": 28, "alpha": 1.0, "path": "results/A1_cross_method/vectors/caa/caa_vec_0001_l28.npy", "subset_size": 96, "seed": 42}
+{"name": "CAA_correct_vs_wrong_0002_l28", "concept": "correct_vs_wrong", "method": "CAA", "layer": 28, "alpha": 1.0, "path": "results/A1_cross_method/vectors/caa/caa_vec_0002_l28.npy", "subset_size": 96, "seed": 42}
+{"name": "CAA_correct_vs_wrong_0003_l28", "concept": "correct_vs_wrong", "method": "CAA", "layer": 28, "alpha": 1.0, "path": "results/A1_cross_method/vectors/caa/caa_vec_0003_l28.npy", "subset_size": 96, "seed": 42}
+{"name": "CAA_correct_vs_wrong_0004_l28", "concept": "correct_vs_wrong", "method": "CAA", "layer": 28, "alpha": 1.0, "path": "results/A1_cross_method/vectors/caa/caa_vec_0004_l28.npy", "subset_size": 96, "seed": 42}
+{"name": "CAA_correct_vs_wrong_0005_l28", "concept": "correct_vs_wrong", "method": "CAA", "layer": 28, "alpha": 1.0, "path": "results/A1_cross_method/vectors/caa/caa_vec_0005_l28.npy", "subset_size": 96, "seed": 42}
+{"name": "CAA_correct_vs_wrong_0006_l28", "concept": "correct_vs_wrong", "method": "CAA", "layer": 28, "alpha": 1.0, "path": "results/A1_cross_method/vectors/caa/caa_vec_0006_l28.npy", "subset_size": 96, "seed": 42}
+{"name": "CAA_correct_vs_wrong_0007_l28", "concept": "correct_vs_wrong", "method": "CAA", "layer": 28, "alpha": 1.0, "path": "results/A1_cross_method/vectors/caa/caa_vec_0007_l28.npy", "subset_size": 96, "seed": 42}

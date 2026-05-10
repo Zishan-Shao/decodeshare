@@ -1,0 +1,77 @@
+{
+  "n_vectors": 100,
+  "n_pos_total": 1,
+  "pos_rate": 0.01,
+  "correlations": {
+    "spearman_trad_vs_decode": -0.015559707651468593,
+    "spearman_trad_vs_real": -0.2264917129216465,
+    "spearman_decode_vs_real": 0.6808890843686515
+  },
+  "topk": {
+    "1": {
+      "mean_real_trad": -0.010416666666666666,
+      "mean_real_decode": 0.005208333333333333,
+      "mean_real_oracle": 0.005208333333333333,
+      "regret_trad": 0.015625,
+      "regret_decode": 0.0,
+      "delta_decode_minus_trad": 0.015625,
+      "n_pos_trad": 0,
+      "n_pos_decode": 1,
+      "p_geq_npos_trad": 1.0,
+      "p_geq_npos_decode": 0.010000000000000191
+    },
+    "5": {
+      "mean_real_trad": -0.019270833333333334,
+      "mean_real_decode": -0.002916666666666667,
+      "mean_real_oracle": 0.00010416666666666677,
+      "regret_trad": 0.019375,
+      "regret_decode": 0.0030208333333333337,
+      "delta_decode_minus_trad": 0.016354166666666666,
+      "n_pos_trad": 0,
+      "n_pos_decode": 1,
+      "p_geq_npos_trad": 1.0,
+      "p_geq_npos_decode": 0.050000000000000384
+    },
+    "10": {
+      "mean_real_trad": -0.019583333333333335,
+      "mean_real_decode": -0.005885416666666667,
+      "mean_real_oracle": -0.0011979166666666668,
+      "regret_trad": 0.018385416666666668,
+      "regret_decode": 0.004687500000000001,
+      "delta_decode_minus_trad": 0.013697916666666667,
+      "n_pos_trad": 0,
+      "n_pos_decode": 1,
+      "p_geq_npos_trad": 1.0,
+      "p_geq_npos_decode": 0.10000000000000664
+    },
+    "20": {
+      "mean_real_trad": -0.018020833333333333,
+      "mean_real_decode": -0.007083333333333333,
+      "mean_real_oracle": -0.003177083333333333,
+      "regret_trad": 0.01484375,
+      "regret_decode": 0.00390625,
+      "delta_decode_minus_trad": 0.0109375,
+      "n_pos_trad": 0,
+      "n_pos_decode": 1,
+      "p_geq_npos_trad": 1.0,
+      "p_geq_npos_decode": 0.2000000000000023
+    }
+  },
+  "oracle": {
+    "10": {
+      "overlap_trad_decode": 0,
+      "overlap_trad_real": 0,
+      "overlap_decode_real": 4
+    },
+    "20": {
+      "overlap_trad_decode": 3,
+      "overlap_trad_real": 1,
+      "overlap_decode_real": 12
+    },
+    "50": {
+      "overlap_trad_decode": 26,
+      "overlap_trad_real": 21,
+      "overlap_decode_real": 37
+    }
+  }
+}

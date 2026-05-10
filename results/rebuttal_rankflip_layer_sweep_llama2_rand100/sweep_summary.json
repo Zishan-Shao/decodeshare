@@ -1,0 +1,41 @@
+{
+  "rows": [
+    {
+      "model": "meta-llama/Llama-2-7b-chat-hf",
+      "layer": 16,
+      "n_vectors": 100,
+      "n_pos_total": 1,
+      "corr_spearman_trad_vs_decode": -0.015559707651468593,
+      "corr_spearman_trad_vs_real": -0.2264917129216465,
+      "corr_spearman_decode_vs_real": 0.6808890843686515,
+      "k1_mean_real_trad": -0.010416666666666666,
+      "k5_mean_real_trad": -0.019270833333333334,
+      "k10_mean_real_trad": -0.019583333333333335,
+      "k20_mean_real_trad": -0.018020833333333333,
+      "k1_mean_real_decode": 0.005208333333333333,
+      "k5_mean_real_decode": -0.002916666666666667,
+      "k10_mean_real_decode": -0.005885416666666667,
+      "k20_mean_real_decode": -0.007083333333333333,
+      "k1_regret_trad": 0.015625,
+      "k5_regret_trad": 0.019375,
+      "k10_regret_trad": 0.018385416666666668,
+      "k20_regret_trad": 0.01484375,
+      "k1_regret_decode": 0.0,
+      "k5_regret_decode": 0.0030208333333333337,
+      "k10_regret_decode": 0.004687500000000001,
+      "k20_regret_decode": 0.00390625,
+      "k1_delta_decode_minus_trad": 0.015625,
+      "k5_delta_decode_minus_trad": 0.016354166666666666,
+      "k10_delta_decode_minus_trad": 0.013697916666666667,
+      "k20_delta_decode_minus_trad": 0.0109375,
+      "k1_npos_trad": 0,
+      "k5_npos_trad": 0,
+      "k10_npos_trad": 0,
+      "k20_npos_trad": 0,
+      "k1_npos_decode": 1,
+      "k5_npos_decode": 1,
+      "k10_npos_decode": 1,
+      "k20_npos_decode": 1
+    }
+  ]
+}

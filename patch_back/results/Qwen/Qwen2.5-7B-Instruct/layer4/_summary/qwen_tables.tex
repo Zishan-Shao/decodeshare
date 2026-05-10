@@ -1,0 +1,69 @@
+% Auto-generated LaTeX tables for Qwen results
+
+% Requires \usepackage{booktabs}
+
+
+\begin{table}
+\caption{Qwen: multiple-choice (subspace\Apatch) summary.}
+\label{tab:qwen_mc_summary}
+\begin{tabular}{llrrrrrrrrrr}
+\toprule
+task & eval\_mode & seed & base\_acc\_scan & ablt\_acc\_scan & flips\_scan & patched\_0\_rescued\_pct & patched\_full\_rescued\_pct & control\_time\_shuffled\_rescued\_pct & control\_shared\_randvec\_rescued\_pct & control\_rand\_subspace\_rescued\_pct & control\_patch\_nonshared\_rescued\_pct \\
+\midrule
+aqua & NaN & 123 & 0.413386 & 0.287402 & 58 & 100.000000 & 100.000000 & 98.275862 & 15.517241 & 24.137931 & 0.000000 \\
+arc\_challenge & NaN & 123 & 0.905882 & 0.729412 & 50 & 100.000000 & 100.000000 & 100.000000 & 42.000000 & 38.000000 & 0.000000 \\
+commonsenseqa & NaN & 123 & 0.867188 & 0.804688 & 27 & 100.000000 & 100.000000 & 100.000000 & 51.851852 & 51.851852 & 0.000000 \\
+logiqa & NaN & 123 & 0.472656 & 0.390625 & 53 & 100.000000 & 100.000000 & 98.113208 & 33.962264 & 24.528302 & 0.000000 \\
+openbookqa & NaN & 123 & 0.859375 & 0.664062 & 55 & 100.000000 & 100.000000 & 100.000000 & 27.272727 & 36.363636 & 0.000000 \\
+piqa & NaN & 123 & 0.871094 & 0.742188 & 49 & 100.000000 & 100.000000 & 100.000000 & 40.816327 & 30.612245 & 0.000000 \\
+qasc & NaN & 123 & 0.808594 & 0.695312 & 33 & 100.000000 & 100.000000 & 100.000000 & 27.272727 & 36.363636 & 0.000000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}
+\caption{Qwen: open-answer (openanswer\_subspace\_patching) summary.}
+\label{tab:qwen_openanswer_summary}
+\begin{tabular}{llrrrrrrrrr}
+\toprule
+task & eval\_mode & seed & base\_acc\_scan & ablt\_acc\_scan & flips\_scan & patched\_self\_rescued\_pct & control\_time\_shuffled\_rescued\_pct & control\_shared\_randvec\_rescued\_pct & control\_rand\_subspace\_rescued\_pct & control\_patch\_nonshared\_rescued\_pct \\
+\midrule
+gsm8k & gen\_math & 123 & 0.035156 & 0.031250 & 9 & 22.222222 & 11.111111 & 22.222222 & 33.333333 & 44.444444 \\
+gsm8k & pair\_logprob & 123 & 0.800781 & 0.503906 & 83 & 98.437500 & 93.750000 & 12.500000 & 14.062500 & 4.687500 \\
+humaneval & gen\_code\_compile & 123 & NaN & NaN & 0 & 16.666667 & 16.666667 & 33.333333 & 16.666667 & 0.000000 \\
+humaneval & pair\_logprob & 123 & 0.682927 & 0.707317 & 3 & 66.666667 & 66.666667 & 66.666667 & 33.333333 & 0.000000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+
+\begin{table}
+\caption{Qwen: alpha sweep (first 40 rows shown).}
+\label{tab:qwen_alpha_sweep_head}
+\begin{tabular}{llrrrrrrrrr}
+\toprule
+file & task & layer & seed & alpha & n & flip\_rate & ablated\_acc & pred\_change\_rate & mean\_margin & mean\_delta\_margin\_vs\_baseline \\
+\midrule
+aqua\_alpha\_sweep\_seed123.json & aqua & 4 & 123 & 0.000000 & 58 & 0.000000 & 1.000000 & 0.000000 & 2.456174 & 0.000000 \\
+aqua\_alpha\_sweep\_seed123.json & aqua & 4 & 123 & 0.020000 & 58 & 0.000000 & 1.000000 & 0.000000 & 2.450693 & -0.005481 \\
+aqua\_alpha\_sweep\_seed123.json & aqua & 4 & 123 & 0.050000 & 58 & 0.000000 & 1.000000 & 0.000000 & 2.441503 & -0.014671 \\
+aqua\_alpha\_sweep\_seed123.json & aqua & 4 & 123 & 0.100000 & 58 & 0.017241 & 0.982759 & 0.017241 & 2.423518 & -0.032655 \\
+aqua\_alpha\_sweep\_seed123.json & aqua & 4 & 123 & 0.200000 & 58 & 0.068966 & 0.931034 & 0.068966 & 2.381049 & -0.075125 \\
+aqua\_alpha\_sweep\_seed123.json & aqua & 4 & 123 & 0.300000 & 58 & 0.086207 & 0.913793 & 0.086207 & 2.336456 & -0.119718 \\
+aqua\_alpha\_sweep\_seed123.json & aqua & 4 & 123 & 0.500000 & 58 & 0.103448 & 0.896552 & 0.103448 & 2.164826 & -0.291348 \\
+aqua\_alpha\_sweep\_seed123.json & aqua & 4 & 123 & 0.750000 & 58 & 0.500000 & 0.500000 & 0.500000 & -0.252096 & -2.708269 \\
+aqua\_alpha\_sweep\_seed123.json & aqua & 4 & 123 & 1.000000 & 58 & 1.000000 & 0.000000 & 1.000000 & -1.357588 & -3.813761 \\
+aqua\_alpha\_sweep\_seed456.json & aqua & 4 & 456 & 0.000000 & 63 & 0.000000 & 1.000000 & 0.000000 & 2.538512 & 0.000000 \\
+aqua\_alpha\_sweep\_seed456.json & aqua & 4 & 456 & 0.050000 & 63 & 0.000000 & 1.000000 & 0.000000 & 2.514043 & -0.024469 \\
+aqua\_alpha\_sweep\_seed456.json & aqua & 4 & 456 & 0.100000 & 63 & 0.015873 & 0.984127 & 0.015873 & 2.486062 & -0.052450 \\
+aqua\_alpha\_sweep\_seed456.json & aqua & 4 & 456 & 0.200000 & 63 & 0.015873 & 0.984127 & 0.015873 & 2.420473 & -0.118039 \\
+aqua\_alpha\_sweep\_seed456.json & aqua & 4 & 456 & 0.300000 & 63 & 0.031746 & 0.968254 & 0.031746 & 2.350162 & -0.188350 \\
+aqua\_alpha\_sweep\_seed456.json & aqua & 4 & 456 & 0.500000 & 63 & 0.047619 & 0.952381 & 0.047619 & 2.179738 & -0.358774 \\
+aqua\_alpha\_sweep\_seed456.json & aqua & 4 & 456 & 0.750000 & 63 & 0.349206 & 0.650794 & 0.349206 & 0.404314 & -2.134198 \\
+aqua\_alpha\_sweep\_seed456.json & aqua & 4 & 456 & 1.000000 & 63 & 1.000000 & 0.000000 & 1.000000 & -1.556708 & -4.095220 \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,145 @@
+{
+  "config": {
+    "model": "meta-llama/Llama-2-7b-chat-hf",
+    "device": "cuda",
+    "model_dtype": "fp32",
+    "vectors_manifest": "steering_vectors_example.jsonl",
+    "max_vectors": 0,
+    "filter_regex": "",
+    "tasks": "commonsenseqa,arc_challenge,openbookqa,qasc,logiqa",
+    "n_eval": 128,
+    "template_randomization": 1,
+    "shuffle_choices": 1,
+    "answer_prefix": "\nFinal answer:",
+    "add_answer_prefix": 1,
+    "template_seed_rank": 1234,
+    "template_seed_real": 5678,
+    "decoding": "greedy",
+    "max_new_tokens": 256,
+    "reasoning_tokens": 128,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "top_k": 0,
+    "batch_size": 4,
+    "max_prompt_len": 512,
+    "sample_seed": 12345,
+    "trad_mode": "prefill",
+    "trad_backend": "",
+    "decode_mode": "decode",
+    "staged": 1,
+    "agg": "mean",
+    "seed": 42,
+    "out_json": "ranking_flip_results.json"
+  },
+  "baseline_rank": {
+    "commonsenseqa": 0.359375,
+    "arc_challenge": 0.453125,
+    "openbookqa": 0.515625,
+    "qasc": 0.2578125,
+    "logiqa": 0.296875
+  },
+  "baseline_real": {
+    "commonsenseqa": 0.453125,
+    "arc_challenge": 0.4375,
+    "openbookqa": 0.4921875,
+    "qasc": 0.25,
+    "logiqa": 0.3359375
+  },
+  "vectors": {
+    "pirate_decode_l10": {
+      "concept": "pirate",
+      "layer": 10,
+      "alpha": 1.0,
+      "template_tag": null,
+      "delta_rank_trad": {
+        "commonsenseqa": 0.0078125,
+        "arc_challenge": -0.0078125,
+        "openbookqa": -0.015625,
+        "qasc": -0.0078125,
+        "logiqa": 0.015625
+      },
+      "delta_rank_decode": {
+        "commonsenseqa": 0.0390625,
+        "arc_challenge": 0.0,
+        "openbookqa": -0.03125,
+        "qasc": 0.0,
+        "logiqa": 0.03125
+      },
+      "delta_real_decode": {
+        "commonsenseqa": -0.0390625,
+        "arc_challenge": 0.0390625,
+        "openbookqa": -0.0234375,
+        "qasc": 0.0390625,
+        "logiqa": -0.0078125
+      },
+      "score_rank_trad": -0.0015625,
+      "score_rank_decode": 0.0078125,
+      "score_real": 0.0015625
+    },
+    "boolq_decode_l10": {
+      "concept": "boolq",
+      "layer": 10,
+      "alpha": 1.0,
+      "template_tag": null,
+      "delta_rank_trad": {
+        "commonsenseqa": 0.0,
+        "arc_challenge": -0.0234375,
+        "openbookqa": -0.015625,
+        "qasc": -0.0078125,
+        "logiqa": 0.015625
+      },
+      "delta_rank_decode": {
+        "commonsenseqa": 0.0,
+        "arc_challenge": 0.03125,
+        "openbookqa": 0.0,
+        "qasc": 0.0546875,
+        "logiqa": 0.015625
+      },
+      "delta_real_decode": {
+        "commonsenseqa": -0.015625,
+        "arc_challenge": -0.0390625,
+        "openbookqa": 0.0078125,
+        "qasc": 0.0625,
+        "logiqa": -0.0859375
+      },
+      "score_rank_trad": -0.00625,
+      "score_rank_decode": 0.0203125,
+      "score_real": -0.0140625
+    },
+    "boolq_prefill_l10": {
+      "concept": "boolq",
+      "layer": 10,
+      "alpha": 1.0,
+      "template_tag": null,
+      "delta_rank_trad": {
+        "commonsenseqa": 0.0,
+        "arc_challenge": -0.03125,
+        "openbookqa": -0.0078125,
+        "qasc": -0.0078125,
+        "logiqa": 0.0078125
+      },
+      "delta_rank_decode": {
+        "commonsenseqa": -0.03125,
+        "arc_challenge": -0.046875,
+        "openbookqa": -0.015625,
+        "qasc": -0.0078125,
+        "logiqa": 0.0546875
+      },
+      "delta_real_decode": {
+        "commonsenseqa": -0.03125,
+        "arc_challenge": -0.0546875,
+        "openbookqa": -0.0078125,
+        "qasc": -0.0234375,
+        "logiqa": 0.0234375
+      },
+      "score_rank_trad": -0.0078125,
+      "score_rank_decode": -0.009375,
+      "score_real": -0.01875
+    }
+  },
+  "correlations": {
+    "spearman_trad_vs_decode": 0.5,
+    "spearman_trad_vs_real": 1.0,
+    "spearman_decode_vs_real": 0.5
+  }
+}

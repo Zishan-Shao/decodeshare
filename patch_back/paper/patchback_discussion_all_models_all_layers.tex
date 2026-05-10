@@ -1,0 +1,19 @@
+\section{Patchback results across models and layers}
+\label{sec:patchback_discussion}
+
+Tables~\ref{tab:patchback_mc_agg}--\ref{tab:patchback_open_agg} summarize patchback behavior across three model families (Llama, Falcon, Qwen) and three representative depths (layers 4/10/24). We report rescue rates computed on the worst-case flip set $\mathcal{F}$ (examples that flip under the corresponding ablation), aggregated by summing rescued/total across tasks.
+
+\paragraph{A consistent qualitative pattern: shared-subspace patching is highly effective, and nonshared controls are near-zero.}
+Across models and layers, the full patch (Patched@full for multiple-choice) rescues essentially all flips, while patching a nonshared direction remains at or near zero (NonsharedPatch). This separates the intended intervention from a naive ``any patch works'' explanation, and supports the view that a small set of shared decode directions is a high-leverage causal pathway for decision-making under last-token decoding.
+
+\paragraph{Model- and layer-dependent separation from random controls.}
+While patched directions are consistently strong, the strength of random controls varies substantially by model and depth. In Llama, random shared-vector and random-subspace controls are comparatively small (e.g., Llama layer4 Patched@0 $\approx 84.2\\%$ vs RandSubspace $\approx 16.3\\%$), yielding a clean mechanistic gap. In contrast, Qwen exhibits unusually strong random-subspace baselines at multiple layers, indicating that generic low-rank perturbations can often intersect decision-relevant directions. This suggests shared-subspace interference is a major contributor to failures, but not the only one: some models/layers appear to have broader low-rank decision structure that makes ``random'' controls stronger.
+
+\paragraph{Transfer patching can be depth-sensitive.}
+Flipset transfer (Table~\ref{tab:patchback_flipset_agg}) reveals that robustness does not necessarily transfer uniformly across layers. For example, Qwen maintains high transfer rescue at layer10 ($\approx 96.1\%$) but degrades sharply at layer24 ($\approx 24.6\%$), even though self patching remains high. This layer sensitivity highlights that the shared decode pathway is not monolithic across depth: deeper layers may require different donor selection or richer basis estimation to support cross-task transfer reliably.
+
+\paragraph{Implication for the shared decode pathway story.}
+Taken together, these results support a practical story: controlling interference along shared decode directions provides a powerful repair for worst-case failures (large rescue rates), with negligible effect from nonshared patches. At the same time, the variability of random-control strength and transfer performance across model families suggests the most robust framing is: shared-pathway interference is a primary failure mode, but different models can have additional low-rank structure that makes generic controls stronger and transfer behavior more depth-dependent.
+
+\paragraph{Note on layer10 Llama results.}
+The Llama layer10 row (marked $^{\dagger}$) uses the legacy layer10 pipeline outputs under \texttt{patch\_back/results/openanswer}, \texttt{runs\_flip\_supplement}, and \texttt{subspace\_patching\_transfer}; it is included to complete the 3$\times$3 comparison and matches the same rescue-on-flips semantics.

@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.venv/
+venv/
+env/
+.env
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+.DS_Store
+
+# Large experiment artifacts
+*.npy
+*.npz
+*.pt
+*.pth
+*.safetensors
+*.bin
+*.ckpt
+*.gguf
+
+# Raw/generated caches
+**/cache/
+**/caches/
+**/acts/
+**/vectors/
+**/outputs/
+
+# Keep paper-level summaries in git, but avoid accidental raw result dumps.
+**/raw/
+**/wandb/

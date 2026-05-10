@@ -1,0 +1,106 @@
+{
+  "wikitext": {
+    "hf_dataset": "wikitext",
+    "available_splits": [
+      "test",
+      "train",
+      "validation"
+    ],
+    "subspace_split": "train",
+    "eval_split": null,
+    "n_subspace": 512,
+    "n_eval": 0,
+    "hf_id": "Salesforce/wikitext/wikitext-2-raw-v1",
+    "task_type": "next_word",
+    "prefix_words": 32
+  },
+  "gsm8k": {
+    "hf_dataset": "gsm8k",
+    "available_splits": [
+      "train",
+      "test"
+    ],
+    "subspace_split": "train",
+    "eval_split": null,
+    "n_subspace": 512,
+    "n_eval": 0,
+    "hf_id": "gsm8k/main"
+  },
+  "commonsenseqa": {
+    "hf_dataset": "commonsenseqa",
+    "available_splits": [
+      "train",
+      "validation",
+      "test"
+    ],
+    "subspace_split": "train",
+    "eval_split": null,
+    "n_subspace": 512,
+    "n_eval": 0,
+    "hf_id": "commonsense_qa",
+    "revision": null
+  },
+  "boolq": {
+    "hf_dataset": "boolq",
+    "available_splits": [
+      "train",
+      "validation"
+    ],
+    "subspace_split": "train",
+    "eval_split": null,
+    "n_subspace": 512,
+    "n_eval": 0,
+    "hf_id": "boolq"
+  },
+  "arc_challenge": {
+    "hf_dataset": "arc_challenge",
+    "available_splits": [
+      "train",
+      "test",
+      "validation"
+    ],
+    "subspace_split": "train",
+    "eval_split": null,
+    "n_subspace": 512,
+    "n_eval": 0,
+    "hf_id": "ai2_arc/ARC-Challenge"
+  },
+  "openbookqa": {
+    "hf_dataset": "openbookqa",
+    "available_splits": [
+      "train",
+      "validation",
+      "test"
+    ],
+    "subspace_split": "train",
+    "eval_split": null,
+    "n_subspace": 512,
+    "n_eval": 0,
+    "hf_id": "openbookqa/main"
+  },
+  "piqa": {
+    "hf_dataset": "piqa",
+    "available_splits": [
+      "train",
+      "test",
+      "validation"
+    ],
+    "subspace_split": "train",
+    "eval_split": null,
+    "n_subspace": 512,
+    "n_eval": 0,
+    "hf_id": "piqa"
+  },
+  "competition_math": {
+    "hf_dataset": "competition_math",
+    "available_splits": [
+      "train"
+    ],
+    "subspace_split": "train",
+    "eval_split": "train",
+    "n_subspace": 512,
+    "n_eval": 1,
+    "hf_id": "qwedsacf/competition_math",
+    "task_type": "math"
+  }
+}

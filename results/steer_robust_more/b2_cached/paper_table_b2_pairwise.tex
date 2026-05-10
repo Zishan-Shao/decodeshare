@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering
+\begin{tabular}{llllll}
+\toprule
+pool & comparison & $\Delta$ REAL Mean $\uparrow$ & $\Delta$ Regret@1 $\downarrow$ & $\Delta$ Flip $\downarrow$ & Win-rate \\
+\midrule
+caa_v2 & DECODE vs TRAD-A & 0.020 [0.020, 0.020] & -0.020 [-0.020, -0.020] & 0.000 [0.000, 0.000] & 100.0% \\
+caa_v2 & DECODE vs TRAD-B & 0.020 [0.020, 0.020] & -0.020 [-0.020, -0.020] & 0.000 [0.000, 0.000] & 100.0% \\
+instr64 & DECODE vs TRAD-A & 0.012 [0.012, 0.012] & -0.013 [-0.013, -0.013] & -1.000 [-1.000, -1.000] & 100.0% \\
+instr64 & DECODE vs TRAD-B & 0.012 [0.012, 0.012] & -0.013 [-0.013, -0.013] & -1.000 [-1.000, -1.000] & 100.0% \\
+random100 & DECODE vs TRAD-A & 0.010 [0.010, 0.010] & -0.010 [-0.010, -0.010] & -0.667 [-0.667, -0.667] & 100.0% \\
+random100 & DECODE vs TRAD-B & 0.010 [0.010, 0.010] & -0.010 [-0.010, -0.010] & -0.667 [-0.667, -0.667] & 100.0% \\
+sae64 & DECODE vs TRAD-A & 0.009 [0.009, 0.009] & -0.009 [-0.009, -0.009] & -1.000 [-1.000, -1.000] & 100.0% \\
+sae64 & DECODE vs TRAD-B & 0.009 [0.009, 0.009] & -0.009 [-0.009, -0.009] & -1.000 [-1.000, -1.000] & 100.0% \\
+OVERALL & DECODE vs TRAD-A & 0.013 [0.010, 0.018] & -0.013 [-0.018, -0.010] & -0.667 [-1.000, -0.250] & 100.0% \\
+OVERALL & DECODE vs TRAD-B & 0.013 [0.010, 0.018] & -0.013 [-0.018, -0.010] & -0.667 [-1.000, -0.250] & 100.0% \\
+\bottomrule
+\end{tabular}
+
+\caption{Pairwise deployment comparison of DECODE-selected interventions against traditional selectors.}
+\label{tab:b2_pairwise}
+\end{table}

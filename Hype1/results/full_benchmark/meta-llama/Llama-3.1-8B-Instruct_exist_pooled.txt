@@ -1,0 +1,3 @@
+[Cmd] prove_sharedness_decode_full.py --model meta-llama/Llama-3.1-8B-Instruct --device cuda --model_dtype fp32 --layer 10 --n_prompts 128 --calib_max_new_tokens 128 --max_prompt_len 512 --per_task_max_states 20000 --tau 0.001 --m_shared 8 --null_perm_trials 2000 --null_scramble_trials 100 --out_json results/full_benchmark/meta-llama/Llama-3.1-8B-Instruct_exist_pooled.json --out_txt results/full_benchmark/meta-llama/Llama-3.1-8B-Instruct_exist_pooled.txt
+[Log] tee stdout -> results/full_benchmark/meta-llama/Llama-3.1-8B-Instruct_exist_pooled.txt
+[Env] model=meta-llama/Llama-3.1-8B-Instruct device=cuda dtype=fp32 layer=10

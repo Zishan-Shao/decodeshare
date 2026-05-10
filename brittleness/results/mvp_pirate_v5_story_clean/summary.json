@@ -1,0 +1,113 @@
+{
+  "config": {
+    "model": "meta-llama/Llama-2-7b-chat-hf",
+    "device": "cuda",
+    "dtype": "fp32",
+    "device_map": null,
+    "layer": 28,
+    "v_mode": "decode",
+    "v_n": 16,
+    "v_max_prompt_tokens": 512,
+    "v_decode_steps": 16,
+    "pirate_anchor": "Start your answer with 'Ahoy matey!' and include: ahoy, matey, arrr, aye, cap'n.",
+    "basis_k": 128,
+    "basis_n_prompts": 30,
+    "calib_max_new_tokens": 128,
+    "basis_max_states": 20000,
+    "max_prompt_tokens": 512,
+    "max_new_tokens": 256,
+    "do_greedy": 0,
+    "do_sample": 1,
+    "sample_seeds": "1",
+    "temperature": 0.9,
+    "top_p": 0.9,
+    "alpha": 3.0,
+    "alphas": "",
+    "inject_first_n": 24,
+    "n_rand": 1,
+    "pirate_threshold": 2,
+    "chat_template": "auto",
+    "system_text": "You are a helpful assistant.",
+    "fail_fast": 1,
+    "debug_only": 0,
+    "probe_alpha": 12.0,
+    "probe_text": "Explain why the sky looks blue during the day.",
+    "probe_min_delta_norm": 0.1,
+    "smoke_test": 1,
+    "smoke_alphas": "45,50,55,60,65",
+    "smoke_decoding": "sample",
+    "smoke_seed": 1,
+    "smoke_new_tokens": 64,
+    "smoke_n_prompts": 2,
+    "stop_on_smoke_success": 1,
+    "auto_use_best_alpha": 1,
+    "eval_n_base": 4,
+    "eval_n_templates": 2,
+    "max_eval_prompts": 20,
+    "flush_every": 20,
+    "print_hit_examples": 1,
+    "early_abort_after": 0,
+    "early_abort_if_all_zero": 1,
+    "stop_on_first_success": 0,
+    "seed": 0,
+    "out_dir": "results/mvp_pirate_v5_story_clean"
+  },
+  "probe": {
+    "n_seen_seq1": 1,
+    "n_applied": 1,
+    "delta_norm": 120.28588104248047,
+    "pirate_sum_deltas": [
+      0.4999832510948181,
+      1.6686593890190125,
+      0.3614385724067688,
+      1.2308782935142517,
+      1.5738521814346313,
+      2.1043050289154053,
+      0.8824801445007324,
+      2.0511562824249268,
+      -0.6923449039459229,
+      -1.2228361368179321
+    ]
+  },
+  "sharedness_v": 0.5466719269747036,
+  "sharedness_v_fixed": 1.542980306675473e-07,
+  "greedy": {},
+  "sample": {
+    "no_steer": {
+      "mean": 0.0,
+      "std": 0.0,
+      "worst": 0.0,
+      "per_template": [
+        0.0,
+        0.0
+      ]
+    },
+    "v_orig_a50": {
+      "mean": 0.125,
+      "std": 0.125,
+      "worst": 0.0,
+      "per_template": [
+        0.25,
+        0.0
+      ]
+    },
+    "v_fixed_a50": {
+      "mean": 0.125,
+      "std": 0.125,
+      "worst": 0.0,
+      "per_template": [
+        0.0,
+        0.25
+      ]
+    },
+    "rand0_a50": {
+      "mean": 0.0,
+      "std": 0.0,
+      "worst": 0.0,
+      "per_template": [
+        0.0,
+        0.0
+      ]
+    }
+  }
+}

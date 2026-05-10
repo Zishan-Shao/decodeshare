@@ -1,0 +1,47 @@
+% Auto-generated LaTeX summary
+\section*{Shared-space steering experiment}
+\subsection*{Setup}
+\begin{itemize}
+  \item Model: meta-llama/Llama-2-7b-chat-hf
+  \item Layer: 28
+  \item Alpha: 45.0
+  \item Inject window: start\_step=1, first\_n=24
+  \item Pirate threshold: 2
+\end{itemize}
+
+\subsection*{Sharedness sweep}
+\begin{tabular}{rcc}
+\hline
+basis\_k & sharedness($v$) & sharedness($v_{\mathrm{fixed}}$)\\
+\hline
+16 & 0.4651 & 0.0000\\
+32 & 0.4864 & 0.0000\\
+64 & 0.5166 & 0.0000\\
+128 & 0.5455 & 0.0000\\
+\hline
+\end{tabular}
+
+\subsection*{Aggregated metrics}
+\begin{tabular}{lllrcccc}
+\hline
+dec & method & kind & k & meanSuc & worstSuc & meanHits & worstHits\\
+\hline
+greedy & no\_steer & baseline & - & 0.000 $\pm$ 0.000 & 0.000 & 0.000 $\pm$ 0.000 & 0.000\\
+greedy & v\_orig\_a45 & v\_orig & - & 0.040 $\pm$ 0.058 & 0.000 & 0.090 $\pm$ 0.136 & 0.000\\
+greedy & v\_fixed\_k16\_a45 & v\_fixed & 16 & 0.120 $\pm$ 0.060 & 0.000 & 0.400 $\pm$ 0.130 & 0.150\\
+greedy & v\_fixed\_k32\_a45 & v\_fixed & 32 & 0.050 $\pm$ 0.032 & 0.000 & 0.210 $\pm$ 0.116 & 0.050\\
+greedy & v\_fixed\_k64\_a45 & v\_fixed & 64 & 0.090 $\pm$ 0.066 & 0.000 & 0.250 $\pm$ 0.145 & 0.050\\
+greedy & v\_fixed\_k128\_a45 & v\_fixed & 128 & 0.000 $\pm$ 0.000 & 0.000 & 0.040 $\pm$ 0.037 & 0.000\\
+greedy & rand0\_a45 & rand & - & 0.000 $\pm$ 0.000 & 0.000 & 0.000 $\pm$ 0.000 & 0.000\\
+sample & no\_steer & baseline & - & 0.000 $\pm$ 0.000 & 0.000 & 0.000 $\pm$ 0.000 & 0.000\\
+sample & v\_orig\_a45 & v\_orig & - & 0.033 $\pm$ 0.024 & 0.000 & 0.127 $\pm$ 0.063 & 0.050\\
+sample & v\_fixed\_k16\_a45 & v\_fixed & 16 & 0.100 $\pm$ 0.015 & 0.083 & 0.360 $\pm$ 0.034 & 0.317\\
+sample & v\_fixed\_k32\_a45 & v\_fixed & 32 & 0.097 $\pm$ 0.029 & 0.067 & 0.340 $\pm$ 0.064 & 0.267\\
+sample & v\_fixed\_k64\_a45 & v\_fixed & 64 & 0.127 $\pm$ 0.017 & 0.100 & 0.413 $\pm$ 0.062 & 0.317\\
+sample & v\_fixed\_k128\_a45 & v\_fixed & 128 & 0.063 $\pm$ 0.027 & 0.033 & 0.213 $\pm$ 0.097 & 0.083\\
+sample & rand0\_a45 & rand & - & 0.000 $\pm$ 0.000 & 0.000 & 0.000 $\pm$ 0.000 & 0.000\\
+\hline
+\end{tabular}
+
+\subsection*{Representative examples}
+\input{examples.tex}

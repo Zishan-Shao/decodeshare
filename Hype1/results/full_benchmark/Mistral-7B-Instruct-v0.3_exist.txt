@@ -1,0 +1,25 @@
+[Cmd] prove_sharedness_decode_full.py --model mistralai/Mistral-7B-Instruct-v0.3 --device cuda --model_dtype fp32 --layer 10 --n_prompts 128 --calib_max_new_tokens 128 --max_prompt_len 512 --per_task_max_states 20000 --tau 0.001 --m_shared all --null_perm_trials 2000 --null_scramble_trials 100 --out_json results/full_benchmark/Mistral-7B-Instruct-v0.3_exist.json --out_txt results/full_benchmark/Mistral-7B-Instruct-v0.3_exist.txt
+[Log] tee stdout -> results/full_benchmark/Mistral-7B-Instruct-v0.3_exist.txt
+[Env] model=mistralai/Mistral-7B-Instruct-v0.3 device=cuda dtype=fp32 layer=10
+[Env] hidden_dim=4096
+[Info] loaded MATH from EleutherAI/hendrycks_math/algebra
+[Info] loaded AIME from HuggingFaceH4/aime_2024
+[Info] loaded OlymMATH from RUC-AIBOX/OlymMATH/en-hard
+[Info] loaded LiveCodeBench from livecodebench/code_generation
+[Info] loaded HumanEval from openai/openai_humaneval
+[Info] loaded MBPP from google-research-datasets/mbpp
+[Data] tasks=['gsm8k', 'commonsenseqa', 'strategyqa', 'aqua', 'openbookqa', 'qasc', 'boolq', 'piqa', 'math_algebra', 'aime', 'olymmath_en-hard', 'humaneval', 'mbpp'] n_prompts_per_task(target)=128
+[Data] task=gsm8k loaded_prompts=128
+[Data] task=commonsenseqa loaded_prompts=128
+[Data] task=strategyqa loaded_prompts=128
+[Data] task=aqua loaded_prompts=128
+[Data] task=openbookqa loaded_prompts=128
+[Data] task=qasc loaded_prompts=128
+[Data] task=boolq loaded_prompts=128
+[Data] task=piqa loaded_prompts=128
+[Data] task=math_algebra loaded_prompts=128
+[Data] task=aime loaded_prompts=30
+[Data] task=olymmath_en-hard loaded_prompts=100
+[Data] task=humaneval loaded_prompts=128
+[Data] task=mbpp loaded_prompts=128
+[Collect] task=gsm8k

@@ -1,0 +1,77 @@
+% Auto-generated from patch_back result summaries.
+% Requires: \usepackage{booktabs}
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{llrrrrrr}
+\toprule
+Model & Layer & $|\mathcal{F}|$ & Patched@0 & Patched@full & RandVec(shared) & RandSubspace & NonsharedPatch \\
+\midrule
+Llama-2-7b-chat & 4 & 202 & 84.2\,\% (170/202) & 100.0\,\% (202/202) & 19.3\,\% (39/202) & 16.3\,\% (33/202) & 0.0\,\% (0/202) \\
+Llama-2-7b-chat & 10$^{\dagger}$ & 449 & 85.7\,\% (385/449) & 100.0\,\% (449/449) & 7.6\,\% (34/449) & 5.3\,\% (24/449) & 0.0\,\% (0/449) \\
+Llama-2-7b-chat & 24 & 297 & 65.0\,\% (193/297) & 100.0\,\% (297/297) & 8.8\,\% (26/297) & 6.1\,\% (18/297) & 0.0\,\% (0/297) \\
+\midrule
+Falcon-7b-instruct & 4 & 91 & 100.0\,\% (91/91) & 100.0\,\% (91/91) & 9.9\,\% (9/91) & 0.0\,\% (0/91) & 0.0\,\% (0/91) \\
+Falcon-7b-instruct & 10 & 97 & 100.0\,\% (97/97) & 100.0\,\% (97/97) & 0.0\,\% (0/97) & 1.0\,\% (1/97) & 0.0\,\% (0/97) \\
+Falcon-7b-instruct & 24 & 192 & 100.0\,\% (192/192) & 100.0\,\% (192/192) & 19.3\,\% (37/192) & 19.8\,\% (38/192) & 0.0\,\% (0/192) \\
+\midrule
+Qwen2.5-7B-Instruct & 4 & 325 & 100.0\,\% (325/325) & 100.0\,\% (325/325) & 32.6\,\% (106/325) & 32.9\,\% (107/325) & 0.0\,\% (0/325) \\
+Qwen2.5-7B-Instruct & 10 & 548 & 100.0\,\% (548/548) & 100.0\,\% (548/548) & 36.1\,\% (198/548) & 49.8\,\% (273/548) & 0.0\,\% (0/548) \\
+Qwen2.5-7B-Instruct & 24 & 453 & 100.0\,\% (453/453) & 100.0\,\% (453/453) & 37.5\,\% (170/453) & 39.3\,\% (178/453) & 0.0\,\% (0/453) \\
+\bottomrule
+\end{tabular}
+\caption{Patchback (multiple-choice) aggregated over tasks. $|\mathcal{F}|$ counts baseline$\to$ablated flips. Rescue rates are computed on flips and aggregated across tasks by summing rescued/total. RandVec(shared) is a random vector inside the shared decode subspace; RandSubspace is a random subspace control; NonsharedPatch patches a nonshared direction (control). $^{\dagger}$ Llama layer10 uses the legacy layer10 pipeline outputs under \texttt{patch\_back/results/openanswer}, \texttt{runs\_flip\_supplement}, and \texttt{subspace\_patching\_transfer}.}
+\label{tab:patchback_mc_agg}
+\end{table}
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{llrrr}
+\toprule
+Model & Layer & $|\mathcal{F}_{flip}|$ & Patched(self) & Patched(transfer) \\
+\midrule
+Llama-2-7b-chat & 4 & 40 & 75.0\,\% (30/40) & 75.0\,\% (30/40) \\
+Llama-2-7b-chat & 10$^{\dagger}$ & 169 & 75.1\,\% (127/169) & 78.7\,\% (133/169) \\
+Llama-2-7b-chat & 24 & 66 & 57.6\,\% (38/66) & 36.4\,\% (24/66) \\
+\midrule
+Falcon-7b-instruct & 4 & 6 & 100.0\,\% (6/6) & 83.3\,\% (5/6) \\
+Falcon-7b-instruct & 10 & 6 & 100.0\,\% (6/6) & 83.3\,\% (5/6) \\
+Falcon-7b-instruct & 24 & 88 & 100.0\,\% (88/88) & 92.0\,\% (81/88) \\
+\midrule
+Qwen2.5-7B-Instruct & 4 & 116 & 100.0\,\% (116/116) & 96.6\,\% (112/116) \\
+Qwen2.5-7B-Instruct & 10 & 128 & 100.0\,\% (128/128) & 96.1\,\% (123/128) \\
+Qwen2.5-7B-Instruct & 24 & 122 & 100.0\,\% (122/122) & 24.6\,\% (30/122) \\
+\bottomrule
+\end{tabular}
+\caption{Flipset transfer patching on AQuA aggregated over same-task and cross-task transfer evaluations (rows with donor\_source in $\{\texttt{same\_task\_eval},\texttt{cross\_task\_eval}\}$). $|\mathcal{F}_{flip}|$ is the flipset size (baseline-correct examples that flip under full ablation).}
+\label{tab:patchback_flipset_agg}
+\end{table}
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{llrrrrr}
+\toprule
+Model & Layer & $|\mathcal{F}|$ & Patched(self) & Time-shuffle & RandVec(shared) & RandSubspace & NonsharedPatch \\
+\midrule
+Llama-2-7b-chat & 4 & 24 & 61.7\,\% (37/60) & 53.3\,\% (32/60) & 20.0\,\% (12/60) & 11.7\,\% (7/60) & 0.0\,\% (0/60) \\
+Llama-2-7b-chat & 10$^{\dagger}$ & 86 & 38.4\,\% (33/86) & 36.0\,\% (31/86) & 12.8\,\% (11/86) & 9.3\,\% (8/86) & 3.5\,\% (3/86) \\
+Llama-2-7b-chat & 24 & 36 & 52.1\,\% (37/71) & 42.3\,\% (30/71) & 4.2\,\% (3/71) & 2.8\,\% (2/71) & 1.4\,\% (1/71) \\
+\midrule
+Falcon-7b-instruct & 4 & 59 & 55.1\,\% (59/107) & 48.6\,\% (52/107) & 8.4\,\% (9/107) & 1.9\,\% (2/107) & 0.9\,\% (1/107) \\
+Falcon-7b-instruct & 10 & 53 & 54.3\,\% (57/105) & 48.6\,\% (51/105) & 5.7\,\% (6/105) & 3.8\,\% (4/105) & 1.0\,\% (1/105) \\
+Falcon-7b-instruct & 24 & 25 & 37.5\,\% (30/80) & 31.2\,\% (25/80) & 7.5\,\% (6/80) & 0.0\,\% (0/80) & 1.2\,\% (1/80) \\
+\midrule
+Qwen2.5-7B-Instruct & 4 & 95 & 74.5\,\% (70/94) & 70.2\,\% (66/94) & 19.1\,\% (18/94) & 17.0\,\% (16/94) & 7.4\,\% (7/94) \\
+Qwen2.5-7B-Instruct & 10 & 65 & 70.2\,\% (59/84) & 67.9\,\% (57/84) & 17.9\,\% (15/84) & 19.0\,\% (16/84) & 7.1\,\% (6/84) \\
+Qwen2.5-7B-Instruct & 24 & 35 & 46.3\,\% (25/54) & 35.2\,\% (19/54) & 9.3\,\% (5/54) & 3.7\,\% (2/54) & 1.9\,\% (1/54) \\
+\bottomrule
+\end{tabular}
+\caption{Open-answer patchback aggregated over GSM8K (gen-math + pair-logprob) and HumanEval (pair-logprob + gen-code-compile). Time-shuffle is a per-example temporal control; other controls match Table~\ref{tab:patchback_mc_agg}.}
+\label{tab:patchback_open_agg}
+\end{table}
