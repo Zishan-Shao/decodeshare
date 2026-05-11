@@ -1,4 +1,4 @@
-name: flashsvd
+name: decodeshare
 channels:
   - defaults
 dependencies:
@@ -32,6 +32,7 @@ dependencies:
   - xz=5.6.4=h5eee18b_1
   - zlib=1.3.1=hb25bd0a_0
   - pip:
+      # Core numerical stack
       - accelerate==1.10.1
       - aiofiles==24.1.0
       - aiohappyeyeballs==2.6.1
@@ -83,6 +84,7 @@ dependencies:
       - multiprocess==0.70.14
       - networkx==3.4.2
       - numba==0.63.1
+      # NumPy (required by most experiments)
       - numpy==2.2.6
       - nvidia-cublas-cu12==12.8.4.1
       - nvidia-cuda-cupti-cu12==12.8.90
@@ -136,6 +138,7 @@ dependencies:
       - tiktoken==0.12.0
       - tokenizers==0.22.1
       - tomlkit==0.13.3
+      # PyTorch (installed as pip package "torch")
       - torch==2.8.0
       - tqdm==4.67.1
       - transformers==4.57.0
@@ -150,4 +153,3 @@ dependencies:
       - websockets==15.0.1
       - xxhash==3.6.0
       - yarl==1.22.0
-prefix: /home/zs89/miniconda3/envs/flashsvd

@@ -1038,6 +1038,7 @@ def evaluate_condition_generation(
     ci_alpha: float,
     global_seed: int,
     sample_seed: Optional[int] = None,
+    save_generation_details: bool = False,
 ) -> Dict[str, Any]:
 
     handles, state_setter, hook_stats = register_hooks_for_condition(
@@ -1069,8 +1070,10 @@ def evaluate_condition_generation(
         )
 
         correct, extracted = [], []
+        preds = []
         for ex, cont in zip(examples, continuations):
             pred = parse_prediction(ex.dataset, cont)
+            preds.append(pred)
             extracted.append(int(pred != ""))
             correct.append(is_correct(ex.dataset, pred, ex.gold))
 
@@ -1080,7 +1083,7 @@ def evaluate_condition_generation(
         seed = stable_int_seed(global_seed, examples[0].dataset if examples else "na", condition, decoding, sample_seed or 0)
         acc, lo, hi = bootstrap_ci_mean(correct_arr, iters=bootstrap_iters, alpha=ci_alpha, seed=seed)
 
-        return {
+        out = {
             "protocol": "generation",
             "condition": condition,
             "decoding": decoding,
@@ -1094,8 +1097,108 @@ def evaluate_condition_generation(
             "avg_new_tokens": float(np.mean(new_tok)),
             "hook_stats": [{"name": s.name, "decode_calls": s.decode_calls, "intervened": s.intervened} for s in hook_stats],
         }
+        if save_generation_details:
+            out["example_ids"] = [str(ex.ex_id) for ex in examples]
+            out["prompts"] = [str(ex.prompt) for ex in examples]
+            out["golds"] = [str(ex.gold) for ex in examples]
+            out["preds"] = [str(x) for x in preds]
+            out["continuations"] = [str(x) for x in continuations]
+        return out
     finally:
         remove_hooks(handles)
+
+
+def _truncate_text(s: Any, limit: int) -> str:
+    text = "" if s is None else str(s)
+    if int(limit) <= 0 or len(text) <= int(limit):
+        return text
+    return text[: int(limit)] + "...[truncated]"
+
+
+def select_representative_generation_examples(
+    *,
+    examples: List["Example"],
+    block: Dict[str, Any],
+    decoding: str,
+    max_examples: int,
+    prompt_char_limit: int,
+    continuation_char_limit: int,
+) -> List[Dict[str, Any]]:
+    if int(max_examples) <= 0:
+        return []
+
+    modes = ["baseline", "shared_full", "shared_staged", "rand_full", "rand_staged"]
+    runs: Dict[str, Dict[str, Any]] = {}
+    for mode in modes:
+        run = block["runs"].get(f"{decoding}/{mode}")
+        if not run:
+            return []
+        if "continuations" not in run or "preds" not in run:
+            return []
+        runs[mode] = run
+
+    n = len(examples)
+    bools: Dict[str, List[bool]] = {
+        mode: [bool(x) for x in runs[mode]["correct"]]
+        for mode in modes
+    }
+
+    priorities = [
+        (
+            "baseline_correct_shared_full_wrong_rand_full_correct",
+            lambda i: bools["baseline"][i] and (not bools["shared_full"][i]) and bools["rand_full"][i],
+        ),
+        (
+            "baseline_correct_shared_staged_wrong_rand_staged_correct",
+            lambda i: bools["baseline"][i] and (not bools["shared_staged"][i]) and bools["rand_staged"][i],
+        ),
+        (
+            "baseline_correct_shared_full_wrong",
+            lambda i: bools["baseline"][i] and (not bools["shared_full"][i]),
+        ),
+        (
+            "shared_full_wrong_rand_full_correct",
+            lambda i: (not bools["shared_full"][i]) and bools["rand_full"][i],
+        ),
+        (
+            "baseline_vs_shared_full_changed",
+            lambda i: bools["baseline"][i] != bools["shared_full"][i],
+        ),
+    ]
+
+    chosen: List[Dict[str, Any]] = []
+    seen_ids = set()
+
+    for reason, predicate in priorities:
+        for i in range(n):
+            if len(chosen) >= int(max_examples):
+                return chosen
+
+            ex = examples[i]
+            ex_id = str(ex.ex_id)
+            if ex_id in seen_ids:
+                continue
+            if not predicate(i):
+                continue
+
+            item = {
+                "selection_reason": reason,
+                "ex_id": ex_id,
+                "gold": str(ex.gold),
+                "prompt": _truncate_text(ex.prompt, prompt_char_limit),
+                "by_condition": {},
+            }
+            for mode in modes:
+                run = runs[mode]
+                item["by_condition"][mode] = {
+                    "correct": bool(bools[mode][i]),
+                    "pred": str(run["preds"][i]),
+                    "continuation": _truncate_text(run["continuations"][i], continuation_char_limit),
+                }
+            chosen.append(item)
+            seen_ids.add(ex_id)
+
+    return chosen
 
 
 # -----------------------------
@@ -1934,6 +2037,7 @@ def run_fold(
     CONDITIONS = ["baseline", "shared_full", "shared_staged", "rand_full", "rand_staged"]
 
     by_dataset: Dict[str, Any] = {}
+    fold_representative_examples: List[Dict[str, Any]] = []
 
     # Cache warmup tokens per dataset within this fold (only if forced-choice enabled)
     warmup_cache: Dict[str, np.ndarray] = {}
@@ -2120,6 +2224,7 @@ def run_fold(
                         ci_alpha=args.ci_alpha,
                         global_seed=args.seed,
                         sample_seed=(args.sample_seed if decoding == "sample" else None),
+                        save_generation_details=bool(args.save_generation_details or args.save_generation_examples > 0),
                     )
                     block["runs"][f"{decoding}/{mode}"] = run
                     print(
@@ -2166,6 +2271,29 @@ def run_fold(
                 print(f"[{fold_name}][Stats] {task_name} ({decoding}) shared_full_vs_baseline: "
                       f"Δ={stat['mean_diff']:+.3f} CI[{stat['ci_low']:+.3f}, {stat['ci_high']:+.3f}] p={stat['p_value']:.3g}")
 
+                if int(args.save_generation_examples) > 0:
+                    reps = select_representative_generation_examples(
+                        examples=eval_exs,
+                        block=block,
+                        decoding=decoding,
+                        max_examples=int(args.save_generation_examples),
+                        prompt_char_limit=int(args.generation_prompt_char_limit),
+                        continuation_char_limit=int(args.generation_continuation_char_limit),
+                    )
+                    if reps:
+                        enriched = []
+                        for item in reps:
+                            rec = {
+                                "fold_name": fold_name,
+                                "task": task_name,
+                                "protocol": "generation",
+                                "decoding": decoding,
+                            }
+                            rec.update(item)
+                            enriched.append(rec)
+                        block.setdefault("representative_examples", {})[decoding] = enriched
+                        fold_representative_examples.extend(enriched)
+
         by_dataset[task_name] = block
 
     return {
@@ -2180,6 +2308,7 @@ def run_fold(
             "sanity": sanity,
         },
         "by_dataset": by_dataset,
+        "representative_examples": fold_representative_examples,
         "extra": extra,
     }
 
@@ -2606,6 +2735,17 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--sample_seed", type=int, default=12345)
 
+    # Optional generation logging
+    ap.add_argument("--save_generation_details", type=int, default=0, choices=[0, 1],
+                    help="If 1, save prompts/preds/continuations for generation runs into the output JSON.")
+    ap.add_argument("--save_generation_examples", type=int, default=0,
+                    help="If >0, save up to this many representative generation examples per generation dataset.")
+    ap.add_argument("--generation_prompt_char_limit", type=int, default=500)
+    ap.add_argument("--generation_continuation_char_limit", type=int, default=1200)
+    ap.add_argument("--out_examples_jsonl", type=str, default="",
+                    help="Optional sidecar JSONL path for representative generation examples. "
+                         "If empty and save_generation_examples>0, derive from out_json.")
+
     # Output
     ap.add_argument("--out_json", type=str, default=os.path.join(THIS_DIR, "energy_balance_loto8_reasoning_results.json"))
     ap.add_argument("--out_md", type=str, default=os.path.join(THIS_DIR, "energy_balance_loto8_reasoning_summary.md"))
@@ -2627,6 +2767,10 @@ def main():
     args.add_answer_prefix = bool(args.add_answer_prefix)
     args.use_forced_choice = bool(args.use_forced_choice)
     args.fc_debug_print = bool(args.fc_debug_print)
+    args.save_generation_details = bool(args.save_generation_details)
+
+    if args.save_generation_examples > 0 and not args.out_examples_jsonl:
+        args.out_examples_jsonl = os.path.splitext(args.out_json)[0] + ".examples.jsonl"
 
     # Guardrails for forced-choice
     if args.use_forced_choice and args.fc_warmup_tokens > 0 and args.fc_prefix_mode == "never" and args.fc_answer_prefix:
@@ -2720,6 +2864,13 @@ def main():
                 "fc_prefix_mode": args.fc_prefix_mode,
                 "fc_answer_prefix": args.fc_answer_prefix,
             },
+            "generation_logging": {
+                "save_generation_details": args.save_generation_details,
+                "save_generation_examples": args.save_generation_examples,
+                "generation_prompt_char_limit": args.generation_prompt_char_limit,
+                "generation_continuation_char_limit": args.generation_continuation_char_limit,
+                "out_examples_jsonl": args.out_examples_jsonl,
+            },
         }
     }
 
@@ -2771,6 +2922,17 @@ def main():
     # Save JSON
     with open(args.out_json, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2, default=json_default)
+
+    if args.save_generation_examples > 0 and args.out_examples_jsonl:
+        rep_examples = []
+        for fold in results.get("folds", {}).values():
+            for item in fold.get("representative_examples", []):
+                rep_examples.append(item)
+        if "all_tasks" in results:
+            rep_examples.extend(results["all_tasks"].get("representative_examples", []))
+        with open(args.out_examples_jsonl, "w", encoding="utf-8") as f:
+            for item in rep_examples:
+                f.write(json.dumps(item, ensure_ascii=False, default=json_default) + "\n")
 
     # Save a small markdown summary (especially useful for LOTO heldout-mode)
     md_lines = []

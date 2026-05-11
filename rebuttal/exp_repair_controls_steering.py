@@ -224,6 +224,20 @@ def _load_vector_file(path: str) -> np.ndarray:
     raise ValueError(f"Unsupported vector file extension: {path}")
 
 
+def _resolve_manifest_vector_path(path_str: str, *, base_dir: str) -> str:
+    raw = os.path.expanduser(str(path_str))
+    if os.path.isabs(raw):
+        return raw
+    candidates = [
+        os.path.abspath(raw),
+        os.path.abspath(os.path.join(base_dir, raw)),
+    ]
+    for cand in candidates:
+        if os.path.exists(cand):
+            return cand
+    return candidates[-1]
+
+
 def load_vectors_from_manifest(manifest_path: str, *, max_vectors: Optional[int] = None) -> List[SteeringVector]:
     manifest_path = os.path.expanduser(manifest_path)
     if not os.path.exists(manifest_path):
@@ -242,9 +256,7 @@ def load_vectors_from_manifest(manifest_path: str, *, max_vectors: Optional[int]
             concept = str(item.get("concept", item.get("attr", "unknown")))
             layer = int(item["layer"])
             alpha = float(item.get("alpha", 1.0))
-            path = os.path.expanduser(str(item["path"]))
-            if not os.path.isabs(path):
-                path = os.path.join(base_dir, path)
+            path = _resolve_manifest_vector_path(str(item["path"]), base_dir=base_dir)
             template_tag = item.get("template_tag", None)
             v = _load_vector_file(path)
             vecs.append(SteeringVector(name=name, concept=concept, layer=layer, alpha=alpha, vec=v, template_tag=template_tag))

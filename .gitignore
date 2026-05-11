@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+
+# Local scratch
+logs/
+17010_DecodeShare_Tracing_the.pdf
+
+# Local run outputs
+PartA/results/
+rebuttal/mechanism/PartA/results/
+rebuttal/reasoning/*.log
+rebuttal/reasoning/gsm8k_l26_fullscript.json
+rebuttal/reasoning/gsm8k_l26_n64.json
+rebuttal/reasoning/gsm8k_l28_fullscript.json
+rebuttal/reasoning/gsm8k_l28_n64.json
+
+# Large rebuttal artifacts are published to Hugging Face, not GitHub
+results/rebuttal_mechanism/
+results/rebuttal_scaling/
+rebuttal/orthogonal_steer/results/A1_cross_method/manifests/caa_abs.jsonl
+rebuttal/orthogonal_steer/results/A1_cross_method/vectors/

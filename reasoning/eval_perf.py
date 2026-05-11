@@ -103,6 +103,7 @@ __all__ = [
     "SharedBases",
     "set_global_seed",
     "stable_int_seed",
+    "infer_model_input_device",
     "candidate_strings",
     "cand_token_ids",
     "normalize_answer_prefix",
@@ -140,6 +141,39 @@ def stable_int_seed(*items: Any) -> int:
         s = "|".join(map(str, items)).encode("utf-8")
         h = hashlib.md5(s).hexdigest()
         return int(h[:8], 16)
+
+
+def infer_model_input_device(model) -> torch.device:
+    """
+    Pick a safe device for input tensors.
+
+    For sharded models loaded with `device_map=...`, the first parameter may live
+    on CPU, so `next(model.parameters()).device` is not always a good input device.
+    In that case, prefer the first CUDA device listed in `hf_device_map`.
+    """
+    hf_device_map = getattr(model, "hf_device_map", None)
+    if isinstance(hf_device_map, dict):
+        for dev in hf_device_map.values():
+            if isinstance(dev, torch.device) and dev.type == "cuda":
+                return dev
+            if isinstance(dev, int):
+                return torch.device(f"cuda:{int(dev)}")
+            if isinstance(dev, str):
+                d = dev.strip().lower()
+                if d.startswith("cuda"):
+                    return torch.device(dev)
+                if d.isdigit():
+                    return torch.device(f"cuda:{d}")
+        for dev in hf_device_map.values():
+            if isinstance(dev, torch.device):
+                return dev
+            if isinstance(dev, str) and dev not in {"disk", "meta"}:
+                return torch.device(dev)
+
+    try:
+        return next(model.parameters()).device
+    except StopIteration:
+        return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 def json_default(o: Any) -> Any:
@@ -505,7 +539,9 @@ class DecodeLastTokenCollector:
                 return output
             x = hs[:, -1, :]
             if self.active_mask is not None:
-                m = self.active_mask.bool()
+                # In sharded models the hook may run on a different GPU than the
+                # model input device, so align the batch mask before indexing.
+                m = self.active_mask.to(device=x.device).bool()
                 if m.numel() == x.shape[0]:
                     x = x[m]
             if x.numel() == 0:
@@ -584,7 +620,7 @@ def collect_decode_states(
     Generate continuations and collect decode-phase last-token states (seq_len==1) for each decode step.
     """
     assert decoding in ["greedy", "sample"]
-    device = next(model.parameters()).device
+    device = infer_model_input_device(model)
     eos = tok.eos_token_id
     model.eval()
 
@@ -638,7 +674,7 @@ def collect_prefill_states(
     """
     Run prefill only (seq_len>1) and collect last-token hidden states.
     """
-    device = next(model.parameters()).device
+    device = infer_model_input_device(model)
     model.eval()
     for i in tqdm(range(0, len(prompts), batch_size), desc="CollectPrefill"):
         batch = prompts[i : i + batch_size]
@@ -1063,7 +1099,7 @@ def precompute_fc_warmup_tokens(
     if W == 0:
         return np.zeros((len(prompts), 0), dtype=np.int64)
 
-    device = next(model.parameters()).device
+    device = infer_model_input_device(model)
     eos = tok.eos_token_id
     model.eval()
 
@@ -1149,7 +1185,7 @@ def forced_choice_logprob_eval(
     if prefix_mode not in {"auto", "always", "never"}:
         raise ValueError(f"Unknown prefix_mode={prefix_mode!r}")
 
-    device = next(model.parameters()).device
+    device = infer_model_input_device(model)
     model.eval()
     tok.padding_side = "left"
     if tok.pad_token is None:
@@ -1391,7 +1427,7 @@ def generate_decode_aligned(
 ) -> List[str]:
     """Generate continuations using decode-aligned prompt boundary caching."""
     assert decoding in ["greedy", "sample"]
-    device = next(model.parameters()).device
+    device = infer_model_input_device(model)
     eos = tok.eos_token_id
     model.eval()
 
@@ -1517,7 +1553,17 @@ def generation_eval(
 # -----------------------------------------------------------------------------
 # Model loading
 # -----------------------------------------------------------------------------
-def load_model_and_tokenizer(model_name: str, device: str, dtype: str, trust_remote_code: bool = False):
+def load_model_and_tokenizer(
+    model_name: str,
+    device: str,
+    dtype: str,
+    trust_remote_code: bool = False,
+    device_map: Optional[str] = None,
+    max_memory_per_gpu_gb: float = 0.0,
+    max_memory_map: str = "",
+    cpu_offload_gb: float = 0.0,
+    low_cpu_mem_usage: bool = True,
+):
     if dtype == "fp32":
         torch_dtype = torch.float32
     elif dtype == "fp16":
@@ -1530,6 +1576,43 @@ def load_model_and_tokenizer(model_name: str, device: str, dtype: str, trust_rem
     model_kwargs = {"torch_dtype": torch_dtype, "trust_remote_code": trust_remote_code}
     tok_kwargs = {"trust_remote_code": trust_remote_code}
 
+    device_map_norm = str(device_map or "").strip().lower()
+    use_sharded = device_map_norm not in {"", "none", "null", "single"}
+    if use_sharded:
+        model_kwargs["device_map"] = str(device_map).strip()
+        model_kwargs["low_cpu_mem_usage"] = bool(low_cpu_mem_usage)
+
+        max_memory: Dict[Any, str] = {}
+
+        mm_raw = str(max_memory_map or "").strip()
+        if mm_raw:
+            for item in [x.strip() for x in mm_raw.split(",") if x.strip()]:
+                if ":" not in item:
+                    raise ValueError(
+                        "Bad max_memory_map item. Expected 'idx:GiB' or 'cpu:GiB', "
+                        f"got {item!r}."
+                    )
+                key_raw, val_raw = item.split(":", 1)
+                key_raw = key_raw.strip().lower()
+                val_str = val_raw.strip().lower().replace("gib", "").replace("gb", "").strip()
+                gib = float(val_str)
+                if gib <= 0:
+                    raise ValueError(f"Non-positive max_memory_map value: {item!r}")
+                if key_raw == "cpu":
+                    max_memory["cpu"] = f"{gib:g}GiB"
+                else:
+                    if key_raw.startswith("cuda:"):
+                        key_raw = key_raw.split(":", 1)[1].strip()
+                    max_memory[int(key_raw)] = f"{gib:g}GiB"
+        else:
+            if torch.cuda.is_available() and float(max_memory_per_gpu_gb) > 0:
+                for i in range(torch.cuda.device_count()):
+                    max_memory[i] = f"{float(max_memory_per_gpu_gb):g}GiB"
+            if float(cpu_offload_gb) > 0:
+                max_memory["cpu"] = f"{float(cpu_offload_gb):g}GiB"
+        if max_memory:
+            model_kwargs["max_memory"] = max_memory
+
     model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
     tok = AutoTokenizer.from_pretrained(model_name, **tok_kwargs)
 
@@ -1537,7 +1620,8 @@ def load_model_and_tokenizer(model_name: str, device: str, dtype: str, trust_rem
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
-    model = model.to(device)
+    if not use_sharded:
+        model = model.to(device)
     model.eval()
     if hasattr(model.config, "use_cache"):
         model.config.use_cache = True
@@ -1765,14 +1849,38 @@ def evaluate_tasks_once(
         pre_detail, pre_arr, (p_acc, p_lo, p_hi) = _eval_condition("prefill_shared", bases.Q_prefill_k)
         rnd_detail, rnd_arr, (r_acc, r_lo, r_hi) = _eval_condition("random", bases.Q_rand_k)
 
-        # Paired decode vs prefill (using correct arrays)
-        stat = summarize_paired(
+        # Paired comparisons on the same examples.
+        stat_decode_minus_prefill = summarize_paired(
             baseline_correct=pre_arr,
             treat_correct=dec_arr,
             bootstrap_iters=bootstrap_iters,
             perm_iters=perm_iters,
             alpha=ci_alpha,
-            seed=stable_int_seed(seed, task, protocol, "paired", alpha_remove),
+            seed=stable_int_seed(seed, task, protocol, "paired", "decode_minus_prefill", alpha_remove),
+        )
+        stat_decode_minus_baseline = summarize_paired(
+            baseline_correct=baseline_correct,
+            treat_correct=dec_arr,
+            bootstrap_iters=bootstrap_iters,
+            perm_iters=perm_iters,
+            alpha=ci_alpha,
+            seed=stable_int_seed(seed, task, protocol, "paired", "decode_minus_baseline", alpha_remove),
+        )
+        stat_prefill_minus_baseline = summarize_paired(
+            baseline_correct=baseline_correct,
+            treat_correct=pre_arr,
+            bootstrap_iters=bootstrap_iters,
+            perm_iters=perm_iters,
+            alpha=ci_alpha,
+            seed=stable_int_seed(seed, task, protocol, "paired", "prefill_minus_baseline", alpha_remove),
+        )
+        stat_random_minus_baseline = summarize_paired(
+            baseline_correct=baseline_correct,
+            treat_correct=rnd_arr,
+            bootstrap_iters=bootstrap_iters,
+            perm_iters=perm_iters,
+            alpha=ci_alpha,
+            seed=stable_int_seed(seed, task, protocol, "paired", "random_minus_baseline", alpha_remove),
         )
 
         results[task] = {
@@ -1782,7 +1890,12 @@ def evaluate_tasks_once(
             "decode_shared": {"acc": d_acc, "ci": [d_lo, d_hi], "k": bases.k_eval, "detail": dec_detail},
             "prefill_shared": {"acc": p_acc, "ci": [p_lo, p_hi], "k": bases.k_eval, "detail": pre_detail},
             "random": {"acc": r_acc, "ci": [r_lo, r_hi], "k": bases.k_eval, "detail": rnd_detail},
-            "paired": {"decode_minus_prefill": stat},
+            "paired": {
+                "decode_minus_prefill": stat_decode_minus_prefill,
+                "decode_minus_baseline": stat_decode_minus_baseline,
+                "prefill_minus_baseline": stat_prefill_minus_baseline,
+                "random_minus_baseline": stat_random_minus_baseline,
+            },
         }
 
     return results
@@ -2012,5 +2125,3 @@ def build_summary_table(eval_results: Dict[str, Any], *, k: int) -> str:
         "p",
     ]
     return md_table(rows, header)
-
-
