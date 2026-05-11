@@ -4,6 +4,27 @@ This note summarizes **two experiments** that strengthen a protocol-focused stor
 
 ---
 
+## Part A) Mechanism (Protocol-Level)
+
+These scripts support the “mechanism” story **at the protocol level**: computational path (KV cache), geometry (subspace mismatch), and causal decode-only tests with matched controls.
+
+### A1 — Computational path (KV cache / decode boundary)
+
+- Script: `rebuttal/mechanism/exp_A1_computational_path_kv_cache.py`
+- What it shows: a decode-only (seq_len==1) intervention is **invisible** under a naive prefill forward, but **visible** under decode-aligned boundary caching.
+
+### A2 — Geometry (prefill vs decode subspace misalignment)
+
+- Script: `rebuttal/mechanism/exp_A2_geometric_subspace_misalignment.py`
+- What it shows: principal angles + cross-distribution explained-variance (e.g., EV(decode|prefill PCs) vs EV(decode|decode PCs)).
+
+### A3 — Causal test (decode-only removal + matched controls)
+
+- Script: `rebuttal/mechanism/exp_A3_causal_decode_only_controls.py`
+- What it shows: decode-only shared-subspace removal vs **dimension/energy matched** controls (nonshared + random).
+
+---
+
 ## 1) Ranking Flip (TRAD vs DECODE vs REAL)
 
 ### Purpose

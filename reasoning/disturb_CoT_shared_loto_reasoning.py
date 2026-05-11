@@ -284,6 +284,9 @@ def main() -> None:
     ap.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--model_dtype", type=str, default="fp32", choices=["fp32", "fp16", "bf16"])
     ap.add_argument("--trust_remote_code", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--device_map", type=str, default="", help="Optional HF device_map, e.g. 'auto' for multi-GPU sharding.")
+    ap.add_argument("--max_memory_per_gpu_gb", type=float, default=0.0, help="Per-GPU cap used only when --device_map is set.")
+    ap.add_argument("--cpu_offload_gb", type=float, default=0.0, help="Optional CPU max_memory used only when --device_map is set.")
 
     # Experiment structure
     ap.add_argument("--layer", type=int, default=10)
@@ -451,6 +454,9 @@ def main() -> None:
         device=str(args.device),
         dtype=str(args.model_dtype),
         trust_remote_code=bool(args.trust_remote_code),
+        device_map=(str(args.device_map).strip() or None),
+        max_memory_per_gpu_gb=float(args.max_memory_per_gpu_gb),
+        cpu_offload_gb=float(args.cpu_offload_gb),
     )
 
     # Load data (benchmark_dataloaders)
@@ -481,6 +487,9 @@ def main() -> None:
             "device": str(args.device),
             "model_dtype": str(args.model_dtype),
             "trust_remote_code": bool(args.trust_remote_code),
+            "device_map": str(args.device_map),
+            "max_memory_per_gpu_gb": float(args.max_memory_per_gpu_gb),
+            "cpu_offload_gb": float(args.cpu_offload_gb),
             "layer": int(args.layer),
             "tasks": tasks,
             "mode": str(args.mode),
