@@ -150,4 +150,3 @@ dependencies:
       - websockets==15.0.1
       - xxhash==3.6.0
       - yarl==1.22.0
-prefix: /home/zs89/miniconda3/envs/flashsvd

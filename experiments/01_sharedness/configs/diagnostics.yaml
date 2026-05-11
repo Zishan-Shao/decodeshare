@@ -1,0 +1,67 @@
+cluster:
+  allowed_nodes:
+    - Node0
+    - Node1
+
+environment:
+  conda_env: flashsvd
+  pythonpath: /home/zs89/decodeshare-camera-ready/src
+
+activation_collection:
+  script: experiments/01_sharedness/collect_activations.py
+  models:
+    - meta-llama/Llama-2-7b-chat-hf
+    - Qwen/Qwen2.5-7B-Instruct
+  device: cuda
+  model_dtype: fp32
+  layer: 10
+  n_prompts: 128
+  calib_max_new_tokens: 256
+  max_prompt_len: 512
+  per_task_max_states: 20000
+  balance_to: min
+  seed: 42
+  save_dtype: fp16
+
+diagnostics:
+  within_vs_mixed:
+    script: experiments/01_sharedness/analyze_within_vs_mixed.py
+    pca_var: 0.95
+    tau: 0.001
+    n_mixed: 50
+    seed: 123
+  task_count_convergence:
+    script: experiments/01_sharedness/analyze_task_count_convergence.py
+    pca_var: 0.95
+    repeats: 20
+    seed: 123
+  phase_convergence:
+    script: experiments/01_sharedness/analyze_phase_convergence.py
+    loader: fair
+    pca_var: 0.95
+    tau: 0.001
+    repeats: 20
+    decode_step_t: 8
+    seed: 123
+  tau_sensitivity:
+    script: experiments/01_sharedness/analyze_tau_sensitivity.py
+    pca_vars:
+      - 0.8
+      - 0.9
+      - 0.95
+      - 0.97
+      - 0.99
+    taus:
+      - 1e-4
+      - 2e-4
+      - 5e-4
+      - 1e-3
+      - 2e-3
+      - 5e-3
+      - 1e-2
+
+checked_in_results:
+  exp1: paper_artifacts/h1_results/results/exp1
+  exp2: paper_artifacts/h1_results/results/exp2
+  exp2_75: paper_artifacts/h1_results/results/exp2.75
+  exp3: paper_artifacts/h1_results/results/exp3

@@ -1,0 +1,56 @@
+cluster:
+  allowed_nodes:
+    - Node0
+    - Node1
+
+environment:
+  conda_env: flashsvd
+  pythonpath: /home/zs89/decodeshare-camera-ready/src
+
+script: experiments/01_sharedness/run_full_benchmark.py
+summary_script: experiments/01_sharedness/summarize_full_benchmark.py
+
+defaults:
+  device: cuda
+  model_dtype: fp32
+  layer: 10
+  n_prompts: 128
+  calib_max_new_tokens: 128
+  max_prompt_len: 512
+  per_task_max_states: 20000
+  pca_var: 0.95
+  tau: 0.001
+  m_shared: all
+  null_perm_trials: 2000
+  null_scramble_trials: 100
+  seed: 42
+
+main_models:
+  - Qwen/Qwen2.5-7B-Instruct
+  - meta-llama/Llama-2-7b-chat-hf
+  - google/gemma-3-12b-it
+
+extension_models:
+  - Qwen/Qwen2.5-1.5B-Instruct
+  - meta-llama/Llama-3.1-8B-Instruct
+  - mistralai/Mistral-7B-Instruct-v0.3
+  - tiiuae/falcon-7b-instruct
+
+variants:
+  full:
+    tau: 0.001
+    m_shared: all
+  pooled:
+    tau: 0.001
+    m_shared: 8
+  loosened:
+    tau: 0.0003
+    m_shared: 8
+
+checked_in_results:
+  full_benchmark_dir: paper_artifacts/h1_results/results/full_benchmark
+  summaries:
+    - H1_full_benchmark_summary.csv
+    - H1_full_benchmark_summary.md
+    - H1_full_benchmark_summary.tex
+    - H1_evidence_chain.tex

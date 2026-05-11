@@ -1,0 +1,5 @@
+{"name":"pirate_decode_l28","concept":"pirate","layer":28,"alpha":1.0,"path":"../brittleness/results/sharedspace_solid_llama2_7b_chat/v_pirate_decode_layer28.npy"}
+{"name":"fixed_k16_l28","concept":"fixed","layer":28,"alpha":1.0,"path":"../brittleness/results/sharedspace_solid_llama2_7b_chat/v_fixed_k16_layer28.npy"}
+{"name":"fixed_k32_l28","concept":"fixed","layer":28,"alpha":1.0,"path":"../brittleness/results/sharedspace_solid_llama2_7b_chat/v_fixed_k32_layer28.npy"}
+{"name":"fixed_k64_l28","concept":"fixed","layer":28,"alpha":1.0,"path":"../brittleness/results/sharedspace_solid_llama2_7b_chat/v_fixed_k64_layer28.npy"}
+{"name":"fixed_k128_l28","concept":"fixed","layer":28,"alpha":1.0,"path":"../brittleness/results/sharedspace_solid_llama2_7b_chat/v_fixed_k128_layer28.npy"}

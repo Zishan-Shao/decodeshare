@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+.env
+.venv/
+venv/
+
+.DS_Store
+*.log
+slurm-*.out
+slurm-*.err
+
+outputs/
+runs/
+wandb/
+checkpoints/
+
+# Keep compact paper summaries in git, but keep raw heavy artifacts external
+# unless they are intentionally listed in MANIFEST.md.
+results/raw/
+results/**/*.jsonl
+results/**/*.pt
+results/**/*.pth
+results/**/*.npy
+results/**/*.npz

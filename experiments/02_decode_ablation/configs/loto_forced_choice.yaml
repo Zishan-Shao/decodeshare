@@ -1,0 +1,50 @@
+cluster:
+  allowed_nodes:
+    - Node0
+    - Node1
+
+environment:
+  conda_env: flashsvd
+  pythonpath: /home/zs89/decodeshare-camera-ready/src
+
+script: experiments/02_decode_ablation/run_loto_reasoning.py
+
+defaults:
+  model: meta-llama/Llama-2-7b-chat-hf
+  device: cuda
+  model_dtype: fp32
+  mode: loto
+  loto_eval_mode: heldout
+  tasks:
+    - gsm8k
+    - commonsenseqa
+    - strategyqa
+    - aqua
+    - arc_challenge
+    - openbookqa
+    - qasc
+    - logiqa
+  layer: 10
+  n_subspace: 128
+  n_eval: 2048
+  calib_decode_max_new_tokens: 128
+  per_task_max_states: 20000
+  reasoning_tokens: 128
+  max_new_tokens: 256
+  template_randomization: 1
+  shuffle_choices: 1
+  add_answer_prefix: 1
+  answer_prefix: "\nFinal answer:"
+  use_forced_choice: 1
+  fc_warmup_tokens: 0
+  fc_prefix_mode: auto
+  fc_answer_prefix: "\nFinal answer:"
+  do_sample: 0
+
+paper_outputs:
+  - Figure 7
+  - Tables 5, 26-28
+
+notes:
+  - gsm8k remains generation-evaluated because it is numeric free-form.
+  - MC and Yes/No tasks use forced-choice logprob evaluation.
