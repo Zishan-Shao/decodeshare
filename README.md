@@ -21,15 +21,15 @@ Large raw model outputs are intentionally not committed. Full reruns write to
 `outputs/` by default, and long-running jobs can be inspected with `DRY_RUN=1`
 before launching model inference.
 
-## Results At A Glance
+## Selected Result
 
-| Sharedness | Decode ablation |
-|---|---|
-| <img src="paper_artifacts/figures/1_existence.png" alt="Shared subspace existence results" width="100%"> | <img src="paper_artifacts/figures/2_loto.png" alt="Leave-one-task-out decode ablation results" width="100%"> |
+Patchback experiments test whether shared decode-time directions can restore
+decisions after targeted corruption. Additional paper figures are available in
+`paper_artifacts/figures/` without crowding the README.
 
-| Patchback | Threshold sensitivity |
-|---|---|
-| <img src="paper_artifacts/figures/3_patchback.png" alt="Patchback results" width="100%"> | <img src="paper_artifacts/figures/4_tau_sweep.png" alt="Tau sweep sensitivity" width="100%"> |
+<p align="center">
+  <img src="paper_artifacts/figures/3_patchback.png" alt="Patchback results" width="88%">
+</p>
 
 ## Quick Start
 
