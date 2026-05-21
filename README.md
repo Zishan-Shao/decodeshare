@@ -21,15 +21,39 @@ Large raw model outputs are intentionally not committed. Full reruns write to
 `outputs/` by default, and long-running jobs can be inspected with `DRY_RUN=1`
 before launching model inference.
 
-## Selected Result
+## Core Results
 
-Patchback experiments test whether shared decode-time directions can restore
-decisions after targeted corruption. Additional paper figures are available in
-`paper_artifacts/figures/` without crowding the README.
+### Leave-One-Task-Out Decode Ablation
+
+The main causal check estimates the shared decode-time subspace from all but
+one task, then evaluates whether removing that subspace affects the held-out
+task. This keeps the intervention from reusing the evaluation task's own
+activations.
 
 <p align="center">
-  <img src="paper_artifacts/figures/3_patchback.png" alt="Patchback results" width="88%">
+  <img src="paper_artifacts/figures/2_loto.png" alt="Leave-one-task-out decode ablation results" width="96%">
 </p>
+
+Reproduce this section with:
+
+```bash
+bash scripts/reproduce_ablation_tables.sh
+```
+
+### Steering Repair
+
+The steering experiments test whether DecodeShare-style shared subspaces can
+stabilize downstream steering behavior across tasks and prompt templates. They
+are the main downstream robustness check in the public release.
+
+```bash
+bash scripts/reproduce_table_2_steering.sh
+```
+
+Implementation and command records:
+
+- `experiments/05_steering_repair/`
+- `scripts/05_steering_repair/COMMANDS.md`
 
 ## Quick Start
 
