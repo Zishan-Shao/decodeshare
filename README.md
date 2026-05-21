@@ -1,10 +1,24 @@
 # DecodeShare
 
-DecodeShare is a reproducibility package for studying shared decode-time
-subspaces in language models. The code estimates cross-task activation
-subspaces, tests whether they are causally involved in reasoning behavior, and
-reuses them for decode ablations, patchback, prefill/decode mismatch analysis,
-and steering repair.
+DecodeShare asks whether large language models reuse a task-general decision
+channel during KV-cached decoding. Under modern inference, the prompt is first
+processed in a prefill pass, but each next-token decision is made by a
+single-token decode step. DecodeShare therefore studies the hidden states that
+actually drive decode-time logits, rather than treating prefill activations as
+the default intervention target.
+
+The protocol identifies low-dimensional subspaces that are consistently shared
+across tasks in decode-time hidden states, then tests their causal role by
+removing the subspace only during decoding under matched intervention budgets.
+Across the paper's experiments, disturbing this decode-shared subspace harms
+decision performance more than matched prefill-derived or random controls. The
+same channel also matters for activation steering: steering vectors can overlap
+task-general decode structure, and decode-time validation gives a more reliable
+selection signal for held-out KV-cached deployment than prefill-based proxies.
+
+This repository contains the public artifact for reproducing those sharedness,
+decode ablation, patchback, prefill/decode mismatch, and steering-ranking
+experiments.
 
 <p align="center">
   <img src="paper_artifacts/figures/decodeshare_pipeline.jpg" alt="DecodeShare pipeline" width="96%">
@@ -15,7 +29,7 @@ and steering repair.
 - Canonical experiment entry points for the paper's main hypotheses.
 - Public shell wrappers for smoke checks and full GPU reruns.
 - Lightweight paper figures under `paper_artifacts/figures/`.
-- Downstream bundles for patchback, steering repair, and rebuttal-style checks.
+- Downstream bundles for patchback, steering ranking, and deployment checks.
 
 Large raw model outputs are intentionally not committed. Full reruns write to
 `outputs/` by default, and long-running jobs can be inspected with `DRY_RUN=1`
