@@ -46,6 +46,20 @@ The steering experiments test whether DecodeShare-style shared subspaces can
 stabilize downstream steering behavior across tasks and prompt templates. They
 are the main downstream robustness check in the public release.
 
+Compact local summary from the layer-28 Llama-2-7B-chat-hf steering runs:
+
+| Steering check | Summary |
+|---|---|
+| Ranking protocol | Spearman with real decode: traditional prefill `-0.22`; decode-aligned `0.60` |
+| Worst-template repair | Mean worst-template delta improves from original `-0.017` to shared repair `-0.013` |
+| Template stability | Mean template std drops from original `0.010` to shared repair `0.006` |
+| Control comparison | Shared repair wins by worst-template delta against norm-matched shrink on `80%` of vectors and prefill-PCA on `100%`; random/PCA controls are included in the source JSON |
+
+Higher is better for Spearman and deltas; lower is better for template std.
+The source summaries are
+`downstream/rebuttal/results/rebuttal_20260208_212945/ranking_flip.json` and
+`downstream/rebuttal/results/rebuttal_20260208_212945/repair_controls.json`.
+
 ```bash
 bash scripts/reproduce_table_2_steering.sh
 ```
