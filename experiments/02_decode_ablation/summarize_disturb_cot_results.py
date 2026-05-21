@@ -6,6 +6,8 @@ Key upgrades vs the older summarizer:
   - Recursively scans results_dir (so it works with src/results/disturb_cot/**).
   - Summarizes multiple models cleanly (overview + per-model sections).
   - Treats EACH json as a run (so you don't silently collapse different configs).
+  - Defaults to --decoding auto, which handles mixed greedy/forced_choice LOTO
+    outputs from the forced-choice paper run.
   
   Most common:
 
@@ -34,6 +36,8 @@ from collections import defaultdict
 import argparse
 import math
 
+DECODING_PRIORITY = ["greedy", "forced_choice", "sample"]
+
 
 # -----------------------------
 # Formatting helpers
@@ -47,9 +51,7 @@ def fmt_pvalue(p: float) -> str:
     """Format p-value."""
     if p is None or (isinstance(p, float) and math.isnan(p)):
         return "N/A"
-    if p < 0.001:
-        return "<0.001"
-    return f"{p:.3f}"
+    return f"{p:.4f}"
 
 
 def safe_float(x, default=None):
@@ -158,10 +160,38 @@ def render_table(header: List[str], rows: List[List[str]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def available_decodings(block: Dict[str, Any]) -> List[str]:
+    """Return decoding/protocol prefixes with a baseline run in this task block."""
+    runs = block.get("runs", {}) or {}
+    found = []
+    for key in runs:
+        if not isinstance(key, str) or not key.endswith("/baseline"):
+            continue
+        prefix = key.split("/", 1)[0]
+        if prefix not in found:
+            found.append(prefix)
+    priority = {name: i for i, name in enumerate(DECODING_PRIORITY)}
+    return sorted(found, key=lambda x: (priority.get(x, len(priority)), x))
+
+
+def select_decoding(block: Dict[str, Any], decoding: str) -> Optional[str]:
+    """
+    Pick the protocol to summarize for a task.
+
+    Paper LOTO forced-choice outputs mix protocols in one JSON: open-ended
+    gsm8k uses greedy generation, while MC tasks use forced_choice.  The
+    "auto" mode follows the protocol actually present per task.
+    """
+    if decoding != "auto":
+        return decoding if f"{decoding}/baseline" in (block.get("runs", {}) or {}) else None
+    choices = available_decodings(block)
+    return choices[0] if choices else None
+
+
 # -----------------------------
 # Extract per-run detailed rows
 # -----------------------------
-def summarize_loto_results(results: Dict[str, Any], decoding: str = "greedy") -> List[List[str]]:
+def summarize_loto_results(results: Dict[str, Any], decoding: str = "auto") -> List[List[str]]:
     """
     Extract LOTO held-out results into table rows.
     Assumes fold keys are holdout task names, and we evaluate heldout dataset inside fold["by_dataset"][holdout].
@@ -177,20 +207,21 @@ def summarize_loto_results(results: Dict[str, Any], decoding: str = "greedy") ->
             continue
 
         runs = block.get("runs", {}) or {}
-        run_key = f"{decoding}/baseline"
-        if run_key not in runs:
+        proto = select_decoding(block, decoding)
+        if proto is None:
             continue
 
-        b = runs.get(f"{decoding}/baseline", {})
-        s = runs.get(f"{decoding}/shared_full", {})
-        r = runs.get(f"{decoding}/rand_full", {})
+        b = runs.get(f"{proto}/baseline", {})
+        s = runs.get(f"{proto}/shared_full", {})
+        r = runs.get(f"{proto}/rand_full", {})
 
-        paired_tests = (block.get("paired_tests", {}) or {}).get(decoding, {}) or {}
+        paired_tests = (block.get("paired_tests", {}) or {}).get(proto, {}) or {}
         stat = paired_tests.get("shared_full_vs_baseline", {}) or {}
 
         rows.append([
             str(holdout),
             str(block.get("n", "?")),
+            proto,
             fmt_acc(b.get("accuracy", 0), b.get("ci_low", 0), b.get("ci_high", 0)),
             fmt_acc(s.get("accuracy", 0), s.get("ci_low", 0), s.get("ci_high", 0)) if s else "N/A",
             fmt_acc(r.get("accuracy", 0), r.get("ci_low", 0), r.get("ci_high", 0)) if r else "N/A",
@@ -203,7 +234,7 @@ def summarize_loto_results(results: Dict[str, Any], decoding: str = "greedy") ->
     return rows
 
 
-def summarize_all_tasks_results(results: Dict[str, Any], decoding: str = "greedy") -> List[List[str]]:
+def summarize_all_tasks_results(results: Dict[str, Any], decoding: str = "auto") -> List[List[str]]:
     """Extract all-tasks results into table rows."""
     rows: List[List[str]] = []
     fold = results.get("all_tasks", None)
@@ -213,20 +244,21 @@ def summarize_all_tasks_results(results: Dict[str, Any], decoding: str = "greedy
     by_dataset = fold.get("by_dataset", {}) or {}
     for task_name, block in sorted(by_dataset.items()):
         runs = block.get("runs", {}) or {}
-        run_key = f"{decoding}/baseline"
-        if run_key not in runs:
+        proto = select_decoding(block, decoding)
+        if proto is None:
             continue
 
-        b = runs.get(f"{decoding}/baseline", {})
-        s = runs.get(f"{decoding}/shared_full", {})
-        r = runs.get(f"{decoding}/rand_full", {})
+        b = runs.get(f"{proto}/baseline", {})
+        s = runs.get(f"{proto}/shared_full", {})
+        r = runs.get(f"{proto}/rand_full", {})
 
-        paired_tests = (block.get("paired_tests", {}) or {}).get(decoding, {}) or {}
+        paired_tests = (block.get("paired_tests", {}) or {}).get(proto, {}) or {}
         stat = paired_tests.get("shared_full_vs_baseline", {}) or {}
 
         rows.append([
             str(task_name),
             str(block.get("n", "?")),
+            proto,
             fmt_acc(b.get("accuracy", 0), b.get("ci_low", 0), b.get("ci_high", 0)),
             fmt_acc(s.get("accuracy", 0), s.get("ci_low", 0), s.get("ci_high", 0)) if s else "N/A",
             fmt_acc(r.get("accuracy", 0), r.get("ci_low", 0), r.get("ci_high", 0)) if r else "N/A",
@@ -242,7 +274,7 @@ def summarize_all_tasks_results(results: Dict[str, Any], decoding: str = "greedy
 # -----------------------------
 # Compute overview stats (for cross-model comparison)
 # -----------------------------
-def overview_for_loto(results: Dict[str, Any], decoding: str = "greedy") -> Optional[Dict[str, Any]]:
+def overview_for_loto(results: Dict[str, Any], decoding: str = "auto") -> Optional[Dict[str, Any]]:
     folds = results.get("folds", {})
     if not isinstance(folds, dict) or not folds:
         return None
@@ -257,17 +289,18 @@ def overview_for_loto(results: Dict[str, Any], decoding: str = "greedy") -> Opti
         if block is None:
             continue
         runs = block.get("runs", {}) or {}
-        if f"{decoding}/baseline" not in runs:
+        proto = select_decoding(block, decoding)
+        if proto is None:
             continue
 
-        b = runs.get(f"{decoding}/baseline", {})
-        s = runs.get(f"{decoding}/shared_full", {})
-        r = runs.get(f"{decoding}/rand_full", {})
+        b = runs.get(f"{proto}/baseline", {})
+        s = runs.get(f"{proto}/shared_full", {})
+        r = runs.get(f"{proto}/rand_full", {})
         baseline_acc.append(safe_float(b.get("accuracy", None)))
         shared_acc.append(safe_float(s.get("accuracy", None)))
         rand_acc.append(safe_float(r.get("accuracy", None)))
 
-        stat = ((block.get("paired_tests", {}) or {}).get(decoding, {}) or {}).get("shared_full_vs_baseline", {}) or {}
+        stat = ((block.get("paired_tests", {}) or {}).get(proto, {}) or {}).get("shared_full_vs_baseline", {}) or {}
         diffs.append(safe_float(stat.get("mean_diff", None)))
         pvals.append(safe_float(stat.get("p_value", None)))
 
@@ -308,7 +341,7 @@ def overview_for_loto(results: Dict[str, Any], decoding: str = "greedy") -> Opti
     }
 
 
-def overview_for_all(results: Dict[str, Any], decoding: str = "greedy") -> Optional[Dict[str, Any]]:
+def overview_for_all(results: Dict[str, Any], decoding: str = "auto") -> Optional[Dict[str, Any]]:
     fold = results.get("all_tasks", None)
     if not isinstance(fold, dict):
         return None
@@ -319,18 +352,19 @@ def overview_for_all(results: Dict[str, Any], decoding: str = "greedy") -> Optio
 
     for task, block in by_dataset.items():
         runs = block.get("runs", {}) or {}
-        if f"{decoding}/baseline" not in runs:
+        proto = select_decoding(block, decoding)
+        if proto is None:
             continue
 
-        b = runs.get(f"{decoding}/baseline", {})
-        s = runs.get(f"{decoding}/shared_full", {})
-        r = runs.get(f"{decoding}/rand_full", {})
+        b = runs.get(f"{proto}/baseline", {})
+        s = runs.get(f"{proto}/shared_full", {})
+        r = runs.get(f"{proto}/rand_full", {})
 
         baseline_acc.append(safe_float(b.get("accuracy", None)))
         shared_acc.append(safe_float(s.get("accuracy", None)))
         rand_acc.append(safe_float(r.get("accuracy", None)))
 
-        stat = ((block.get("paired_tests", {}) or {}).get(decoding, {}) or {}).get("shared_full_vs_baseline", {}) or {}
+        stat = ((block.get("paired_tests", {}) or {}).get(proto, {}) or {}).get("shared_full_vs_baseline", {}) or {}
         diffs.append(safe_float(stat.get("mean_diff", None)))
         pvals.append(safe_float(stat.get("p_value", None)))
 
@@ -367,11 +401,14 @@ def overview_for_all(results: Dict[str, Any], decoding: str = "greedy") -> Optio
 # -----------------------------
 # Markdown generation
 # -----------------------------
-def generate_summary_markdown(experiments: List[Dict[str, Any]], output_file: str, decoding: str = "greedy") -> None:
+def generate_summary_markdown(experiments: List[Dict[str, Any]], output_file: str, decoding: str = "auto") -> None:
     md: List[str] = []
     md.append("# Disturb CoT Results Summary\n")
     md.append(f"Generated from {len(experiments)} JSON file(s)\n")
-    md.append(f"- Decoding summarized: **{decoding}**\n\n")
+    md.append(f"- Decoding summarized: **{decoding}**\n")
+    if decoding == "auto":
+        md.append("- `auto` selects the protocol present for each task, e.g. greedy generation for open-ended tasks and forced_choice for multiple-choice tasks.\n")
+    md.append("\n")
 
     # -----------------------------
     # Overview tables (cross-model)
@@ -479,7 +516,7 @@ def generate_summary_markdown(experiments: List[Dict[str, Any]], output_file: st
 
             if mode == "loto" and "folds" in res:
                 md.append(f"### LOTO Held-out Performance ({decoding})\n\n")
-                header = ["Held-out", "n", "Baseline", "Shared(full)", "Rand(full)", "Δ(shared-baseline)", "p(shared-baseline)"]
+                header = ["Held-out", "n", "Protocol", "Baseline", "Shared(full)", "Rand(full)", "Δ(shared-baseline)", "p(shared-baseline)"]
                 rows = summarize_loto_results(res, decoding=decoding)
                 md.append(render_table(header, rows))
                 md.append("\n")
@@ -510,7 +547,7 @@ def generate_summary_markdown(experiments: List[Dict[str, Any]], output_file: st
 
             elif mode == "all" and "all_tasks" in res:
                 md.append(f"### All-Tasks Performance ({decoding})\n\n")
-                header = ["Task", "n", "Baseline", "Shared(full)", "Rand(full)", "Δ(shared-baseline)", "p(shared-baseline)"]
+                header = ["Task", "n", "Protocol", "Baseline", "Shared(full)", "Rand(full)", "Δ(shared-baseline)", "p(shared-baseline)"]
                 rows = summarize_all_tasks_results(res, decoding=decoding)
                 md.append(render_table(header, rows))
                 md.append("\n")
@@ -581,9 +618,9 @@ def main():
     parser.add_argument(
         "--decoding",
         type=str,
-        default="greedy",
-        choices=["greedy", "sample"],
-        help="Which decoding branch to summarize (default: greedy)"
+        default="auto",
+        choices=["auto", "greedy", "forced_choice", "sample"],
+        help="Which decoding/protocol branch to summarize (default: auto)"
     )
 
     args = parser.parse_args()
@@ -980,4 +1017,3 @@ if __name__ == "__main__":
 
 # if __name__ == "__main__":
 #     main()
-

@@ -90,7 +90,7 @@ def parse_txt_result(txt_path: Path) -> Dict[str, Any]:
     txt = txt_path.read_text(encoding="utf-8", errors="ignore")
 
     # p-values appear twice: Null-1 then Null-2
-    pvals = re.findall(r"p-value \(null>=obs\) = ([0-9.]+)", txt)
+    pvals = re.findall(r"p-value \(null>=obs\) = ([0-9.eE+-]+)", txt)
     p1 = float(pvals[0]) if len(pvals) >= 1 else None
     p2 = float(pvals[1]) if len(pvals) >= 2 else None
 
@@ -128,7 +128,7 @@ def parse_txt_result(txt_path: Path) -> Dict[str, Any]:
 
     tau = None
     m_shared = None
-    m = re.search(r"tau=([0-9.eE-]+)\s+m_shared=([^\s]+)", txt)
+    m = re.search(r"tau=([0-9.eE+-]+)\s+m_shared=([^\s]+)", txt)
     if m:
         tau = float(m.group(1))
         m_shared = m.group(2)

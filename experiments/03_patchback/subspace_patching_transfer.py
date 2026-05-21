@@ -71,6 +71,31 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
+def summarize_scan_accuracy_counts(scan_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    valid_scan_rows = [
+        r for r in scan_rows
+        if (
+            isinstance(r, dict)
+            and "skipped_reason" not in r
+            and isinstance(r.get("baseline", {}).get("correct"), bool)
+            and isinstance(r.get("ablated", {}).get("correct"), bool)
+        )
+    ]
+    n_scanned = len(scan_rows)
+    n_effective = len(valid_scan_rows)
+    base_correct_n = int(sum(1 for r in valid_scan_rows if r.get("baseline", {}).get("correct") is True))
+    ablt_correct_n = int(sum(1 for r in valid_scan_rows if r.get("ablated", {}).get("correct") is True))
+    return {
+        "n_scanned": n_scanned,
+        "n_effective": n_effective,
+        "n_skipped": n_scanned - n_effective,
+        "baseline_correct_n": base_correct_n,
+        "ablated_correct_n": ablt_correct_n,
+        "baseline_acc": base_correct_n / n_effective if n_effective else float("nan"),
+        "ablated_acc": ablt_correct_n / n_effective if n_effective else float("nan"),
+    }
+
+
 # =============================================================================
 # Dynamic imports: reuse the two attached scripts
 # =============================================================================
@@ -1081,17 +1106,21 @@ def main():
             if len(flip_examples_used) < args.max_flips:
                 flip_examples_used.append(ex)
 
-    n_scanned = len(scan_rows)
-    base_correct_n = int(sum(1 for r in scan_rows if r.get("baseline", {}).get("correct") is True))
-    ablt_correct_n = int(sum(1 for r in scan_rows if r.get("ablated", {}).get("correct") is True))
-    base_acc = base_correct_n / n_scanned if n_scanned else float("nan")
-    ablt_acc = ablt_correct_n / n_scanned if n_scanned else float("nan")
+    scan_counts = summarize_scan_accuracy_counts(scan_rows)
+    n_scanned = int(scan_counts["n_scanned"])
+    n_effective = int(scan_counts["n_effective"])
+    n_skipped = int(scan_counts["n_skipped"])
+    base_correct_n = int(scan_counts["baseline_correct_n"])
+    ablt_correct_n = int(scan_counts["ablated_correct_n"])
+    base_acc = float(scan_counts["baseline_acc"])
+    ablt_acc = float(scan_counts["ablated_acc"])
 
     n_flips_total = len(flip_examples_all)
     n_flips_used = len(flip_examples_used)
 
-    print(f"\n[Scan] n_scanned={n_scanned}  baseline_acc={base_acc:.3f} ({base_correct_n}/{n_scanned})  "
-          f"ablated_acc={ablt_acc:.3f} ({ablt_correct_n}/{n_scanned})  "
+    print(f"\n[Scan] n_scanned={n_scanned}  n_effective={n_effective}  n_skipped={n_skipped}  "
+          f"baseline_acc={base_acc:.3f} ({base_correct_n}/{n_effective})  "
+          f"ablated_acc={ablt_acc:.3f} ({ablt_correct_n}/{n_effective})  "
           f"flips_total={n_flips_total}  flips_used={n_flips_used}")
 
     if n_flips_used == 0:
@@ -1116,6 +1145,8 @@ def main():
                 "Qs_path": args.Qs_path or args.Qs_out,
                 "Qs_shape": [int(d), int(k)],
                 "n_scanned": n_scanned,
+                "n_effective": n_effective,
+                "n_skipped": n_skipped,
                 "baseline_acc": base_acc,
                 "baseline_correct_n": base_correct_n,
                 "ablated_acc": ablt_acc,
@@ -1402,6 +1433,8 @@ def main():
             "Qs_path": args.Qs_path or args.Qs_out,
             "Qs_shape": [int(d), int(k)],
             "n_scanned": n_scanned,
+            "n_effective": n_effective,
+            "n_skipped": n_skipped,
             "baseline_acc": base_acc,
             "baseline_correct_n": base_correct_n,
             "ablated_acc": ablt_acc,

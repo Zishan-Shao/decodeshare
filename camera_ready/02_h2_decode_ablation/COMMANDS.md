@@ -63,6 +63,22 @@ CUDA_VISIBLE_DEVICES=0 python run_loto_reasoning.py \
   --out_md ../../outputs/disturb_cot_reasoning/energy_balance_loto8_reasoning_fc_eval2048.md
 ```
 
+## LOTO Summary Regeneration
+
+The paper forced-choice run mixes protocols in one JSON: `gsm8k` uses greedy
+generation, while the multiple-choice tasks use `forced_choice`. Use the
+default `--decoding auto` path to regenerate the full held-out table from the
+raw JSON:
+
+```bash
+cd /home/zs89/decodeshare-camera-ready
+python experiments/02_decode_ablation/summarize_disturb_cot_results.py \
+  --results_dir /home/zs89/decodeshare/results/disturb_cot_reasoning \
+  --pattern energy_balance_loto8_reasoning_fc_eval2048.json \
+  --no_recursive \
+  --output outputs/disturb_cot_reasoning/energy_balance_loto8_reasoning_fc_eval2048_summary.md
+```
+
 ## Energy-Control Full-Run Command
 
 The tracked root wrapper has the exact alpha/k-match sweep:

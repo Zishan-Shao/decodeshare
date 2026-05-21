@@ -61,6 +61,7 @@ See `docs/project_layout.md` for the file-format contract and naming rules.
 ## Reproduction Levels
 
 - Smoke checks: `bash scripts/run_all_smoke_tests.sh`
+- Main result artifact replay: `VERIFY_MAIN_RESULTS.md`
 - Paper-section wrappers: `scripts/reproduce_*.sh`
 - Full command records: `camera_ready/*/COMMANDS.md`
 - Artifact inventory: `MANIFEST.md`

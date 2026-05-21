@@ -156,7 +156,10 @@ def short_model_name(model_raw: str) -> str:
     return model_raw or "unknown"
 
 def cond_acc(run_task: Dict[str, Any], cond: str) -> Optional[float]:
-    return safe_get(run_task, "runs", cond, "accuracy", default=None)
+    val = safe_get(run_task, "runs", cond, "accuracy", default=None)
+    if val is None:
+        val = safe_get(run_task, "runs", cond, "acc", default=None)
+    return val
 
 def cond_ci(run_task: Dict[str, Any], cond: str) -> Tuple[Optional[float], Optional[float]]:
     lo = safe_get(run_task, "runs", cond, "ci_low", default=None)
@@ -340,6 +343,106 @@ def summarize_one_run(
     }
 
     return run_row, task_rows
+
+
+def summarize_alpha_sweep_run(
+    res: Dict[str, Any],
+    *,
+    filename: str,
+    p_th: float,
+    tasks_filter: Optional[List[str]] = None,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Summarize the current run_energy_kmatch_reasoning.py schema.
+
+    Current JSONs store one file with baseline metrics plus alpha_runs:
+    alpha -> by_task -> runs {baseline, shared, ctrl_alpha, ctrl_kmatch}.
+    For compatibility with the existing report renderer, each alpha is treated
+    as one run, with ctrl_alpha mapped to ctrl_struct and ctrl_kmatch mapped to
+    ctrl_energy.
+    """
+    cfg = res.get("config", {})
+    basis = res.get("basis", {})
+    energy = res.get("energy_calib", {})
+    alpha_runs = res.get("alpha_runs", {})
+
+    model_raw = cfg.get("model", "unknown")
+    model = short_model_name(model_raw)
+    layer_indices = cfg.get("layer_indices", [])
+    layer = layer_indices[0] if isinstance(layer_indices, list) and layer_indices else cfg.get("layer", None)
+    cross_dim = basis.get("cross_dim", None)
+    k_shared = basis.get("k_shared", None)
+
+    run_rows: List[Dict[str, Any]] = []
+    task_rows: List[Dict[str, Any]] = []
+    task_filter_set = set(tasks_filter or [])
+
+    def alpha_sort_key(x: str):
+        try:
+            return float(x)
+        except Exception:
+            return x
+
+    for alpha_key in sorted(alpha_runs.keys(), key=alpha_sort_key):
+        alpha_blk = alpha_runs[alpha_key] or {}
+        by_task_in = alpha_blk.get("by_task", {})
+        by_task: Dict[str, Any] = {}
+
+        for task, blk in by_task_in.items():
+            if task_filter_set and task not in task_filter_set:
+                continue
+            runs_in = blk.get("runs", {})
+            paired_in = blk.get("paired", {})
+            by_task[task] = {
+                "n": blk.get("n"),
+                "runs": {
+                    "baseline": runs_in.get("baseline", {}),
+                    "shared_full": runs_in.get("shared", {}),
+                    "ctrl_struct": runs_in.get("ctrl_alpha", {}),
+                    "ctrl_energy": runs_in.get("ctrl_kmatch", {}),
+                    "shared_alpha": runs_in.get("shared", {}),
+                    "ctrl_alpha": runs_in.get("ctrl_alpha", {}),
+                },
+                "paired": {
+                    "shared_vs_base": paired_in.get("shared_vs_base", {}),
+                    "shared_vs_ctrl_struct": paired_in.get("shared_vs_ctrl_alpha", {}),
+                    "shared_vs_ctrl_energy": paired_in.get("shared_vs_ctrl_kmatch", {}),
+                    "shared_alpha_vs_ctrl_alpha": paired_in.get("shared_vs_ctrl_alpha", {}),
+                    "ctrl_struct_vs_base": paired_in.get("ctrl_alpha_vs_base", {}),
+                    "ctrl_energy_vs_base": paired_in.get("ctrl_kmatch_vs_base", {}),
+                },
+            }
+
+        normalized = {
+            "config": {
+                **cfg,
+                "cross_dim": cross_dim,
+                "k_shared": k_shared,
+                "k_c": alpha_blk.get("k_c"),
+            },
+            "sanity": {
+                "energy_shared": energy.get("stats_shared", {}),
+                "energy_ctrl_struct": energy.get("stats_ctrl_struct", {}),
+                "alpha_match": {
+                    "alpha_shared": alpha_blk.get("alpha_shared"),
+                    "alpha_ctrl": alpha_blk.get("alpha_ctrl"),
+                },
+            },
+            "by_task": by_task,
+        }
+        rr, trs = summarize_one_run(
+            normalized,
+            filename=f"{filename}::alpha={alpha_key}",
+            p_th=p_th,
+            tasks_filter=tasks_filter,
+        )
+        rr["alpha_key"] = alpha_key
+        rr["model"] = model
+        rr["model_raw"] = model_raw
+        rr["layer"] = layer
+        run_rows.append(rr)
+        task_rows.extend(trs)
+
+    return run_rows, task_rows
 
 # -----------------------------
 # Markdown report
@@ -558,14 +661,24 @@ def main():
         j = load_json(p)
         if not j:
             continue
-        rr, trs = summarize_one_run(
-            j,
-            filename=p.name,
-            p_th=args.p_threshold,
-            tasks_filter=tasks_filter,
-        )
-        run_rows.append(rr)
-        task_rows.extend(trs)
+        if isinstance(j.get("alpha_runs"), dict):
+            rrs, trs = summarize_alpha_sweep_run(
+                j,
+                filename=p.name,
+                p_th=args.p_threshold,
+                tasks_filter=tasks_filter,
+            )
+            run_rows.extend(rrs)
+            task_rows.extend(trs)
+        else:
+            rr, trs = summarize_one_run(
+                j,
+                filename=p.name,
+                p_th=args.p_threshold,
+                tasks_filter=tasks_filter,
+            )
+            run_rows.append(rr)
+            task_rows.extend(trs)
 
     if not run_rows:
         raise SystemExit("No valid JSON files parsed.")
@@ -579,10 +692,6 @@ def main():
 
     if int(args.write_csv) == 1:
         prefix = Path(args.csv_prefix)
-        write_csv(prefix.with_suffix("_runs.csv"), run_rows)   # trick: we want suffix-like behavior
-        write_csv(prefix.with_suffix("_tasks.csv"), task_rows)
-        # Path.with_suffix replaces suffix; if prefix has no suffix it's fine, but adds weirdness.
-        # So we also write sane filenames:
         write_csv(Path(str(prefix) + "_runs.csv"), run_rows)
         write_csv(Path(str(prefix) + "_tasks.csv"), task_rows)
         print(f"[Done] wrote CSVs: {str(prefix)}_runs.csv and {str(prefix)}_tasks.csv")
