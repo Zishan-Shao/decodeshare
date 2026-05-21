@@ -87,12 +87,19 @@ python exp_ranking_flip_steering.py \
 # -----------------------------
 # Local imports (repo layout)
 # -----------------------------
-# This script lives in `rebuttal/`, while `benchmark_dataloaders.py` lives in `src/`.
-# Make it work whether you run from repo root or from within `rebuttal/`.
+# This script lives in `rebuttal/`; public releases keep benchmark_dataloaders.py
+# with the experiment/downstream bundles. Make direct script execution work from
+# either the repo root or this directory.
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_DIR = os.path.normpath(os.path.join(THIS_DIR, "..", "src"))
-if SRC_DIR not in sys.path:
-    sys.path.append(SRC_DIR)
+for _candidate in [
+    os.path.join(THIS_DIR, "..", "src"),
+    os.path.join(THIS_DIR, "..", "brittleness"),
+    os.path.join(THIS_DIR, "..", "patch_back"),
+    os.path.join(THIS_DIR, "..", "..", "experiments", "02_decode_ablation"),
+]:
+    _candidate = os.path.normpath(_candidate)
+    if os.path.isfile(os.path.join(_candidate, "benchmark_dataloaders.py")) and _candidate not in sys.path:
+        sys.path.append(_candidate)
 
 TQDM_OUTER = False
 TQDM_INNER = True

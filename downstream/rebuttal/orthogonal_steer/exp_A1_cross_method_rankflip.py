@@ -44,7 +44,7 @@ CUDA_VISIBLE_DEVICES=0 python exp_A1_cross_method_rankflip.py \
   --template_seeds_rank 1234,2345,3456 \
   --template_seeds_real 4567,5678,6789 \
   --decoding greedy --reasoning_tokens 128 --max_new_tokens 256 \
-  --n_vec 64 --subset_size 96 \
+  --n_vec_caa 32 --n_vec_instr 64 --n_vec_sae 64 --subset_size 96 \
   --sae_train_samples 20000 --sae_latent_dim 8192 --sae_steps 3000 \
   --out_dir results/A1_cross_method
 
@@ -92,11 +92,18 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # -----------------------------
 # Local imports (repo layout)
 # -----------------------------
-# This script lives in `rebuttal/orthogonal_steer/`, while `benchmark_dataloaders.py` lives in `src/`.
+# This script lives in `rebuttal/orthogonal_steer/`; public releases keep
+# benchmark_dataloaders.py with the experiment/downstream bundles.
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_DIR = os.path.normpath(os.path.join(THIS_DIR, "..", "..", "src"))
-if os.path.isfile(os.path.join(SRC_DIR, "benchmark_dataloaders.py")) and SRC_DIR not in sys.path:
-    sys.path.append(SRC_DIR)
+for _candidate in [
+    os.path.join(THIS_DIR, "..", "..", "src"),
+    os.path.join(THIS_DIR, "..", "..", "brittleness"),
+    os.path.join(THIS_DIR, "..", "..", "patch_back"),
+    os.path.join(THIS_DIR, "..", "..", "..", "experiments", "02_decode_ablation"),
+]:
+    _candidate = os.path.normpath(_candidate)
+    if os.path.isfile(os.path.join(_candidate, "benchmark_dataloaders.py")) and _candidate not in sys.path:
+        sys.path.append(_candidate)
 
 
 # -----------------------------
@@ -1581,6 +1588,9 @@ def main():
 
     # Pool sizes
     ap.add_argument("--n_vec", type=int, default=64, help="Vectors per method/pool")
+    ap.add_argument("--n_vec_caa", type=int, default=0, help="CAA vectors (0 = use --n_vec)")
+    ap.add_argument("--n_vec_instr", type=int, default=0, help="Instruction vectors (0 = use --n_vec)")
+    ap.add_argument("--n_vec_sae", type=int, default=0, help="SAE vectors (0 = use --n_vec)")
     ap.add_argument("--subset_size", type=int, default=96, help="Bootstrap subset size per vector (CAA / INSTR extraction).")
     ap.add_argument("--n_corpus", type=int, default=512, help="Corpus examples per task for vector extraction.")
 
@@ -1637,13 +1647,17 @@ def main():
     skip = bool(args.skip_if_exists)
     layer = int(args.layer)
     alpha = float(args.alpha)
+    n_vec_caa = int(args.n_vec_caa) if int(args.n_vec_caa) > 0 else int(args.n_vec)
+    n_vec_instr = int(args.n_vec_instr) if int(args.n_vec_instr) > 0 else int(args.n_vec)
+    n_vec_sae = int(args.n_vec_sae) if int(args.n_vec_sae) > 0 else int(args.n_vec)
+    print(f"[Pools] n_vec: CAA={n_vec_caa} INSTR={n_vec_instr} SAE={n_vec_sae}")
 
     # (1) CAA
     caa_vec_dir = ensure_dir(os.path.join(vec_root, "caa"))
     caa_manifest = os.path.join(man_root, "caa.jsonl")
     build_pool_caa(
         model=model, tokenizer=tokenizer, corpus=corpus, layer_idx=layer,
-        n_vec=args.n_vec, subset_size=args.subset_size, answer_prefix=args.answer_prefix,
+        n_vec=n_vec_caa, subset_size=args.subset_size, answer_prefix=args.answer_prefix,
         alpha=alpha, device=args.device, batch_size=args.batch_size, max_prompt_len=args.max_prompt_len,
         out_vec_dir=caa_vec_dir, out_manifest_path=caa_manifest,
         seed=args.seed, skip_if_exists=skip
@@ -1654,7 +1668,7 @@ def main():
     instr_manifest = os.path.join(man_root, "instr.jsonl")
     build_pool_instruction(
         model=model, tokenizer=tokenizer, corpus=corpus, layer_idx=layer,
-        n_vec=args.n_vec, subset_size=args.subset_size, alpha=alpha,
+        n_vec=n_vec_instr, subset_size=args.subset_size, alpha=alpha,
         device=args.device, batch_size=args.batch_size, max_prompt_len=args.max_prompt_len,
         out_vec_dir=instr_vec_dir, out_manifest_path=instr_manifest,
         seed=args.seed, skip_if_exists=skip
@@ -1667,7 +1681,7 @@ def main():
     cache_sae = os.path.join(out_dir, "cache", f"sae_l{layer}_M{args.sae_latent_dim}_steps{args.sae_steps}.pt")
     build_pool_sae_features(
         model=model, tokenizer=tokenizer, corpus=corpus, layer_idx=layer,
-        n_vec=args.n_vec, alpha=alpha, device=args.device, batch_size=args.batch_size, max_prompt_len=args.max_prompt_len,
+        n_vec=n_vec_sae, alpha=alpha, device=args.device, batch_size=args.batch_size, max_prompt_len=args.max_prompt_len,
         sae_train_samples=args.sae_train_samples, sae_latent_dim=args.sae_latent_dim, sae_steps=args.sae_steps,
         sae_batch_size=args.sae_batch_size, sae_lr=args.sae_lr, sae_l1=args.sae_l1,
         out_vec_dir=sae_vec_dir, out_manifest_path=sae_manifest,

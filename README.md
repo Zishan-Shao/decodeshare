@@ -47,32 +47,100 @@ ranking signal used to select vectors matches held-out decode-time behavior.
 
 Ranking alignment across vector pools:
 
-| Pool | Prefill rho | Decode rho | Delta |
-|---|---:|---:|---:|
-| CAA contrastive | -0.370 | 0.700 | +1.070 |
-| Instruction | 0.172 | 0.767 | +0.595 |
-| SAE features | -0.064 | 0.594 | +0.659 |
-| Diagnostic | 0.065 | 0.700 | +0.635 |
+<div align="center">
+
+<table>
+  <thead>
+    <tr>
+      <th align="left">Pool</th>
+      <th align="right">Prefill rho</th>
+      <th align="right">Decode rho</th>
+      <th align="right">Delta</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>CAA contrastive</td>
+      <td align="right">-0.370</td>
+      <td align="right"><strong>0.700</strong></td>
+      <td align="right">+1.070</td>
+    </tr>
+    <tr>
+      <td>Instruction</td>
+      <td align="right">0.172</td>
+      <td align="right"><strong>0.767</strong></td>
+      <td align="right">+0.595</td>
+    </tr>
+    <tr>
+      <td>SAE features</td>
+      <td align="right">-0.064</td>
+      <td align="right"><strong>0.594</strong></td>
+      <td align="right">+0.659</td>
+    </tr>
+    <tr>
+      <td>Diagnostic</td>
+      <td align="right">0.065</td>
+      <td align="right"><strong>0.700</strong></td>
+      <td align="right">+0.635</td>
+    </tr>
+  </tbody>
+</table>
+
+</div>
 
 Held-out REAL utility after selecting vectors by each proxy:
 
-| Proxy | REAL mean | REAL worst | Flip rate | Regret@1 |
-|---|---:|---:|---:|---:|
-| Prefill-aligned | -0.002 | -0.003 | 0.750 | 0.016 |
-| Mixed stages | -0.002 | -0.003 | 0.750 | 0.016 |
-| Decode-aligned | +0.011 | +0.010 | 0.083 | 0.003 |
+<div align="center">
+
+<table>
+  <thead>
+    <tr>
+      <th align="left">Proxy</th>
+      <th align="right">REAL mean</th>
+      <th align="right">REAL worst</th>
+      <th align="right">Flip rate</th>
+      <th align="right">Regret@1</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Prefill-aligned</td>
+      <td align="right">-0.002</td>
+      <td align="right">-0.003</td>
+      <td align="right">0.750</td>
+      <td align="right">0.016</td>
+    </tr>
+    <tr>
+      <td>Mixed stages</td>
+      <td align="right">-0.002</td>
+      <td align="right">-0.003</td>
+      <td align="right">0.750</td>
+      <td align="right">0.016</td>
+    </tr>
+    <tr>
+      <td><strong>Decode-aligned</strong></td>
+      <td align="right"><strong>+0.011</strong></td>
+      <td align="right"><strong>+0.010</strong></td>
+      <td align="right"><strong>0.083</strong></td>
+      <td align="right"><strong>0.003</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+</div>
 
 The pools contain 32 CAA contrastive vectors, 64 instruction-derived vectors,
 64 SAE feature directions, and 100 diagnostic directions. Higher is better for
 rho, REAL mean, and REAL worst; lower is better for flip rate and regret.
 
 ```bash
-bash scripts/reproduce_table_2_steering.sh
+bash scripts/reproduce_steering_flip_tables.sh
 ```
 
 Implementation and command records:
 
-- `experiments/05_steering_repair/`
+- `downstream/rebuttal/orthogonal_steer/`
+- `downstream/rebuttal/`
 - `scripts/05_steering_repair/COMMANDS.md`
 
 ### Shared Channel Contents
@@ -132,7 +200,7 @@ DRY_RUN=1 bash scripts/reproduce_ablation_tables.sh
 bash scripts/reproduce_h1_tables.sh
 bash scripts/reproduce_ablation_tables.sh
 bash scripts/reproduce_table_1_patchback.sh
-bash scripts/reproduce_table_2_steering.sh
+bash scripts/reproduce_steering_flip_tables.sh
 bash scripts/reproduce_table_3_h3.sh
 ```
 

@@ -3,6 +3,8 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
 
-(cd "${REPO_ROOT}/experiments/05_steering_repair" && run_python steering_vector_reliability_multibench_patch_v3.py --help >/dev/null)
-run_python "${REPO_ROOT}/experiments/05_steering_repair/summarize_multibench_v3_full.py" --help >/dev/null
-echo "steering_repair_mock_ok"
+run_python "${REPO_ROOT}/downstream/rebuttal/orthogonal_steer/exp_A1_cross_method_rankflip.py" --help >/dev/null
+run_python "${REPO_ROOT}/downstream/rebuttal/exp_ranking_flip_steering_layer28_rand100_full.py" --help >/dev/null
+run_python "${REPO_ROOT}/downstream/rebuttal/exp_ranking_flip_trad_family.py" --help >/dev/null
+PYTHON_CMD="${PYTHON_CMD}" DRY_RUN=1 bash "${REPO_ROOT}/scripts/reproduce_steering_flip_tables.sh" >/dev/null 2>&1
+echo "steering_flip_mock_ok"
