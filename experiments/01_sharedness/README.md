@@ -19,13 +19,13 @@ and diagnostics. New runs should use the top-level scripts below.
 
 ## Results
 
-Checked-in paper-facing artifacts live in:
+Generated paper-facing artifacts default to:
 
-- `paper_artifacts/h1_results/results/full_benchmark/`
-- `paper_artifacts/h1_results/results/exp1/`
-- `paper_artifacts/h1_results/results/exp2/`
-- `paper_artifacts/h1_results/results/exp2.75/`
-- `paper_artifacts/h1_results/results/exp3/`
+- `outputs/01_sharedness/full_benchmark/`
+- `outputs/01_sharedness/exp1/`
+- `outputs/01_sharedness/exp2/`
+- `outputs/01_sharedness/exp2.75/`
+- `outputs/01_sharedness/exp3/`
 
 The full-benchmark directory includes compact raw result records (`*_exist*.json` and `*_exist*.txt`) plus generated summaries:
 
@@ -41,8 +41,8 @@ The full-benchmark directory includes compact raw result records (`*_exist*.json
 - Full model reruns are expensive; the smoke tests only check CLI/import validity and summary regeneration.
 
 ```bash
-export PYTHONPATH=/home/zs89/decodeshare-camera-ready/src:${PYTHONPATH:-}
-bash camera_ready/01_h1_sharedness/run_mock.sh
+export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
+bash scripts/01_h1_sharedness/run_mock.sh
 ```
 
-See `PAPER_RESULTS.md` and `camera_ready/01_h1_sharedness/COMMANDS.md` for paper-output mapping and exact commands.
+See `PAPER_RESULTS.md` and `scripts/01_h1_sharedness/COMMANDS.md` for paper-output mapping and exact commands.

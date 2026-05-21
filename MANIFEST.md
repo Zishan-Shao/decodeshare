@@ -11,11 +11,11 @@ This manifest tracks which files in the camera-ready branch are canonical and wh
 
 | Bundle | Paper outputs | Code entry point | Summary artifacts | Raw artifacts |
 |---|---|---|---|---|
-| H1 sharedness | Figures 2-4, 8, 11-14; Tables 6-13 | `camera_ready/01_h1_sharedness/COMMANDS.md` | `paper_artifacts/h1_results/results/full_benchmark/H1_full_benchmark_summary.*` | `paper_artifacts/h1_results/results/full_benchmark/*_exist*.(json\|txt)` |
-| H2 ablation/LOTO | Figure 7; Tables 5, 26-28 | `camera_ready/02_h2_decode_ablation/COMMANDS.md` | `/home/zs89/decodeshare/results/disturb_cot_reasoning/*.md`, `/home/zs89/decodeshare/results/energy_kmatch_alpha_sweep/*.tex` | external/checksum TODO |
-| H2 patchback | Table 1; Tables 14-15, 20; Figures 5-6, 16-17 | `camera_ready/03_h2_patchback/COMMANDS.md` | `/home/zs89/decodeshare/patch_back/paper/*.tex` | external/checksum TODO |
-| H3 prefill/decode | Table 3; Tables 16-19; Figure 14 | `camera_ready/04_h3_prefill_decode/COMMANDS.md` | `/home/zs89/decodeshare/results/h3_grid/out.tex`, `/home/zs89/decodeshare/results/prefill_decode_nextsteps/*.md` | external/checksum TODO |
-| Steering repair | Table 2; Tables 21-25, 29; Figure 15 | `camera_ready/05_steering_repair/COMMANDS.md` | `/home/zs89/decodeshare/brittleness/results/steer_repair_multibench_v3/summary_pack/*` | external/checksum TODO |
+| H1 sharedness | Figures 2-4, 8, 11-14; Tables 6-13 | `scripts/01_h1_sharedness/COMMANDS.md` | `outputs/01_sharedness/full_benchmark/` | external/checksum TODO |
+| H2 ablation/LOTO | Figure 7; Tables 5, 26-28 | `scripts/02_h2_decode_ablation/COMMANDS.md` | `outputs/02_decode_ablation/` | external/checksum TODO |
+| H2 patchback | Table 1; Tables 14-15, 20; Figures 5-6, 16-17 | `scripts/03_h2_patchback/COMMANDS.md` | `outputs/03_patchback/` | external/checksum TODO |
+| H3 prefill/decode | Table 3; Tables 16-19; Figure 14 | `scripts/04_h3_prefill_decode/COMMANDS.md` | `outputs/04_prefill_decode/` | external/checksum TODO |
+| Steering repair | Table 2; Tables 21-25, 29; Figure 15 | `scripts/05_steering_repair/COMMANDS.md` | `outputs/05_steering_repair/` | external/checksum TODO |
 | Optional rank-flip | deployment/rebuttal evidence | `downstream/rebuttal/` | `downstream/rebuttal/results/rebuttal_*` | external/checksum TODO |
 
 ## Artifact Policy

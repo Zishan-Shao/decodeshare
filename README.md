@@ -31,12 +31,11 @@ decodeshare/
   pyproject.toml
   src/decodeshare/              # public Python package namespace
   experiments/                  # paper-section experiment entry points
-  scripts/                      # smoke and reproduction command wrappers
+  scripts/                      # smoke checks and full reproduction wrappers
   downstream/                   # downstream/rebuttal/patchback bundles
   paper_artifacts/              # tables, figures, compact summaries
   docs/                         # setup, data/model, reproduction notes
   tests/                        # lightweight local tests
-  camera_ready/                 # paper-section command records and mock checks
   MANIFEST.md                   # canonical artifact manifest
 ```
 
@@ -61,7 +60,7 @@ See `docs/project_layout.md` for the file-format contract and naming rules.
 
 - Smoke checks: `bash scripts/run_all_smoke_tests.sh`
 - Paper-section wrappers: `scripts/reproduce_*.sh`
-- Full command records: `camera_ready/*/COMMANDS.md`
+- Full command records: `scripts/*/COMMANDS.md`
 - Artifact inventory: `MANIFEST.md`
 
 Large raw outputs are not committed by default. Commit compact `.md`, `.csv`,

@@ -5,7 +5,7 @@ cluster:
 
 environment:
   conda_env: flashsvd
-  pythonpath: /home/zs89/decodeshare-camera-ready/src
+  pythonpath: src
 
 script: experiments/02_decode_ablation/run_loto_reasoning.py
 

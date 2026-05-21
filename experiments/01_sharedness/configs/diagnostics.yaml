@@ -5,7 +5,7 @@ cluster:
 
 environment:
   conda_env: flashsvd
-  pythonpath: /home/zs89/decodeshare-camera-ready/src
+  pythonpath: src
 
 activation_collection:
   script: experiments/01_sharedness/collect_activations.py
@@ -61,7 +61,7 @@ diagnostics:
       - 1e-2
 
 checked_in_results:
-  exp1: paper_artifacts/h1_results/results/exp1
-  exp2: paper_artifacts/h1_results/results/exp2
-  exp2_75: paper_artifacts/h1_results/results/exp2.75
-  exp3: paper_artifacts/h1_results/results/exp3
+  exp1: outputs/01_sharedness/exp1
+  exp2: outputs/01_sharedness/exp2
+  exp2_75: outputs/01_sharedness/exp2.75
+  exp3: outputs/01_sharedness/exp3

@@ -15,7 +15,6 @@ folders or rebuttal-only scratch work as first-class project structure.
 - `paper_artifacts/`: compact table/figure artifacts and summaries.
 - `docs/`: setup, data/model, reproduction, and troubleshooting notes.
 - `tests/`: lightweight tests that do not require long GPU runs.
-- `camera_ready/`: paper-section command records and mock-test logs.
 
 Historical top-level directories such as `Hype1/`, `patch_back/`,
 `brittleness/`, `reasoning/`, `lateruse/`, `rebuttal/`, and `results/` are not
@@ -72,5 +71,5 @@ The current smoke command entry point is:
 bash scripts/run_all_smoke_tests.sh
 ```
 
-Full commands are currently recorded under `camera_ready/*/COMMANDS.md` while
-the code is being promoted into `experiments/`.
+Full commands are recorded under `scripts/*/COMMANDS.md`; executable rerun
+wrappers live in `scripts/full_runs/`.

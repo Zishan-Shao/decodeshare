@@ -11,7 +11,7 @@ Primary outputs:
 
 Current command record:
 
-- `camera_ready/04_h3_prefill_decode/COMMANDS.md`
+- `scripts/04_h3_prefill_decode/COMMANDS.md`
 
 Canonical scripts now in this folder:
 

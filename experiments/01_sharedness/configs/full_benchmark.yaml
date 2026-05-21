@@ -5,7 +5,7 @@ cluster:
 
 environment:
   conda_env: flashsvd
-  pythonpath: /home/zs89/decodeshare-camera-ready/src
+  pythonpath: src
 
 script: experiments/01_sharedness/run_full_benchmark.py
 summary_script: experiments/01_sharedness/summarize_full_benchmark.py
@@ -48,7 +48,7 @@ variants:
     m_shared: 8
 
 checked_in_results:
-  full_benchmark_dir: paper_artifacts/h1_results/results/full_benchmark
+  full_benchmark_dir: outputs/01_sharedness/full_benchmark
   summaries:
     - H1_full_benchmark_summary.csv
     - H1_full_benchmark_summary.md

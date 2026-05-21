@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -634,6 +635,7 @@ def main():
     # run grid switches
     ap.add_argument("--run_prefill_intervene", type=int, default=1)  # 1=run full 2x2
     ap.add_argument("--run_decode_intervene", type=int, default=1)
+    ap.add_argument("--out_json", type=str, default="", help="Output JSON path. Defaults to the historical filename in the current directory.")
 
     args = ap.parse_args()
 
@@ -886,7 +888,8 @@ def main():
             "prefill_intervene": prefill_arm,
         }
 
-    out = f"h3_grid_v3_{args.model.replace('/','_')}_layer{args.layer}_k{k}_W{len(warmup_ids)}_seed{args.seed}.json"
+    out = args.out_json or f"h3_grid_v3_{args.model.replace('/','_')}_layer{args.layer}_k{k}_W{len(warmup_ids)}_seed{args.seed}.json"
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
     print(f"\n[Done] wrote {out}")

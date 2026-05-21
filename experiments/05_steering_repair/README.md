@@ -10,7 +10,7 @@ Primary outputs:
 
 Current command record:
 
-- `camera_ready/05_steering_repair/COMMANDS.md`
+- `scripts/05_steering_repair/COMMANDS.md`
 
 Canonical scripts in this folder:
 

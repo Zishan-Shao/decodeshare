@@ -1,78 +1,49 @@
 # H1 Paper Result Map
 
-This file maps paper-facing H1 outputs to code and checked-in artifacts.
+This file maps paper-facing H1 outputs to code and public rerun commands.
 
 ## Main And Appendix Tables
 
 Paper outputs: Table 6 and appendix Tables 7-13.
 
-Canonical generation path:
+Canonical rerun:
 
 ```bash
-cd /home/zs89/decodeshare-camera-ready
-export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
-python experiments/01_sharedness/summarize_full_benchmark.py \
-  --results_dir paper_artifacts/h1_results/results/full_benchmark \
-  --out_dir paper_artifacts/h1_results/results/full_benchmark \
-  --alpha 0.05
+bash scripts/reproduce_h1_tables.sh
 ```
 
-Inputs:
-
-- `paper_artifacts/h1_results/results/full_benchmark/*_exist*.json`
-- `paper_artifacts/h1_results/results/full_benchmark/*_exist*.txt`
-
-Outputs:
-
-- `paper_artifacts/h1_results/results/full_benchmark/H1_full_benchmark_summary.csv`
-- `paper_artifacts/h1_results/results/full_benchmark/H1_full_benchmark_summary.md`
-- `paper_artifacts/h1_results/results/full_benchmark/H1_full_benchmark_summary.tex`
-- `paper_artifacts/h1_results/results/full_benchmark/H1_evidence_chain.tex`
-
-## Full Benchmark Rerun Template
-
-Run on `Node0` or `Node1` only.
+Lower-level command:
 
 ```bash
-cd /home/zs89/decodeshare-camera-ready/experiments/01_sharedness
-export PYTHONPATH=/home/zs89/decodeshare-camera-ready/src:${PYTHONPATH:-}
-CUDA_VISIBLE_DEVICES=0 python run_full_benchmark.py \
-  --model Qwen/Qwen2.5-7B-Instruct \
-  --device cuda \
-  --model_dtype fp32 \
-  --layer 10 \
-  --n_prompts 128 \
-  --calib_max_new_tokens 128 \
-  --max_prompt_len 512 \
-  --per_task_max_states 20000 \
-  --tau 0.001 \
-  --m_shared all \
-  --null_perm_trials 2000 \
-  --null_scramble_trials 100 \
-  --out_json ../../outputs/01_sharedness/full_benchmark/Qwen2.5-7B-Instruct_exist.json \
-  --out_txt ../../outputs/01_sharedness/full_benchmark/Qwen2.5-7B-Instruct_exist.txt
+bash scripts/full_runs/run_h1_full_benchmark.sh
 ```
 
-The paper result records were produced with the parameter families documented in `configs/full_benchmark.yaml`.
+Default outputs:
+
+```text
+outputs/01_sharedness/full_benchmark/
+```
+
+The paper result parameter families are documented in
+`configs/full_benchmark.yaml`.
 
 ## Diagnostic Figures
 
 Paper outputs: main Figures 2-4 and appendix Figures 8, 11-14.
 
-The checked-in diagnostic artifacts are:
+Generated diagnostic artifacts should be written under:
 
-- `paper_artifacts/h1_results/results/exp1/*.csv` and `*.png`
-- `paper_artifacts/h1_results/results/exp2/*.csv` and `*.png`
-- `paper_artifacts/h1_results/results/exp2.75/*.csv` and `*.png`
-- `paper_artifacts/h1_results/results/exp3/*.csv` and `*.png`
+```text
+outputs/01_sharedness/
+```
 
 Canonical diagnostic pipeline:
 
 ```bash
-cd /home/zs89/decodeshare-camera-ready/experiments/01_sharedness
-export PYTHONPATH=/home/zs89/decodeshare-camera-ready/src:${PYTHONPATH:-}
+cd experiments/01_sharedness
+export PYTHONPATH="../../src:${PYTHONPATH:-}"
 
-CUDA_VISIBLE_DEVICES=0 python collect_activations.py \
+CUDA_VISIBLE_DEVICES="${GPU_ID:-0}" python collect_activations.py \
   --model meta-llama/Llama-2-7b-chat-hf \
   --device cuda \
   --model_dtype fp32 \
@@ -111,4 +82,5 @@ python analyze_tau_sensitivity.py \
   --out_png ../../outputs/01_sharedness/exp3/llama_sensitivity.png
 ```
 
-`analyze_phase_convergence.py` is the canonical script for the exp2.75 decode/prefill/decode-step diagnostic.
+`analyze_phase_convergence.py` is the canonical script for the exp2.75
+decode/prefill/decode-step diagnostic.

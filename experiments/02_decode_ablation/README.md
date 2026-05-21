@@ -40,8 +40,8 @@ The canonical H2 runners also avoid using `torch.cuda.is_available()` while buil
 - The paper LOTO command uses `n_eval=2048` and `--use_forced_choice 1` for MC/Yes-No tasks; `gsm8k` remains generation-based.
 
 ```bash
-export PYTHONPATH=/home/zs89/decodeshare-camera-ready/src:${PYTHONPATH:-}
-bash camera_ready/02_h2_decode_ablation/run_mock.sh
+export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
+bash scripts/02_h2_decode_ablation/run_mock.sh
 ```
 
-See `camera_ready/02_h2_decode_ablation/COMMANDS.md` for exact paper-facing commands.
+See `scripts/02_h2_decode_ablation/COMMANDS.md` for exact paper-facing commands.

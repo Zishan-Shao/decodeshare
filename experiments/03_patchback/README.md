@@ -28,4 +28,4 @@ bash scripts/reproduce_table_1_patchback.sh
 
 Full command records:
 
-- `camera_ready/03_h2_patchback/COMMANDS.md`
+- `scripts/03_h2_patchback/COMMANDS.md`
