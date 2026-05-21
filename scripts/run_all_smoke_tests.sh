@@ -6,7 +6,6 @@ cd "$ROOT"
 export PYTHONPATH="${ROOT}/src:${PYTHONPATH:-}"
 
 tests=(
-  "camera_ready/00_paper/run_mock.sh"
   "camera_ready/01_h1_sharedness/run_mock.sh"
   "camera_ready/02_h2_decode_ablation/run_mock.sh"
   "camera_ready/03_h2_patchback/run_mock.sh"

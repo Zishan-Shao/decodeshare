@@ -12,10 +12,10 @@ folders or rebuttal-only scratch work as first-class project structure.
   outside the main paper-section flow.
 - `scripts/`: command-line wrappers for smoke tests and reproducibility entry
   points.
-- `paper_artifacts/`: final PDF, compact table/figure artifacts, and summaries.
+- `paper_artifacts/`: compact table/figure artifacts and summaries.
 - `docs/`: setup, data/model, reproduction, and troubleshooting notes.
 - `tests/`: lightweight tests that do not require long GPU runs.
-- `camera_ready/`: temporary migration records and mock-test command logs.
+- `camera_ready/`: paper-section command records and mock-test logs.
 
 Historical top-level directories such as `Hype1/`, `patch_back/`,
 `brittleness/`, `reasoning/`, `lateruse/`, `rebuttal/`, and `results/` are not
@@ -50,15 +50,14 @@ opening the file:
 
 Use `paper_artifacts/` for small, reviewable files:
 
-- `paper_artifacts/DecodeShare_camera_ready.pdf`
 - `paper_artifacts/tables/*.tex`
 - `paper_artifacts/tables/*.csv`
 - `paper_artifacts/figures/*.pdf`
 - `paper_artifacts/figures/*.png`
 - `paper_artifacts/summaries/*.md`
 
-Large raw artifacts should stay outside git. Record their path, checksum, and
-generation command in `MANIFEST.md`.
+Large raw artifacts and copied paper PDFs should stay outside git. Record raw
+artifact paths, checksums, and generation commands in `MANIFEST.md`.
 
 ## Command Policy
 

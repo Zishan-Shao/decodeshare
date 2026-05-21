@@ -16,8 +16,6 @@ Paper outputs:
 - `experiments/01_sharedness/analyze_tau_sensitivity.py`
 - `experiments/01_sharedness/summarize_full_benchmark.py`
 
-Historical wrappers and exploratory variants are under `experiments/01_sharedness/legacy/`.
-
 ## Checked-In Results
 
 - `paper_artifacts/h1_results/results/full_benchmark/H1_full_benchmark_summary.*`

@@ -2,7 +2,8 @@
 
 Paper role: H1, shared decode-time structure.
 
-This folder contains the canonical code needed to reproduce the H1 result tables and diagnostics. Historical scripts are kept under `legacy/` only for traceability; new runs should use the top-level scripts below.
+This folder contains the canonical code needed to reproduce the H1 result tables
+and diagnostics. New runs should use the top-level scripts below.
 
 ## Structure
 
@@ -15,7 +16,6 @@ This folder contains the canonical code needed to reproduce the H1 result tables
 - `analyze_phase_convergence.py`: decode/prefill/decode-step convergence and sharedness diagnostic.
 - `analyze_tau_sensitivity.py`: PCA-retention and tau sensitivity diagnostic.
 - `configs/`: paper parameter records for full runs and diagnostics.
-- `legacy/`: old wrappers, exploratory variants, and source snapshots not used as canonical entry points.
 
 ## Results
 

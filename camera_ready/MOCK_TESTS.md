@@ -16,7 +16,6 @@ This matters because the base Python in this environment does not have `torch`.
 
 | Section | Command | Result |
 |---|---|---|
-| Paper PDF | `bash camera_ready/00_paper/run_mock.sh` | PASS |
 | H1 sharedness | `bash camera_ready/01_h1_sharedness/run_mock.sh` | PASS |
 | H2 ablation/energy | `bash camera_ready/02_h2_decode_ablation/run_mock.sh` | PASS |
 | H2 patchback | `bash camera_ready/03_h2_patchback/run_mock.sh` | PASS |
@@ -43,7 +42,6 @@ H3 regenerated key sanity numbers:
 
 ## What Was Validated
 
-- The paper PDF exists in the camera-ready worktree.
 - Canonical experiment scripts respond to `--help` under the `flashsvd` environment.
 - The H1 summarizer and H3 table analyzer are present in the clean branch:
   - `experiments/01_sharedness/summarize_full_benchmark.py`

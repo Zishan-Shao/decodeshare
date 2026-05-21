@@ -15,7 +15,7 @@ Paper outputs:
 - `scripts/full_runs/run_disturb_cot_loto8_fc_reason.sh`
 - `scripts/full_runs/run_alpha_kmatch_sweep.sh`
 
-The canonical LOTO runner is the forced-choice capable version. Older generation-only and experimental refactored variants are retained under `experiments/02_decode_ablation/legacy/` and are not paper reproduction entry points.
+The canonical LOTO runner is the forced-choice capable version.
 
 The matching parameter record is `experiments/02_decode_ablation/configs/loto_forced_choice.yaml`.
 

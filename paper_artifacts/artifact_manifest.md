@@ -4,8 +4,6 @@ Small camera-ready artifacts live in this directory.
 
 ## Included
 
-- `DecodeShare_camera_ready.pdf`: copied paper PDF for the camera-ready staging
-  branch.
 - `tables/`: final or regenerated paper tables.
 - `figures/`: final or regenerated paper figures.
 - `summaries/`: compact human-readable summaries used to audit paper results.

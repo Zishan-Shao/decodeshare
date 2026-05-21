@@ -1,11 +1,11 @@
 # DecodeShare
 
-This repository contains the camera-ready artifact and reproducibility package for
+This repository contains the camera-ready reproducibility package for
 DecodeShare.
 
-The camera-ready branch is organized as a clean public project. Historical
-experiment directories are retained only as migration sources until their
-canonical scripts have been moved into the public layout.
+The camera-ready branch is organized as a clean public project: it keeps the
+canonical experiment code, compact paper-facing artifacts, and lightweight
+checks needed to audit the release.
 
 ## Quick Start
 
@@ -33,12 +33,11 @@ decodeshare/
   experiments/                  # paper-section experiment entry points
   scripts/                      # smoke and reproduction command wrappers
   downstream/                   # downstream/rebuttal/patchback bundles
-  paper_artifacts/              # PDF, tables, figures, compact summaries
+  paper_artifacts/              # tables, figures, compact summaries
   docs/                         # setup, data/model, reproduction notes
   tests/                        # lightweight local tests
-  camera_ready/                 # migration notes and mock-test command records
+  camera_ready/                 # paper-section command records and mock checks
   MANIFEST.md                   # canonical artifact manifest
-  CAMERA_READY_CODE_INVENTORY.md
 ```
 
 The public experiment order follows the paper body:
@@ -61,7 +60,6 @@ See `docs/project_layout.md` for the file-format contract and naming rules.
 ## Reproduction Levels
 
 - Smoke checks: `bash scripts/run_all_smoke_tests.sh`
-- Main result artifact replay: `VERIFY_MAIN_RESULTS.md`
 - Paper-section wrappers: `scripts/reproduce_*.sh`
 - Full command records: `camera_ready/*/COMMANDS.md`
 - Artifact inventory: `MANIFEST.md`

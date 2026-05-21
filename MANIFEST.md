@@ -11,7 +11,6 @@ This manifest tracks which files in the camera-ready branch are canonical and wh
 
 | Bundle | Paper outputs | Code entry point | Summary artifacts | Raw artifacts |
 |---|---|---|---|---|
-| Paper PDF | camera-ready paper copy | `camera_ready/00_paper/COMMANDS.md` | `paper_artifacts/DecodeShare_camera_ready.pdf` | n/a |
 | H1 sharedness | Figures 2-4, 8, 11-14; Tables 6-13 | `camera_ready/01_h1_sharedness/COMMANDS.md` | `paper_artifacts/h1_results/results/full_benchmark/H1_full_benchmark_summary.*` | `paper_artifacts/h1_results/results/full_benchmark/*_exist*.(json\|txt)` |
 | H2 ablation/LOTO | Figure 7; Tables 5, 26-28 | `camera_ready/02_h2_decode_ablation/COMMANDS.md` | `/home/zs89/decodeshare/results/disturb_cot_reasoning/*.md`, `/home/zs89/decodeshare/results/energy_kmatch_alpha_sweep/*.tex` | external/checksum TODO |
 | H2 patchback | Table 1; Tables 14-15, 20; Figures 5-6, 16-17 | `camera_ready/03_h2_patchback/COMMANDS.md` | `/home/zs89/decodeshare/patch_back/paper/*.tex` | external/checksum TODO |
@@ -22,6 +21,8 @@ This manifest tracks which files in the camera-ready branch are canonical and wh
 ## Artifact Policy
 
 - Commit compact `.md`, `.csv`, `.tex`, and final figure/table assets.
+- Do not commit paper PDFs, internal verification notes, or migration scratch
+  inventories.
 - Do not commit multi-GB raw JSONs by default.
 - For each external raw artifact, record:
   - absolute path in the original workspace or artifact store
@@ -33,8 +34,6 @@ This manifest tracks which files in the camera-ready branch are canonical and wh
 ## Curation Checklist
 
 - [x] Copy only canonical H1 experiment scripts.
-- [x] Move stale H1 duplicates/wrappers into `experiments/01_sharedness/legacy/`.
 - [ ] Add smoke-test commands for each bundle.
 - [ ] Generate paper table/figure summaries from checked-in summaries or manifest-listed raw artifacts.
 - [ ] Record environment and package versions.
-- [ ] Verify the final paper/PDF does not include stray review-instruction text.
