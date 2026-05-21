@@ -46,17 +46,33 @@ The steering experiments test whether DecodeShare-style shared subspaces can
 stabilize downstream steering behavior across tasks and prompt templates. They
 are the main downstream robustness check in the public release.
 
-Compact local summary from the layer-28 Llama-2-7B-chat-hf steering runs:
+Layer-28 Llama-2-7B-chat-hf ranking protocol:
 
-| Steering check | Summary |
-|---|---|
-| Ranking protocol | Spearman with real decode: traditional prefill `-0.22`; decode-aligned `0.60` |
-| Worst-template repair | Mean worst-template delta improves from original `-0.017` to shared repair `-0.013` |
-| Template stability | Mean template std drops from original `0.010` to shared repair `0.006` |
-| Control comparison | Shared repair wins by worst-template delta against norm-matched shrink on `80%` of vectors and prefill-PCA on `100%`; random/PCA controls are included in the source JSON |
+| Ranking signal | Spearman with real decode |
+|---|---:|
+| Traditional prefill | -0.22 |
+| Decode-aligned | 0.60 |
+
+Layer-28 Llama-2-7B-chat-hf repair controls:
+
+| Method | Mean delta | Worst-template delta | Template std |
+|---|---:|---:|---:|
+| Original steering | -0.005 | -0.017 | 0.010 |
+| Shared repair | -0.004 | -0.013 | 0.006 |
+| Random control | -0.005 | -0.013 | 0.007 |
+| PCA control | -0.004 | -0.013 | 0.006 |
+| Prefill-PCA control | -0.008 | -0.017 | 0.009 |
+| Norm-matched shrink | -0.004 | -0.013 | 0.008 |
+
+| Worst-template comparison | Shared repair win rate |
+|---|---:|
+| vs. random control | 60% |
+| vs. PCA control | 20% |
+| vs. prefill-PCA control | 100% |
+| vs. norm-matched shrink | 80% |
 
 Higher is better for Spearman and deltas; lower is better for template std.
-The source summaries are
+Source summaries:
 `downstream/rebuttal/results/rebuttal_20260208_212945/ranking_flip.json` and
 `downstream/rebuttal/results/rebuttal_20260208_212945/repair_controls.json`.
 
@@ -68,6 +84,37 @@ Implementation and command records:
 
 - `experiments/05_steering_repair/`
 - `scripts/05_steering_repair/COMMANDS.md`
+
+### Shared Channel Contents
+
+A 32D Llama-2-7B layer-10 workspace splits into a 3D readout slice
+`Q_out` and a 29D residual core `Q_core`.
+
+| Ablated subspace | Dim. | Acc. | Delta Acc. |
+|---|---:|---:|---:|
+| Full shared | 32 | 28.5 | -15.6 |
+| `Q_out` | 3 | 44.9 | +0.8 |
+| `Q_core` | 29 | 27.3 | -16.8 |
+
+Forced-choice baseline accuracy is 44.1%.
+
+| Probe tag | `Q_core` AP | `Q_out` AP | Delta |
+|---|---:|---:|---:|
+| Reasoning markers | 0.564 | 0.041 | +0.523 |
+| Step markers | 0.169 | 0.029 | +0.140 |
+| Digits | 0.966 | 0.132 | +0.834 |
+| Equation symbols | 0.673 | 0.055 | +0.618 |
+
+Layer-28 vocab-alignment mean overlap:
+
+| Token family | Shared | Nonshared | Prefill shared |
+|---|---:|---:|---:|
+| Answer scaffold | 0.283 | 0.213 | 0.208 |
+| Correctness markers | 0.207 | 0.189 | 0.182 |
+| Confidence markers | 0.234 | 0.195 | 0.221 |
+| Newline | 0.374 | 0.204 | 0.190 |
+| Digits | 0.314 | 0.261 | 0.159 |
+| Sentiment markers | 0.171 | 0.176 | 0.182 |
 
 ## Quick Start
 
