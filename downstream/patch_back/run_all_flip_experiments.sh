@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-cd /home/zs89/decodeshare/patch_back
-conda activate flashsvd
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$(conda info --base)/etc/profile.d/conda.sh"
+cd "${SCRIPT_DIR}"
+conda activate "${CONDA_ENV:-decodeshare}"
 
 MODEL="Qwen/Qwen2.5-7B-Instruct" #"meta-llama/Llama-2-7b-chat-hf"
 DEVICE="cuda"
@@ -14,7 +15,7 @@ BASE_SCRIPT="subspace_patching_transfer.py"
 FLIP_SCRIPT="flipset_alpha_sweep_and_transfer.py"
 
 # Absolute output directory as requested
-OUTDIR="/home/zs89/decodeshare/patch_back/results/runs_flip_supplement/layer${LAYER}_${MODEL}"
+OUTDIR="results/runs_flip_supplement/layer${LAYER}_${MODEL//\//_}"
 mkdir -p "${OUTDIR}"
 
 echo "[Info] OUTDIR=${OUTDIR}"

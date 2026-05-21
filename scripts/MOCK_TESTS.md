@@ -12,7 +12,7 @@ Default Python used by mock scripts:
 python
 ```
 
-Set `PYTHON_CMD="conda run -n flashsvd python"` if you are not already inside
+Set `PYTHON_CMD="conda run -n decodeshare python"` if you are not already inside
 the project environment.
 
 ## Results

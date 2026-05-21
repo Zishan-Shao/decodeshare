@@ -2,9 +2,10 @@
 set -euo pipefail
 
 # ========= Environment =========
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-cd /home/zs89/decodeshare/patch_back
-conda activate flashsvd
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$(conda info --base)/etc/profile.d/conda.sh"
+cd "${SCRIPT_DIR}"
+conda activate "${CONDA_ENV:-decodeshare}"
 
 # MODEL_QWEN="Qwen/Qwen2.5-14B-Instruct" bash run_qwen_suite_and_report.sh
 
@@ -22,7 +23,7 @@ FLIP_SCRIPT="flipset_alpha_sweep_and_transfer.py"
 OPEN_SCRIPT="openanswer_subspace_patching.py"
 SUM_SCRIPT="summarize_patching_jsons.py"              # the unified summarizer you already have
 
-OUTROOT="/home/zs89/decodeshare/patch_back/results/${MODEL_QWEN}/layer${LAYER}"
+OUTROOT="results/${MODEL_QWEN//\//_}/layer${LAYER}"
 mkdir -p "${OUTROOT}"
 
 echo "[Info] MODEL_QWEN=${MODEL_QWEN}"

@@ -4,7 +4,7 @@ cluster:
     - Node1
 
 environment:
-  conda_env: flashsvd
+  conda_env: decodeshare
   pythonpath: src
 
 script: experiments/01_sharedness/run_full_benchmark.py

@@ -1,76 +1,101 @@
 # DecodeShare
 
-This repository contains the camera-ready reproducibility package for
-DecodeShare.
+DecodeShare is a reproducibility package for studying shared decode-time
+subspaces in language models. The code estimates cross-task activation
+subspaces, tests whether they are causally involved in reasoning behavior, and
+reuses them for decode ablations, patchback, prefill/decode mismatch analysis,
+and steering repair.
 
-The camera-ready branch is organized as a clean public project: it keeps the
-canonical experiment code, compact paper-facing artifacts, and lightweight
-checks needed to audit the release.
+<p align="center">
+  <img src="paper_artifacts/figures/decodeshare_pipeline.jpg" alt="DecodeShare pipeline" width="96%">
+</p>
+
+## What This Repo Contains
+
+- Canonical experiment entry points for the paper's main hypotheses.
+- Public shell wrappers for smoke checks and full GPU reruns.
+- Lightweight paper figures under `paper_artifacts/figures/`.
+- Downstream bundles for patchback, steering repair, and rebuttal-style checks.
+
+Large raw model outputs are intentionally not committed. Full reruns write to
+`outputs/` by default, and long-running jobs can be inspected with `DRY_RUN=1`
+before launching model inference.
+
+## Results At A Glance
+
+| Sharedness | Decode ablation |
+|---|---|
+| <img src="paper_artifacts/figures/1_existence.png" alt="Shared subspace existence results" width="100%"> | <img src="paper_artifacts/figures/2_loto.png" alt="Leave-one-task-out decode ablation results" width="100%"> |
+
+| Patchback | Threshold sensitivity |
+|---|---|
+| <img src="paper_artifacts/figures/3_patchback.png" alt="Patchback results" width="100%"> | <img src="paper_artifacts/figures/4_tau_sweep.png" alt="Tau sweep sensitivity" width="100%"> |
 
 ## Quick Start
 
 ```bash
 conda env create -f environment.yml
-conda activate flashsvd
-pip install -e .
+conda activate decodeshare
 bash scripts/run_all_smoke_tests.sh
 ```
 
-The smoke tests check that the curated paper artifacts and lightweight
-summarizers are wired correctly. They do not launch long GPU jobs.
+The smoke suite checks imports, command-line wiring, and lightweight summary
+helpers. It does not download models or run long GPU experiments.
+The conda environment installs the local package in editable mode through
+`pyproject.toml`, so a separate `pip install -e .` step is not needed.
 
-Current cluster constraint: only `Node0` and `Node1` are available for reruns
-until this note is updated.
+## Reproducing Experiments
 
-## Project Layout
+Full rerun wrappers live in `scripts/`. They share common overrides such as
+`GPU_ID`, `MODEL`, `LAYER`, `N_EVAL`, `OUT_DIR`, and `DRY_RUN`.
+
+```bash
+# Print the exact commands without running model inference.
+DRY_RUN=1 bash scripts/reproduce_ablation_tables.sh
+
+# Run section-level reproductions.
+bash scripts/reproduce_h1_tables.sh
+bash scripts/reproduce_ablation_tables.sh
+bash scripts/reproduce_table_1_patchback.sh
+bash scripts/reproduce_table_2_steering.sh
+bash scripts/reproduce_table_3_h3.sh
+```
+
+Section command notes:
+
+- `scripts/01_h1_sharedness/COMMANDS.md`
+- `scripts/02_h2_decode_ablation/COMMANDS.md`
+- `scripts/03_h2_patchback/COMMANDS.md`
+- `scripts/04_h3_prefill_decode/COMMANDS.md`
+- `scripts/05_steering_repair/COMMANDS.md`
+
+## Repository Layout
 
 ```text
 decodeshare/
-  README.md
-  environment.yml
-  pyproject.toml
-  src/decodeshare/              # public Python package namespace
-  experiments/                  # paper-section experiment entry points
-  scripts/                      # smoke checks and full reproduction wrappers
-  downstream/                   # downstream/rebuttal/patchback bundles
-  paper_artifacts/              # tables, figures, compact summaries
-  docs/                         # setup, data/model, reproduction notes
-  tests/                        # lightweight local tests
-  MANIFEST.md                   # canonical artifact manifest
+  experiments/              # Paper-section experiment code
+  scripts/                  # Smoke checks and full reproduction wrappers
+  src/decodeshare/          # Shared package namespace
+  downstream/               # Patchback, steering, and rebuttal bundles
+  paper_artifacts/figures/  # Lightweight paper figures for browsing
+  docs/                     # Setup and reproduction notes
+  tests/                    # Lightweight local checks
 ```
 
-The public experiment order follows the paper body:
+## Experiment Map
 
-1. `experiments/01_sharedness/`: H1 shared decode-time structure.
-2. `experiments/02_decode_ablation/`: H2 decode ablation, LOTO, and controls.
-3. `experiments/03_patchback/`: H2 sufficiency and patchback transfer.
-4. `experiments/04_prefill_decode/`: H3 prefill/decode deployment mismatch.
-5. `experiments/05_steering_repair/`: steering repair and robustness checks.
+| Section | Purpose | Main entry points |
+|---|---|---|
+| H1 sharedness | Estimate and test shared decode-time structure | `experiments/01_sharedness/` |
+| H2 decode ablation | Remove shared decode components with LOTO controls | `experiments/02_decode_ablation/` |
+| H2 patchback | Patch shared subspaces back into corrupted decisions | `experiments/03_patchback/` |
+| H3 prefill/decode | Compare estimator and intervention timing | `experiments/04_prefill_decode/` |
+| Steering repair | Test downstream robustness and steering repair | `experiments/05_steering_repair/` |
 
-`downstream/` contains the consolidated downstream bundles requested for the
-camera-ready cleanup:
+## Notes
 
-- `downstream/patch_back/`
-- `downstream/brittleness/`
-- `downstream/rebuttal/`
-
-See `docs/project_layout.md` for the file-format contract and naming rules.
-
-## Reproduction Levels
-
-- Smoke checks: `bash scripts/run_all_smoke_tests.sh`
-- Paper-section wrappers: `scripts/reproduce_*.sh`
-- Full command records: `scripts/*/COMMANDS.md`
-- Artifact inventory: `MANIFEST.md`
-
-Large raw outputs are not committed by default. Commit compact `.md`, `.csv`,
-`.tex`, and final figure/table assets; keep multi-GB raw JSON/PT/NPY artifacts in
-an external artifact store and record their path, checksum, model, layer, and
-seed in `MANIFEST.md`.
-
-## Working Rule
-
-Do not bulk-copy the old experiment workspace into this branch. Bring over only
-canonical scripts, compact summaries, paper tables/figures, and artifact
-manifests. Historical top-level directories have been promoted into
-`experiments/`, moved under `downstream/`, or moved into `paper_artifacts/`.
+- GPU reruns are expensive; start with `DRY_RUN=1` and smoke checks.
+- Raw JSON/PT/NPY artifacts should stay outside git unless intentionally
+  curated.
+- The public tree is organized for reproduction first; historical exploratory
+  files were removed or moved out of the main workflow.

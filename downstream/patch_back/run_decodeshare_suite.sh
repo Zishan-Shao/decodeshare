@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-cd /home/zs89/decodeshare/patch_back
-conda activate flashsvd
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$(conda info --base)/etc/profile.d/conda.sh"
+cd "${SCRIPT_DIR}"
+conda activate "${CONDA_ENV:-decodeshare}"
 
 # ====== 基本配置 ======
 MODEL="Qwen/Qwen2.5-7B-Instruct" #"meta-llama/Llama-2-7b-chat-hf"
@@ -17,7 +18,7 @@ BASIS_TASKS="gsm8k,commonsenseqa,strategyqa,openbookqa,qasc,boolq,piqa"
 BASIS_N_SUBSPACE="128"
 
 # 输出目录（避免覆盖）
-OUTDIR="results/subspace_patching_transfer/runs_layer${LAYER}_seed${SEED}_${MODEL}"
+OUTDIR="results/subspace_patching_transfer/runs_layer${LAYER}_seed${SEED}_${MODEL//\//_}"
 mkdir -p "${OUTDIR}"
 
 QS_PATH="${OUTDIR}/Q_shared_layer${LAYER}.npy"

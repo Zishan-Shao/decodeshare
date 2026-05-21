@@ -11,9 +11,9 @@ Current cluster constraint: use only `Node0` and `Node1`.
 Run from an activated environment, or set `PYTHON_CMD` explicitly:
 
 ```bash
-conda activate flashsvd
+conda activate decodeshare
 # or:
-PYTHON_CMD="conda run -n flashsvd python" bash scripts/run_all_smoke_tests.sh
+PYTHON_CMD="conda run -n decodeshare python" bash scripts/run_all_smoke_tests.sh
 ```
 
 Common overrides:

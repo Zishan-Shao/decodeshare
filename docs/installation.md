@@ -1,16 +1,18 @@
 # Installation
 
-Create the recorded conda environment:
+Create the clean conda environment:
 
 ```bash
 conda env create -f environment.yml
-conda activate flashsvd
+conda activate decodeshare
 ```
 
-Install the repository in editable mode:
+The environment installs the repository in editable mode through
+`pyproject.toml`. If you are using an existing environment instead, install the
+package and development tools manually:
 
 ```bash
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 Run the lightweight checks:
@@ -19,6 +21,10 @@ Run the lightweight checks:
 bash scripts/run_all_smoke_tests.sh
 ```
 
-The environment file reflects the local `flashsvd` environment used for the
-camera-ready staging pass. Before public release, trim it if we want a smaller
-cross-machine environment specification.
+The conda file keeps only the Python version, PyTorch/CUDA stack, core
+scientific packages, and the editable local install. Project-level Python
+dependencies live in `pyproject.toml` so pip-only and conda users share the
+same package metadata.
+
+For CPU-only machines, remove `pytorch-cuda=12.1` and the `nvidia` channel from
+`environment.yml`, or install PyTorch separately before `pip install -e ".[dev]"`.
