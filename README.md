@@ -40,41 +40,31 @@ Reproduce this section with:
 bash scripts/reproduce_ablation_tables.sh
 ```
 
-### Steering Repair
+### Steering Ranking and Deployment
 
-The steering experiments test whether DecodeShare-style shared subspaces can
-stabilize downstream steering behavior across tasks and prompt templates. They
-are the main downstream robustness check in the public release.
+Decode-aligned validation is the steering utility check: it asks whether the
+ranking signal used to select vectors matches held-out decode-time behavior.
 
-Layer-28 Llama-2-7B-chat-hf ranking protocol:
+Ranking alignment across vector pools:
 
-| Ranking signal | Spearman with real decode |
-|---|---:|
-| Traditional prefill | -0.22 |
-| Decode-aligned | 0.60 |
-
-Layer-28 Llama-2-7B-chat-hf repair controls:
-
-| Method | Mean delta | Worst-template delta | Template std |
+| Pool | Prefill rho | Decode rho | Delta |
 |---|---:|---:|---:|
-| Original steering | -0.005 | -0.017 | 0.010 |
-| Shared repair | -0.004 | -0.013 | 0.006 |
-| Random control | -0.005 | -0.013 | 0.007 |
-| PCA control | -0.004 | -0.013 | 0.006 |
-| Prefill-PCA control | -0.008 | -0.017 | 0.009 |
-| Norm-matched shrink | -0.004 | -0.013 | 0.008 |
+| CAA contrastive | -0.370 | 0.700 | +1.070 |
+| Instruction | 0.172 | 0.767 | +0.595 |
+| SAE features | -0.064 | 0.594 | +0.659 |
+| Diagnostic | 0.065 | 0.700 | +0.635 |
 
-| Worst-template comparison | Shared repair win rate |
-|---|---:|
-| vs. random control | 60% |
-| vs. PCA control | 20% |
-| vs. prefill-PCA control | 100% |
-| vs. norm-matched shrink | 80% |
+Held-out REAL utility after selecting vectors by each proxy:
 
-Higher is better for Spearman and deltas; lower is better for template std.
-Source summaries:
-`downstream/rebuttal/results/rebuttal_20260208_212945/ranking_flip.json` and
-`downstream/rebuttal/results/rebuttal_20260208_212945/repair_controls.json`.
+| Proxy | REAL mean | REAL worst | Flip rate | Regret@1 |
+|---|---:|---:|---:|---:|
+| Prefill-aligned | -0.002 | -0.003 | 0.750 | 0.016 |
+| Mixed stages | -0.002 | -0.003 | 0.750 | 0.016 |
+| Decode-aligned | +0.011 | +0.010 | 0.083 | 0.003 |
+
+The pools contain 32 CAA contrastive vectors, 64 instruction-derived vectors,
+64 SAE feature directions, and 100 diagnostic directions. Higher is better for
+rho, REAL mean, and REAL worst; lower is better for flip rate and regret.
 
 ```bash
 bash scripts/reproduce_table_2_steering.sh
