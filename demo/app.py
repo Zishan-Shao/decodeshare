@@ -51,11 +51,43 @@ VECTOR_MODES = [
 
 CHAT_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
-EXAMPLE_PROMPTS: Dict[str, str] = {
-    "SVD pirate metaphor": "Explain the concept of 'Singular Value Decomposition' to a 5-year-old using a pirate metaphor.",
-    "30-minute study plan": "I keep getting distracted when studying. Give me a plan for the next 30 minutes.",
-    "Debugging checklist": "Give me a step-by-step checklist for debugging a Python script that suddenly became slow.",
-    "Concise exam advice": "I have an exam tomorrow and only two hours to prepare. What should I do?",
+EXAMPLE_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "SVD pirate metaphor": {
+        "prompt": "Explain the concept of 'Singular Value Decomposition' to a 5-year-old using a pirate metaphor.",
+        "preset": "Pirate",
+        "alpha": 3.0,
+        "max_new_tokens": 80,
+        "vector_mode": "original vector",
+        "beta": 1.0,
+        "inject_first_n": 20,
+    },
+    "30-minute study plan": {
+        "prompt": "I keep getting distracted when studying. Give me a plan for the next 30 minutes.",
+        "preset": "Step-by-step",
+        "alpha": 3.0,
+        "max_new_tokens": 80,
+        "vector_mode": "original vector",
+        "beta": 1.0,
+        "inject_first_n": 20,
+    },
+    "Debugging checklist": {
+        "prompt": "Give me a step-by-step checklist for debugging a Python script that suddenly became slow.",
+        "preset": "Step-by-step",
+        "alpha": 2.5,
+        "max_new_tokens": 72,
+        "vector_mode": "original vector",
+        "beta": 1.0,
+        "inject_first_n": 20,
+    },
+    "Concise exam advice": {
+        "prompt": "I have an exam tomorrow and only two hours to prepare. What should I do?",
+        "preset": "Concise",
+        "alpha": 2.5,
+        "max_new_tokens": 56,
+        "vector_mode": "original vector",
+        "beta": 1.0,
+        "inject_first_n": 20,
+    },
 }
 
 
@@ -731,8 +763,18 @@ def clear_chat() -> Tuple[List[Dict[str, str]], List[Dict[str, str]], List[Dict[
     return [], [], [], "Cleared chat history."
 
 
-def load_example_prompt(label: str) -> str:
-    return EXAMPLE_PROMPTS.get(label, "")
+def load_example_config(label: str) -> Tuple[str, str, float, int, str, float, int, str]:
+    config = EXAMPLE_CONFIGS.get(label or "") or next(iter(EXAMPLE_CONFIGS.values()))
+    return (
+        str(config["prompt"]),
+        str(config["preset"]),
+        float(config["alpha"]),
+        int(config["max_new_tokens"]),
+        str(config["vector_mode"]),
+        float(config["beta"]),
+        int(config["inject_first_n"]),
+        f"Loaded example: {label}",
+    )
 
 
 CSS = """
@@ -865,8 +907,17 @@ def build_app():
             chat_status = gr.Textbox(label="Status", interactive=False, scale=4)
 
         with gr.Row():
+            example_prompt = gr.Dropdown(
+                list(EXAMPLE_CONFIGS.keys()),
+                value="SVD pirate metaphor",
+                label="Example prompt",
+                scale=4,
+            )
+            load_example_button = gr.Button("Use Example", scale=1)
+
+        with gr.Row():
             preset = gr.Dropdown(["None"] + list(VECTOR_PRESETS.keys()), value="Step-by-step", label="Steering preset")
-            alpha = gr.Slider(-8.0, 8.0, value=3.0, step=0.25, label="Alpha")
+            alpha = gr.Slider(-3.0, 3.0, value=3.0, step=0.25, label="Alpha")
             max_new_tokens = gr.Slider(
                 8,
                 192,
@@ -880,14 +931,6 @@ def build_app():
             placeholder="Ask a question, request a style, or test a reasoning prompt.",
             lines=3,
         )
-        with gr.Row():
-            example_prompt = gr.Dropdown(
-                list(EXAMPLE_PROMPTS.keys()),
-                value=None,
-                label="Example prompt",
-                scale=4,
-            )
-            load_example_button = gr.Button("Use Example", scale=1)
         with gr.Row():
             send_button = gr.Button("Send", variant="primary")
             clear_button = gr.Button("Clear")
@@ -995,7 +1038,11 @@ def build_app():
             outputs=[baseline_chat, prefill_chat, decode_chat, user_message, chat_status],
             show_progress="full",
         )
-        load_example_button.click(load_example_prompt, inputs=[example_prompt], outputs=[user_message])
+        load_example_button.click(
+            load_example_config,
+            inputs=[example_prompt],
+            outputs=[user_message, preset, alpha, max_new_tokens, vector_mode, beta, inject_first_n, chat_status],
+        )
         clear_button.click(clear_chat, outputs=[baseline_chat, prefill_chat, decode_chat, chat_status])
     return app.queue()
 
