@@ -220,6 +220,9 @@ pip install -r demo/requirements-demo.txt
 python demo/app.py --summary outputs/demo_steering_projection/projection_summary.json
 ```
 
+The Gradio app also includes an interactive steering chat that compares
+baseline, prefill-estimated steering, and decode-estimated steering side by side.
+
 ## Reproducing Experiments
 
 Full rerun wrappers live in `scripts/`. They share common overrides such as

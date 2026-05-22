@@ -82,3 +82,18 @@ python demo/app.py \
 
 The app defaults to loading an existing summary. Its live-run panel defaults to
 TinyLlama so the UI is easier to smoke-test than a full Llama-2 run.
+
+The app also includes an **Interactive Steering Chat** tab. After initialization,
+it estimates a small decode-shared basis plus several preset steering vectors
+(`Pirate`, `Concise`, `Step-by-step`, and `Confident`) and displays three
+responses for each prompt:
+
+- baseline,
+- prefill-estimated steering vector,
+- decode-estimated steering vector.
+
+This chat view is a qualitative inspection tool. It is meant to make the
+prefill-vs-decode validation mismatch easy to inspect: both vectors are
+deployed during KV-cached decoding, but one is estimated from prefill states and
+the other from decode states. It does not claim that every preset is repaired or
+improved by projection.
