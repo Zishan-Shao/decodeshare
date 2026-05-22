@@ -121,9 +121,9 @@ python demo/app.py --server_port 7860
 When CUDA is unavailable, the UI defaults to `cpu` and `fp32`. If you have a
 working GPU, launching with `CUDA_VISIBLE_DEVICES=<id>` is strongly preferred.
 For CPU runs, keep `Max new tokens` around 32-48 because each prompt generates
-three responses. The UI shows progress during model initialization and during
-the three generation stages (`baseline`, `prefill-estimated`, and
-`decode-estimated`), so slow CPU runs are still trackable.
+three responses. The UI streams tokens sequentially for `baseline`,
+`prefill-estimated`, and `decode-estimated`, so slow CPU runs are still
+trackable.
 `llama.cpp`/GGUF is not used here because DecodeShare applies PyTorch layer
 hooks to hidden states during KV-cached decoding; llama.cpp does not expose the
 same intervention interface out of the box.

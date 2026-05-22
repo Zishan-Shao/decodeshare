@@ -238,7 +238,8 @@ values for visible differences under greedy decoding.
 
 Live Space: https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo
 The same Gradio demo can also run locally on CPU with the bundled cache, though
-generation is much slower than on GPU.
+generation is much slower than on GPU. Responses stream sequentially so CPU
+runs remain trackable.
 
 ## Reproducing Experiments
 

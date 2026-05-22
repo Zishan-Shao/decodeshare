@@ -286,6 +286,45 @@ def decode_rollout(
     return tokenizer.decode(generated, skip_special_tokens=True).strip()
 
 
+def decode_rollout_stream(
+    model,
+    tokenizer,
+    prompt_text: str,
+    *,
+    max_prompt_tokens: int,
+    max_new_tokens: int,
+):
+    device = model_device(model)
+    input_ids = tokenize_prompt(tokenizer, prompt_text, max_prompt_tokens).to(device)
+    if input_ids.shape[1] < 1:
+        raise RuntimeError("Tokenizer produced an empty prompt.")
+
+    generated: List[int] = []
+    with torch.inference_mode():
+        if input_ids.shape[1] > 1:
+            prefill = model(input_ids=input_ids[:, :-1], use_cache=True)
+            past = prefill.past_key_values
+            current = input_ids[:, -1:]
+        else:
+            past = None
+            current = input_ids
+
+        for _ in range(int(max_new_tokens)):
+            out = model(input_ids=current, past_key_values=past, use_cache=True)
+            past = out.past_key_values
+            next_id = torch.argmax(out.logits[:, -1, :], dim=-1, keepdim=True)
+            token_id = int(next_id.item())
+            if tokenizer.eos_token_id is not None and token_id == int(tokenizer.eos_token_id):
+                break
+            generated.append(token_id)
+            current = next_id
+            text = tokenizer.decode(generated, skip_special_tokens=True).strip()
+            yield {
+                "text": text,
+                "token_count": len(generated),
+            }
+
+
 def collect_decode_states(
     model,
     tokenizer,
@@ -491,6 +530,48 @@ def generate_with_optional_vector(
         "decode_calls": int(hook.decode_calls) if hook is not None else 0,
         "hook_applications": int(hook.applied) if hook is not None else 0,
     }
+
+
+def generate_with_optional_vector_stream(
+    model,
+    tokenizer,
+    user_prompt: str,
+    args: argparse.Namespace,
+    vector=None,
+    alpha: Optional[float] = None,
+):
+    prompt = format_prompt(tokenizer, user_prompt, args.system)
+    hook = None
+    handle = None
+    if vector is not None:
+        hook = AddDecodeVectorHook(vector, alpha=float(args.alpha if alpha is None else alpha), inject_first_n=args.inject_first_n)
+        handle = get_layer(model, args.layer).register_forward_hook(hook)
+    seen = False
+    try:
+        for step in decode_rollout_stream(
+            model,
+            tokenizer,
+            prompt,
+            max_prompt_tokens=args.max_prompt_tokens,
+            max_new_tokens=args.eval_max_new_tokens,
+        ):
+            seen = True
+            yield {
+                "text": step["text"],
+                "token_count": int(step["token_count"]),
+                "decode_calls": int(hook.decode_calls) if hook is not None else 0,
+                "hook_applications": int(hook.applied) if hook is not None else 0,
+            }
+    finally:
+        if handle is not None:
+            handle.remove()
+    if not seen:
+        yield {
+            "text": "",
+            "token_count": 0,
+            "decode_calls": int(hook.decode_calls) if hook is not None else 0,
+            "hook_applications": int(hook.applied) if hook is not None else 0,
+        }
 
 
 def one_step_logits(model, tokenizer, prompt_text: str, args: argparse.Namespace, vector=None) -> Any:

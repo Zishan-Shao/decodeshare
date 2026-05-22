@@ -668,6 +668,23 @@ def chat_prompt_from_history(history: List[Any], message: str) -> str:
     return "\n\n".join(parts)
 
 
+def start_stream_reply(history: List[Dict[str, str]], message: str) -> List[Dict[str, str]]:
+    return list(history) + [
+        {"role": "user", "content": message},
+        {"role": "assistant", "content": "Generating..."},
+    ]
+
+
+def update_stream_reply(history: List[Dict[str, str]], text: str) -> List[Dict[str, str]]:
+    updated = list(history)
+    updated[-1] = {"role": "assistant", "content": text or "Generating..."}
+    return updated
+
+
+def stream_status(label: str, stage: int, token_count: int, max_new_tokens: int) -> str:
+    return f"Generating {label} response ({stage}/3) - token {int(token_count)}/{int(max_new_tokens)}"
+
+
 def chat_once(
     session_id: str,
     message: str,
@@ -806,41 +823,62 @@ def chat_once_stream(
         trust_remote_code=False,
     )
 
-    yield baseline_history, prefill_history, decode_history, message, "Generating baseline response (1/3)..."
     baseline_prompt = chat_prompt_from_history(baseline_history, message)
-    baseline = runtime.generate_with_optional_vector(
+    baseline_history = start_stream_reply(baseline_history, message)
+    yield baseline_history, prefill_history, decode_history, message, stream_status("baseline", 1, 0, max_new_tokens)
+    baseline = {"text": "", "token_count": 0, "hook_applications": 0}
+    for baseline in runtime.generate_with_optional_vector_stream(
         state["model"], state["tokenizer"], baseline_prompt, args, vector=None
-    )
-    baseline_history = baseline_history + [
-        {"role": "user", "content": message},
-        {"role": "assistant", "content": baseline.get("text", "")},
-    ]
+    ):
+        baseline_history = update_stream_reply(baseline_history, baseline.get("text", ""))
+        yield (
+            baseline_history,
+            prefill_history,
+            decode_history,
+            message,
+            stream_status("baseline", 1, int(baseline.get("token_count", 0)), max_new_tokens),
+        )
+    baseline_history = update_stream_reply(baseline_history, baseline.get("text", ""))
 
-    yield baseline_history, prefill_history, decode_history, message, "Generating prefill-estimated response (2/3)..."
     preset_record = None if preset == "None" else state["vectors"].get(preset)
     prefill_record = None if preset_record is None else preset_record["prefill"]
     decode_record = None if preset_record is None else preset_record["decode"]
 
     prefill_vector = None if prefill_record is None else selected_vector(prefill_record, mode, beta)
     prefill_prompt = chat_prompt_from_history(prefill_history, message)
-    prefill = runtime.generate_with_optional_vector(
+    prefill_history = start_stream_reply(prefill_history, message)
+    yield baseline_history, prefill_history, decode_history, message, stream_status("prefill-estimated", 2, 0, max_new_tokens)
+    prefill = {"text": "", "token_count": 0, "hook_applications": 0}
+    for prefill in runtime.generate_with_optional_vector_stream(
         state["model"], state["tokenizer"], prefill_prompt, args, vector=prefill_vector, alpha=alpha
-    )
-    prefill_history = prefill_history + [
-        {"role": "user", "content": message},
-        {"role": "assistant", "content": prefill.get("text", "")},
-    ]
+    ):
+        prefill_history = update_stream_reply(prefill_history, prefill.get("text", ""))
+        yield (
+            baseline_history,
+            prefill_history,
+            decode_history,
+            message,
+            stream_status("prefill-estimated", 2, int(prefill.get("token_count", 0)), max_new_tokens),
+        )
+    prefill_history = update_stream_reply(prefill_history, prefill.get("text", ""))
 
-    yield baseline_history, prefill_history, decode_history, message, "Generating decode-estimated response (3/3)..."
     decode_vector = None if decode_record is None else selected_vector(decode_record, mode, beta)
     decode_prompt = chat_prompt_from_history(decode_history, message)
-    decode = runtime.generate_with_optional_vector(
+    decode_history = start_stream_reply(decode_history, message)
+    yield baseline_history, prefill_history, decode_history, message, stream_status("decode-estimated", 3, 0, max_new_tokens)
+    decode = {"text": "", "token_count": 0, "hook_applications": 0}
+    for decode in runtime.generate_with_optional_vector_stream(
         state["model"], state["tokenizer"], decode_prompt, args, vector=decode_vector, alpha=alpha
-    )
-    decode_history = decode_history + [
-        {"role": "user", "content": message},
-        {"role": "assistant", "content": decode.get("text", "")},
-    ]
+    ):
+        decode_history = update_stream_reply(decode_history, decode.get("text", ""))
+        yield (
+            baseline_history,
+            prefill_history,
+            decode_history,
+            message,
+            stream_status("decode-estimated", 3, int(decode.get("token_count", 0)), max_new_tokens),
+        )
+    decode_history = update_stream_reply(decode_history, decode.get("text", ""))
 
     status = (
         vector_status(preset, "prefill-est", mode, beta, alpha, prefill_record)
