@@ -50,6 +50,37 @@ EVAL_PROMPTS: List[str] = [
     "Give practical advice for staying focused while studying.",
 ]
 
+RANKING_ALIGNMENT_ROWS: List[Dict[str, Any]] = [
+    {"pool": "CAA contrastive", "prefill_rho": -0.370, "decode_rho": 0.700, "delta": 1.070},
+    {"pool": "Instruction", "prefill_rho": 0.172, "decode_rho": 0.767, "delta": 0.595},
+    {"pool": "SAE features", "prefill_rho": -0.064, "decode_rho": 0.594, "delta": 0.659},
+    {"pool": "Diagnostic", "prefill_rho": 0.065, "decode_rho": 0.700, "delta": 0.635},
+]
+
+DEPLOYMENT_SELECTION_ROWS: List[Dict[str, Any]] = [
+    {
+        "proxy": "Prefill-aligned",
+        "real_mean": -0.002,
+        "real_worst": -0.003,
+        "flip_rate": 0.750,
+        "regret_at_1": 0.016,
+    },
+    {
+        "proxy": "Mixed stages",
+        "real_mean": -0.002,
+        "real_worst": -0.003,
+        "flip_rate": 0.750,
+        "regret_at_1": 0.016,
+    },
+    {
+        "proxy": "Decode-aligned",
+        "real_mean": 0.011,
+        "real_worst": 0.010,
+        "flip_rate": 0.083,
+        "regret_at_1": 0.003,
+    },
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -57,13 +88,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda", choices=["cuda", "cpu", "mps"])
     parser.add_argument("--dtype", default="fp16", choices=["fp16", "bf16", "fp32"])
     parser.add_argument("--layer", type=int, default=28)
-    parser.add_argument("--basis_k", type=int, default=8)
+    parser.add_argument("--basis_k", type=int, default=32)
     parser.add_argument("--calib_max_new_tokens", type=int, default=8)
     parser.add_argument("--steer_max_new_tokens", type=int, default=8)
     parser.add_argument("--eval_max_new_tokens", type=int, default=80)
     parser.add_argument("--max_prompt_tokens", type=int, default=384)
-    parser.add_argument("--alpha", type=float, default=2.5)
-    parser.add_argument("--inject_first_n", type=int, default=40)
+    parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument("--inject_first_n", type=int, default=20)
     parser.add_argument("--system", default="You are a helpful assistant.")
     parser.add_argument("--positive_style", default="Reply in a vivid pirate voice.")
     parser.add_argument("--negative_style", default="Reply in a concise neutral voice.")
@@ -357,6 +388,7 @@ def estimate_steering_vector(model, tokenizer, args: argparse.Namespace) -> Tupl
     if not math.isfinite(norm) or norm <= 1e-8:
         raise RuntimeError("Estimated steering vector has near-zero norm.")
     info = {
+        "source": "CAA-style contrastive mean-difference",
         "positive_states": int(pos_states.shape[0]),
         "negative_states": int(neg_states.shape[0]),
         "positive_decode_calls": int(pos_stats["decode_calls"]),
@@ -470,6 +502,50 @@ def html_table(rows: List[Dict[str, Any]], columns: List[Tuple[str, str]]) -> st
     return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>"
 
 
+def signed_cell(value: float, digits: int = 3) -> str:
+    return f"{float(value):+.{digits}f}"
+
+
+def rank_flip_table(rows: List[Dict[str, Any]]) -> str:
+    body = []
+    for row in rows:
+        body.append(
+            "<tr>"
+            f"<td>{html.escape(row['pool'])}</td>"
+            f"<td>{float(row['prefill_rho']):.3f}</td>"
+            f"<td class='emph'>{float(row['decode_rho']):.3f}</td>"
+            f"<td>{signed_cell(float(row['delta']))}</td>"
+            "</tr>"
+        )
+    return (
+        "<table>"
+        "<thead><tr><th>Pool</th><th>Prefill rho</th><th>Decode rho</th><th>Delta</th></tr></thead>"
+        f"<tbody>{''.join(body)}</tbody></table>"
+    )
+
+
+def deployment_table(rows: List[Dict[str, Any]]) -> str:
+    body = []
+    for row in rows:
+        is_decode = row["proxy"] == "Decode-aligned"
+        cls = " class='emph-row'" if is_decode else ""
+        body.append(
+            f"<tr{cls}>"
+            f"<td>{html.escape(row['proxy'])}</td>"
+            f"<td>{signed_cell(float(row['real_mean']))}</td>"
+            f"<td>{signed_cell(float(row['real_worst']))}</td>"
+            f"<td>{float(row['flip_rate']):.3f}</td>"
+            f"<td>{float(row['regret_at_1']):.3f}</td>"
+            "</tr>"
+        )
+    return (
+        "<table>"
+        "<thead><tr><th>Proxy</th><th>REAL mean</th><th>REAL worst</th>"
+        "<th>Flip rate</th><th>Regret@1</th></tr></thead>"
+        f"<tbody>{''.join(body)}</tbody></table>"
+    )
+
+
 def projection_svg(overlap: float) -> str:
     overlap_pct = max(0.0, min(1.0, float(overlap))) * 100.0
     residual_pct = 100.0 - overlap_pct
@@ -529,6 +605,9 @@ th { background: #f3f6fa; font-weight: 650; }
 td:nth-child(3), td:nth-child(4) { font-variant-numeric: tabular-nums; }
 pre { white-space: pre-wrap; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .method { font-weight: 650; }
+.emph, .emph-row td { font-weight: 700; color: #164f86; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 780px) { .grid { grid-template-columns: 1fr; } }
 """
 
     gen_html = []
@@ -559,10 +638,35 @@ pre { white-space: pre-wrap; margin: 0; font-family: ui-monospace, SFMono-Regula
   </p>
 
   <section class="panel">
+    <h2>Rank Flip Context</h2>
+    <p>
+      The projection demo below shows how one steering vector is split. The
+      paper-level rank-flip result explains why DecodeShare evaluates steering
+      vectors at decode time: prefill-aligned proxies can rank vectors
+      differently from held-out KV-cached deployment.
+    </p>
+    <div class="grid">
+      <div>
+        <h3>Ranking alignment</h3>
+        {rank_flip_table(summary['rank_flip_snapshot']['ranking_alignment'])}
+      </div>
+      <div>
+        <h3>Deployment selection</h3>
+        {deployment_table(summary['rank_flip_snapshot']['deployment_selection'])}
+      </div>
+    </div>
+    <p class="subtle">
+      Snapshot values are from the DecodeShare paper tables. Reproduce them with
+      <code>bash scripts/reproduce_steering_flip_tables.sh</code>.
+    </p>
+  </section>
+
+  <section class="panel">
     <h2>Vector Split</h2>
     <p>
-      The original steering vector is decomposed into the part inside the
-      demo decode-shared basis and the residual used after projection.
+      The CAA-style contrastive steering vector is decomposed into the part
+      inside the demo decode-shared basis and the residual used after
+      DecodeShare projection.
     </p>
     {projection_svg(metrics['overlap_original'])}
     {html_table(metric_rows, [("metric", "Metric"), ("value", "Value")])}
@@ -590,6 +694,66 @@ pre { white-space: pre-wrap; margin: 0; font-family: ui-monospace, SFMono-Regula
 
 def tensor_to_list(x, limit: int = 12) -> List[float]:
     return [float(v) for v in x.detach().cpu().flatten()[:limit].tolist()]
+
+
+def clip_for_console(text: str, limit: int = 900) -> str:
+    text = " ".join(str(text).split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def print_console_summary(summary: Dict[str, Any], out_dir: Path) -> None:
+    metrics = summary["projection_metrics"]
+    print("\n" + "=" * 88)
+    print("DecodeShare steering demo: rank flip + CAA-style before/after")
+    print("=" * 88)
+    print("\n[Rank flip snapshot: paper-level steering result]")
+    print(f"{'Pool':<18} {'Prefill rho':>12} {'Decode rho':>12} {'Delta':>10}")
+    for row in summary["rank_flip_snapshot"]["ranking_alignment"]:
+        print(
+            f"{row['pool']:<18} "
+            f"{float(row['prefill_rho']):>12.3f} "
+            f"{float(row['decode_rho']):>12.3f} "
+            f"{float(row['delta']):>+10.3f}"
+        )
+
+    print("\n[Deployment selection]")
+    print(f"{'Proxy':<18} {'REAL mean':>10} {'REAL worst':>11} {'Flip rate':>10} {'Regret@1':>10}")
+    for row in summary["rank_flip_snapshot"]["deployment_selection"]:
+        print(
+            f"{row['proxy']:<18} "
+            f"{float(row['real_mean']):>+10.3f} "
+            f"{float(row['real_worst']):>+11.3f} "
+            f"{float(row['flip_rate']):>10.3f} "
+            f"{float(row['regret_at_1']):>10.3f}"
+        )
+
+    print("\n[CAA-style vector projection]")
+    print(f"Original shared overlap: {float(metrics['overlap_original']):.3f}")
+    print(f"After projection overlap: {float(metrics['overlap_residual']):.6f}")
+    print(
+        "Interpretation: DecodeShare removes the component of this CAA-style vector "
+        "that lies in the demo decode-shared channel, then reuses the residual vector."
+    )
+
+    print("\n[Top one-step logit increases]")
+    for block in summary["top_logit_deltas"]:
+        print(f"\n{block['label']}:")
+        for row in block["rows"][:6]:
+            print(f"  {float(row['delta_logit']):+7.3f}  {str(row['token'])!r}")
+
+    print("\n[Before/after example generations]")
+    for prompt, results in summary["generations"].items():
+        print("\nPrompt:", prompt)
+        for label, result in results.items():
+            print(f"\n--- {label} ---")
+            print(clip_for_console(result.get("text", "")))
+
+    print("\n[Report files]")
+    print(out_dir / "steering_projection_report.html")
+    print(out_dir / "projection_summary.json")
+    print("=" * 88 + "\n")
 
 
 def main() -> None:
@@ -626,15 +790,19 @@ def main() -> None:
     generations: Dict[str, Dict[str, Any]] = {}
     for prompt in EVAL_PROMPTS:
         generations[prompt] = {
-            "baseline": generate_with_optional_vector(model, tokenizer, prompt, args, vector=None),
-            "original steering vector": generate_with_optional_vector(model, tokenizer, prompt, args, vector=steering_vector),
-            "shared-removed vector": generate_with_optional_vector(model, tokenizer, prompt, args, vector=residual),
+            "baseline (no steering)": generate_with_optional_vector(model, tokenizer, prompt, args, vector=None),
+            "before DecodeShare projection (CAA-style vector)": generate_with_optional_vector(
+                model, tokenizer, prompt, args, vector=steering_vector
+            ),
+            "after DecodeShare projection (shared removed)": generate_with_optional_vector(
+                model, tokenizer, prompt, args, vector=residual
+            ),
         }
 
     print("[Probe] one-step logit deltas")
     top_delta_blocks = [
-        top_logit_deltas(model, tokenizer, args, steering_vector, "Original steering vector"),
-        top_logit_deltas(model, tokenizer, args, residual, "Shared-removed vector"),
+        top_logit_deltas(model, tokenizer, args, steering_vector, "Before DecodeShare projection"),
+        top_logit_deltas(model, tokenizer, args, residual, "After DecodeShare projection"),
     ]
 
     summary = {
@@ -658,9 +826,14 @@ def main() -> None:
         },
         "generations": generations,
         "top_logit_deltas": top_delta_blocks,
+        "rank_flip_snapshot": {
+            "ranking_alignment": RANKING_ALIGNMENT_ROWS,
+            "deployment_selection": DEPLOYMENT_SELECTION_ROWS,
+        },
     }
     (out_dir / "projection_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     write_report(out_dir, summary)
+    print_console_summary(summary, out_dir)
     print(f"[Done] wrote {out_dir / 'steering_projection_report.html'}")
     print(f"[Done] wrote {out_dir / 'projection_summary.json'}")
 

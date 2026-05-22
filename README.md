@@ -215,8 +215,9 @@ python demo/run_steering_projection_demo.py \
 ```
 
 The demo estimates a small decode-time shared basis, decomposes a contrastive
-steering vector into shared and residual components, and writes an HTML report.
-See `demo/README.md` for a smaller TinyLlama smoke-run option.
+steering vector into shared and residual components, includes the steering
+rank-flip snapshot, prints a CAA-style before/after example, and writes an HTML
+report. See `demo/README.md` for a smaller TinyLlama smoke-run option.
 
 ## Reproducing Experiments
 

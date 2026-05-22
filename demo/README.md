@@ -6,11 +6,17 @@ This demo shows the core DecodeShare steering idea on a Llama-style model:
 2. Estimate a small decode-time shared basis from those hidden states.
 3. Build a simple activation steering vector from contrastive prompts.
 4. Split the steering vector into its shared-channel component and residual.
-5. Compare generations from the original vector and the shared-removed vector.
+5. Show the paper-level rank-flip snapshot that motivates decode-time steering
+   validation.
+6. Compare generations from the original vector and the shared-removed vector.
 
 The demo is intentionally small. It is not a replacement for the paper's full
 steering-ranking experiments, but it gives a concrete view of how DecodeShare
 changes a steering vector.
+
+The script prints a concise rank-flip table and a CAA-style before/after
+generation example directly to the terminal. It also writes the same content,
+plus a visual vector split, to an HTML report.
 
 ## Run
 
@@ -53,4 +59,4 @@ outputs/demo_steering_projection/
 ```
 
 Open the HTML report to see the projection split, overlap metrics, top logit
-changes, and side-by-side generations.
+changes, the rank-flip snapshot, and side-by-side generations.
