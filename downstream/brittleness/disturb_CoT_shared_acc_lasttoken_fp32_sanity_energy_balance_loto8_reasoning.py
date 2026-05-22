@@ -79,30 +79,17 @@ from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import (  # 
 )
 
 # ---------------------------------------------------------------------
-# Import data loading and evaluation utilities from benchmark_dataloaders
+# Import data loading and evaluation utilities from DecodeShare package
 # ---------------------------------------------------------------------
-# You can keep your local benchmark_dataloaders.py in the same dir, or on PYTHONPATH.
 # This script uses Example/load_selected_tasks/parse_prediction/is_correct/stable_int_seed.
 try:
-    from benchmark_dataloaders import *  # noqa: F401,F403
-    from benchmark_dataloaders import (  # noqa: E402
+    from decodeshare.benchmark_dataloaders import *  # noqa: F401,F403
+    from decodeshare.benchmark_dataloaders import (  # noqa: E402
         stable_int_seed as stable_int_seed_bdl,
         is_correct as is_correct_bool,
     )
-except Exception:
-    # Fallback: some users keep renamed copies (e.g., benchmark_dataloaders_aqua_prefix_default.py)
-    try:
-        from benchmark_dataloaders_aqua_prefix_default import *  # type: ignore  # noqa: F401,F403
-        from benchmark_dataloaders_aqua_prefix_default import (  # type: ignore  # noqa: E402
-            stable_int_seed as stable_int_seed_bdl,
-            is_correct as is_correct_bool,
-        )
-    except Exception as e:  # pragma: no cover
-        raise RuntimeError(
-            "Failed to import benchmark_dataloaders.\n"
-            "Put benchmark_dataloaders.py next to this script, or ensure it's on PYTHONPATH.\n"
-            "As a fallback, we also try benchmark_dataloaders_aqua_prefix_default.py."
-        ) from e
+except Exception as e:  # pragma: no cover
+    raise RuntimeError("Failed to import decodeshare.benchmark_dataloaders.") from e
 
 
 # -----------------------------

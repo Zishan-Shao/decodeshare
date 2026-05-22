@@ -61,29 +61,15 @@ from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import (  # 
 # ---------------------------------------------------------------------
 # Import dataset loaders / parsing helpers
 # ---------------------------------------------------------------------
-# The user may have attached a dataloader file with a different name.
-# We try the canonical import first, then fall back.
 try:
-    from benchmark_dataloaders import (  # noqa: E402
+    from decodeshare.benchmark_dataloaders import (  # noqa: E402
         Example,
         load_selected_tasks as bdl_load_selected_tasks,
         parse_prediction as parse_prediction_generation,
         is_correct as is_correct_any,
     )
-except Exception:
-    try:
-        from benchmark_dataloaders_aqua_prefix_default import (  # noqa: E402
-            Example,
-            load_selected_tasks as bdl_load_selected_tasks,
-            parse_prediction as parse_prediction_generation,
-            is_correct as is_correct_any,
-        )
-    except Exception as e:  # pragma: no cover
-        raise RuntimeError(
-            "Failed to import benchmark dataloaders.\n"
-            "Expected `benchmark_dataloaders.py` (or fallback `benchmark_dataloaders_aqua_prefix_default.py`) "
-            "to be on PYTHONPATH / in the same directory."
-        ) from e
+except Exception as e:  # pragma: no cover
+    raise RuntimeError("Failed to import decodeshare.benchmark_dataloaders.") from e
 
 
 # -----------------------------

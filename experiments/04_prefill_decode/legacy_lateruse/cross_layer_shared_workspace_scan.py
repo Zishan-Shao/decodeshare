@@ -65,7 +65,7 @@ from disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8 import (
     stable_int_seed,
 )
 
-from benchmark_dataloaders import load_selected_tasks
+from decodeshare.benchmark_dataloaders import load_selected_tasks
 
 
 def _set_global_seed(seed: int) -> None:

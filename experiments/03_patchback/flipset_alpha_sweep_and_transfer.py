@@ -330,7 +330,7 @@ def main():
 
     # modules
     ap.add_argument("--loto8_path", type=str, default="disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py")
-    ap.add_argument("--dataloaders_path", type=str, default="benchmark_dataloaders.py")
+    ap.add_argument("--dataloaders_path", type=str, default="")
 
     # prompt formatting
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")

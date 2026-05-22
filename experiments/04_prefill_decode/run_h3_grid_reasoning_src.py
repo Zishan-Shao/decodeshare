@@ -78,7 +78,7 @@ from disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8 import (
 )
 
 # ---- Import task loading from benchmark_dataloaders ----
-from benchmark_dataloaders import (
+from decodeshare.benchmark_dataloaders import (
     Example,
     load_selected_tasks,
     is_correct,

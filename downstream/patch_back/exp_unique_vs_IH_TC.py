@@ -98,7 +98,7 @@ except Exception:
 # -----------------------------------------------------------------------------
 # Keep your original import, but add a safe fallback to your uploaded module name.
 try:
-    from benchmark_dataloaders import (  # type: ignore
+    from decodeshare.benchmark_dataloaders import (  # type: ignore
         Example,
         load_selected_tasks,
         parse_prediction,
@@ -106,7 +106,7 @@ try:
         stable_int_seed,
     )
 except Exception:
-    from benchmark_dataloaders_aqua_prefix_default import (  # type: ignore
+    from decodeshare.benchmark_dataloaders import (  # type: ignore
         Example,
         load_selected_tasks,
         parse_prediction,

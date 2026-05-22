@@ -72,7 +72,6 @@ Under out_dir/, you get:
 """
 
 import os
-import sys
 import re
 import json
 import math
@@ -90,26 +89,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 # -----------------------------
-# Local imports (repo layout)
-# -----------------------------
-# This script lives in `downstream/steering_rank_flip/`; public releases keep
-# benchmark_dataloaders.py with the experiment/downstream bundles.
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-for _candidate in [
-    os.path.join(THIS_DIR, "..", "brittleness"),
-    os.path.join(THIS_DIR, "..", "patch_back"),
-    os.path.join(THIS_DIR, "..", "..", "experiments", "02_decode_ablation"),
-]:
-    _candidate = os.path.normpath(_candidate)
-    if os.path.isfile(os.path.join(_candidate, "benchmark_dataloaders.py")) and _candidate not in sys.path:
-        sys.path.append(_candidate)
-
-
-# -----------------------------
 # Project imports (required)
 # -----------------------------
 try:
-    from benchmark_dataloaders import (
+    from decodeshare.benchmark_dataloaders import (
         Example,
         load_selected_tasks,
         parse_prediction,

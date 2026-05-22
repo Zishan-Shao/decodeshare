@@ -56,20 +56,14 @@ if PARENT_DIR not in sys.path:
 # Imports: attached scripts
 # -----------------------------------------------------------------------------
 try:
-    import eval_perf as EP  # attached helper: basis + forced-choice eval + stats
+    from decodeshare import eval_perf as EP
 except Exception as e:  # pragma: no cover
-    raise RuntimeError(
-        "Failed to import eval_perf.py. "
-        "Make sure eval_perf.py is in the same directory as this script or on PYTHONPATH."
-    ) from e
+    raise RuntimeError("Failed to import decodeshare.eval_perf.") from e
 
 try:
-    from benchmark_dataloaders import Example, load_selected_tasks  # attached dataloader
+    from decodeshare.benchmark_dataloaders import Example, load_selected_tasks
 except Exception as e:  # pragma: no cover
-    raise RuntimeError(
-        "Failed to import benchmark_dataloaders.py. "
-        "Make sure benchmark_dataloaders.py is in the same directory as this script or on PYTHONPATH."
-    ) from e
+    raise RuntimeError("Failed to import decodeshare.benchmark_dataloaders.") from e
 
 
 # -----------------------------------------------------------------------------

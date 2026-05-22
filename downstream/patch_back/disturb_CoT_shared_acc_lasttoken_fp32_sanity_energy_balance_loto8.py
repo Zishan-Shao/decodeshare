@@ -153,15 +153,15 @@ from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import (  # 
 # ---------------------------------------------------------------------
 # Import data loading and evaluation utilities from benchmark_dataloaders
 # ---------------------------------------------------------------------
-# from benchmark_dataloaders import (  # noqa: E402
+# from decodeshare.benchmark_dataloaders import (  # noqa: E402
 #     Example,
 #     load_selected_tasks,
 #     parse_prediction,
 #     is_correct as is_correct_bool,
 #     stable_int_seed as stable_int_seed_bdl,
 # )
-from benchmark_dataloaders import *
-from benchmark_dataloaders import (
+from decodeshare.benchmark_dataloaders import *
+from decodeshare.benchmark_dataloaders import (
     stable_int_seed as stable_int_seed_bdl,
     is_correct as is_correct_bool,
 )

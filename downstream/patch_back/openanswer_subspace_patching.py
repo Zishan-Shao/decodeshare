@@ -706,7 +706,7 @@ def main():
     ap.add_argument("--hf_split", type=str, default="test", help="HF dataset split (used when --use_benchmark_loader=0)")
 
     ap.add_argument("--loto8_path", type=str, default="disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py")
-    ap.add_argument("--dataloaders_path", type=str, default="benchmark_dataloaders.py")
+    ap.add_argument("--dataloaders_path", type=str, default="")
 
     # IMPORTANT: keep default as before for compatibility.
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")

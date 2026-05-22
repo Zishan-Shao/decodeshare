@@ -107,7 +107,7 @@ from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import (  # 
 # Import dataset loaders / parsing helpers from benchmark_dataloaders
 # ---------------------------------------------------------------------
 try:
-    from benchmark_dataloaders import (  # noqa: E402
+    from decodeshare.benchmark_dataloaders import (  # noqa: E402
         Example,
         load_selected_tasks as bdl_load_selected_tasks,
         parse_prediction as parse_prediction_generation,
@@ -115,8 +115,7 @@ try:
     )
 except Exception as e:  # pragma: no cover
     raise RuntimeError(
-        "Failed to import from 'benchmark_dataloaders.py'.\n"
-        "Make sure benchmark_dataloaders.py is in the same directory as this script (or on PYTHONPATH)."
+        "Failed to import decodeshare.benchmark_dataloaders."
     ) from e
 
 

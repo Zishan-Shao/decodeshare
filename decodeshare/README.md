@@ -17,3 +17,12 @@ Planned module boundaries:
 Paper-specific entry points live under `experiments/`. Historical compatibility
 helpers that are still shared by several experiment scripts live under
 `decodeshare/joint_subspace_large/`.
+
+Current public modules:
+
+- `benchmark_dataloaders`: shared HF benchmark loading, prompt construction,
+  answer parsing, correctness checks, and deterministic seeding.
+- `eval_perf`: forced-choice evaluation, decode/prefill shared-basis helpers,
+  and shared evaluation utilities used by H2/H3 scripts.
+- `joint_subspace_large`: shared subspace construction/intervention helpers
+  used by the paper experiments.

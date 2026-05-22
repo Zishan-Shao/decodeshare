@@ -86,7 +86,10 @@ def _import_from_path(module_name: str, file_path: str):
 
 def load_aux_modules(loto8_path: str, dataloaders_path: str):
     loto8 = _import_from_path("loto8", loto8_path)
-    dl = _import_from_path("benchmark_dataloaders", dataloaders_path)
+    if dataloaders_path:
+        dl = _import_from_path("benchmark_dataloaders", dataloaders_path)
+    else:
+        from decodeshare import benchmark_dataloaders as dl
     return loto8, dl
 
 
@@ -904,7 +907,7 @@ def main():
     ap.add_argument("--m_shared", type=str, default="all")
 
     ap.add_argument("--loto8_path", type=str, default="disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py")
-    ap.add_argument("--dataloaders_path", type=str, default="benchmark_dataloaders.py")
+    ap.add_argument("--dataloaders_path", type=str, default="")
 
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
     ap.add_argument("--template_randomization", type=int, default=1)

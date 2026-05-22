@@ -6,7 +6,7 @@ folders or review-phase scratch work as first-class project structure.
 
 ## Top-Level Directories
 
-- `decodeshare/`: reusable package code shared across experiments.
+- `decodeshare/`: reusable method/library code shared across experiments.
 - `experiments/`: one folder per paper experiment block, ordered by paper body.
 - `downstream/`: downstream steering, patchback, mismatch diagnostics, and
   legacy provenance grouped outside the main paper-section flow.

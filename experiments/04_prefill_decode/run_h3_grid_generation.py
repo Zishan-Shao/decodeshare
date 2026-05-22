@@ -489,14 +489,13 @@ def remove_hooks(handles: List[Any]) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Data loading (reuse your benchmark_dataloaders file)
+# Data loading
 # -----------------------------------------------------------------------------
 
 def import_dataloaders():
-    """Import load_selected_tasks from your repo."""
+    """Import load_selected_tasks from the DecodeShare package."""
     candidates = [
-        "benchmark_dataloaders_aqua_prefix_default",
-        "benchmark_dataloaders",
+        "decodeshare.benchmark_dataloaders",
     ]
     last_err = None
     for mod in candidates:

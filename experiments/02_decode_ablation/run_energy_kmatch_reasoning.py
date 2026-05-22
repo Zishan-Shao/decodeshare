@@ -58,13 +58,12 @@ if PARENT_DIR not in sys.path:
     sys.path.append(PARENT_DIR)
 
 # ---------------------------------------------------------------------
-# Project imports (requested: benchmark_dataloader(s) + eval_perf)
+# Project imports
 # ---------------------------------------------------------------------
-# Support either benchmark_dataloaders.py or benchmark_dataloader.py (naming varies).
 Example = None
 load_selected_tasks = None
 _bench_import_err: Optional[Exception] = None
-for modname in ["benchmark_dataloaders", "benchmark_dataloader", "benchmark_dataloaders_aqua_prefix_default"]:
+for modname in ["decodeshare.benchmark_dataloaders"]:
     try:
         _m = __import__(modname, fromlist=["Example", "load_selected_tasks"])
         Example = getattr(_m, "Example")
@@ -75,14 +74,13 @@ for modname in ["benchmark_dataloaders", "benchmark_dataloader", "benchmark_data
         continue
 if Example is None or load_selected_tasks is None:
     raise ImportError(
-        "Failed to import benchmark loader module. Tried: benchmark_dataloaders, benchmark_dataloader, "
-        "benchmark_dataloaders_aqua_prefix_default."
+        "Failed to import decodeshare.benchmark_dataloaders."
     ) from _bench_import_err
 
 try:
-    import eval_perf as ep  # type: ignore
+    from decodeshare import eval_perf as ep  # type: ignore
 except Exception as e:
-    raise ImportError("Failed to import eval_perf.py. Make sure it is on PYTHONPATH.") from e
+    raise ImportError("Failed to import decodeshare.eval_perf.") from e
 
 # We still need get_model_layers for attaching collectors
 try:

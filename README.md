@@ -242,7 +242,7 @@ Section command notes:
 ```text
 decodeshare/
   demo/                     # Compact steering vector projection demo
-  decodeshare/              # Shared package namespace
+  decodeshare/              # Shared method/library code
   experiments/              # Paper-section experiment code
   scripts/                  # Smoke checks and full reproduction wrappers
   downstream/               # Downstream experiments and legacy provenance bundles

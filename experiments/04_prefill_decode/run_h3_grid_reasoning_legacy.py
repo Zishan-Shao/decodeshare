@@ -53,13 +53,9 @@ sys.path.insert(0, THIS_DIR)
 sys.path.insert(0, os.path.join(THIS_DIR, ".."))  # project root (for joint_subspace_large.*)
 
 try:
-    import eval_perf as EP  # attached
+    from decodeshare import eval_perf as EP
 except Exception as e:  # pragma: no cover
-    raise RuntimeError(
-        "Failed to import eval_perf.py.\n"
-        "Put eval_perf.py next to this script (or on PYTHONPATH).\n"
-        f"Import error: {e}"
-    ) from e
+    raise RuntimeError(f"Failed to import decodeshare.eval_perf: {e}") from e
 
 Example = EP.Example
 load_selected_tasks = EP.load_selected_tasks

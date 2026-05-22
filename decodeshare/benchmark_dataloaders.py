@@ -546,7 +546,8 @@ def _build_from_splits_with_fallback(
 ) -> Tuple[List[Example], List[Example], Dict[str, Any]]:
     """
     Try multiple splits; pick the first that yields non-empty examples.
-    Eval split is required to yield at least one labeled example if require_gold_eval=True.
+    Eval split is required to yield at least one labeled example if require_gold_eval=True,
+    except when n_eval <= 0.
     """
 
     def make_examples(split_name: str, rows, require_gold: bool) -> List[Example]:
@@ -579,6 +580,18 @@ def _build_from_splits_with_fallback(
             f"Check schema extraction for this dataset."
         )
 
+    if n_eval <= 0:
+        meta = {
+            "prompt_format": "raw_text",
+            "subspace_split": sub_split,
+            "eval_split": None,
+            "available_splits": list(ds.keys()),
+            "eval_skipped": True,
+            "require_gold_eval": require_gold_eval,
+            "n_eval_requested": int(n_eval),
+        }
+        return sub_exs, [], meta
+
     eval_exs: List[Example] = []
     eval_split: Optional[str] = None
     for j, sp in enumerate(eval_candidates):
@@ -601,6 +614,9 @@ def _build_from_splits_with_fallback(
         "subspace_split": sub_split,
         "eval_split": eval_split,
         "available_splits": list(ds.keys()),
+        "eval_skipped": False,
+        "require_gold_eval": require_gold_eval,
+        "n_eval_requested": int(n_eval),
     }
     return sub_exs, eval_exs, meta
 
