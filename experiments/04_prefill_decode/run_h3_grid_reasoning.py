@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-h3_killer_counterfactual_grid_reasoning_v3.py
+run_h3_grid_reasoning.py
 
 在 v2 基础上补全 H3 的 2x2 grid：
   估计分布：decode-est vs prefill-est
@@ -25,7 +25,7 @@ h3_killer_counterfactual_grid_reasoning_v3.py
 - 仍然保持 forced-choice 在 answer slot 评分（teacher-forced warmup + answer_prefix）
 - warmup 必须 teacher-forced（维持 v2 逻辑）
 
-CUDA_VISIBLE_DEVICES=1 python h3_killer_counterfactual_grid_reasoning_v2.py \
+CUDA_VISIBLE_DEVICES=1 python run_h3_grid_reasoning.py \
   --model meta-llama/Llama-2-7b-chat-hf \
   --device cuda --model_dtype fp32 \
   --tasks gsm8k,commonsenseqa,strategyqa,piqa,arc_challenge,openbookqa,qasc,logiqa,boolq \
@@ -53,7 +53,7 @@ import torch
 from tqdm import tqdm
 
 # ---- Import your existing pipeline bits ----
-from disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8 import (
+from h3_decode_subspace_helpers import (
     load_model_and_tokenizer,
     compute_shared_subspace_decode_aligned,
     bootstrap_ci_mean,

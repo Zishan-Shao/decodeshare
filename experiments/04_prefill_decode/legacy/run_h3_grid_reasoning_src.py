@@ -57,7 +57,9 @@ from __future__ import annotations
 import argparse
 import math
 import json
+import os
 import random
+import sys
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -65,8 +67,12 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-# ---- Import your existing pipeline bits ----
-from disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8 import (
+# ---- Import the parent H3 helper module ----
+PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
+
+from h3_decode_subspace_helpers import (
     HookStats,
     GenerationState,
     load_model_and_tokenizer,

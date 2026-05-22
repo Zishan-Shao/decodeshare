@@ -30,7 +30,7 @@ the project environment.
 - Canonical experiment scripts respond to `--help`.
 - The H1 summarizer and H3 table analyzer are present in the clean branch:
   - `experiments/01_sharedness/summarize_full_benchmark.py`
-  - `experiments/04_prefill_decode/summarize_h3_grid.py`
+  - `experiments/04_prefill_decode/analysis/summarize_h3_grid.py`
 - Experiment entry points can be imported and print CLI help from the public tree.
 - Mock checks do not depend on private local artifact paths.
 

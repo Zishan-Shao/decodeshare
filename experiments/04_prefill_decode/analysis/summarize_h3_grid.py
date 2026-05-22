@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-analyze_h3_grid_json.py
+summarize_h3_grid.py
 
 Analyze H3 grid json outputs from:
-  - h3_killer_counterfactual_grid_reasoning_v3.py  (v3: full 2x2 + controls)
-  - h3_killer_counterfactual_grid_reasoning_v2.py  (v2: decode-intervene only)
+  - run_h3_grid_reasoning.py (full 2x2 + controls)
+  - legacy H3 grid outputs (decode-intervene only)
 
 Outputs:
   - Per-task accuracy table
@@ -14,26 +14,26 @@ Outputs:
   - Optional CSV / LaTeX export
 
 Usage examples:
-  python analyze_h3_grid_json.py --inputs "h3_grid_v3_*.json"
-  python analyze_h3_grid_json.py --inputs run1.json,run2.json --out_csv summary.csv --out_latex table.tex
+  python analysis/summarize_h3_grid.py --inputs "h3_grid_v3_*.json"
+  python analysis/summarize_h3_grid.py --inputs run1.json,run2.json --out_csv summary.csv --out_latex table.tex
 
 A) 分析单个 json
-python analyze_h3_grid_json.py --inputs h3_grid_v3_*.json
+python analysis/summarize_h3_grid.py --inputs h3_grid_v3_*.json
 
 B) 输出 CSV（每个 task 一行）
-python analyze_h3_grid_json.py --inputs h3_grid_v3_run.json --out_csv h3_summary.csv
+python analysis/summarize_h3_grid.py --inputs h3_grid_v3_run.json --out_csv h3_summary.csv
 
 C) 输出 LaTeX 表格（默认是 ΔAcc(pp)）
-python analyze_h3_grid_json.py --inputs h3_grid_v3_run.json --out_latex h3_table.tex --latex_mode delta
+python analysis/summarize_h3_grid.py --inputs h3_grid_v3_run.json --out_latex h3_table.tex --latex_mode delta
 
 
 如果想导出 raw accuracy（百分数）：
-python analyze_h3_grid_json.py --inputs h3_grid_v3_run.json --out_latex h3_acc_table.tex --latex_mode acc
+python analysis/summarize_h3_grid.py --inputs h3_grid_v3_run.json --out_latex h3_acc_table.tex --latex_mode acc
 
 D) 同时分析多个 runs（多个文件会逐个打印；导出时会自动按文件名加后缀）
-python analyze_h3_grid_json.py --inputs "h3_grid_v3_meta-llama_Llama-2-7b-chat-hf_layer10_k48_W0_seed0.json" --out_csv out.csv --out_latex out.tex --latex_mode acc
+python analysis/summarize_h3_grid.py --inputs "h3_grid_v3_meta-llama_Llama-2-7b-chat-hf_layer10_k48_W0_seed0.json" --out_csv out.csv --out_latex out.tex --latex_mode acc
 
-python analyze_h3_grid_json.py --inputs "/home/zs89/decodeshare/results/h3_grid/h3_grid_v3_Qwen_Qwen2.5-7B-Instruct_layer10_k20_W0_seed0.json" --out_csv Qwen_Qwen2.5-7B-Instruct_layer10_out.csv --out_latex Qwen_Qwen2.5-7B-Instruct_layer10_out.tex --latex_mode acc
+python analysis/summarize_h3_grid.py --inputs "/home/zs89/decodeshare/results/h3_grid/h3_grid_v3_Qwen_Qwen2.5-7B-Instruct_layer10_k20_W0_seed0.json" --out_csv Qwen_Qwen2.5-7B-Instruct_layer10_out.csv --out_latex Qwen_Qwen2.5-7B-Instruct_layer10_out.tex --latex_mode acc
 
 
 """

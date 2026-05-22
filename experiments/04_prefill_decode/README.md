@@ -13,15 +13,14 @@ Current command record:
 
 - `scripts/04_h3_prefill_decode/COMMANDS.md`
 
-Canonical scripts now in this folder:
+Canonical scripts in this folder:
 
-- `run_h3_grid_generation.py`
-- `run_h3_grid_reasoning_v2.py`
-- `run_h3_grid_reasoning_src.py`
-- `run_prefill_decode_generation.py`
-- `run_prefill_decode_reasoning.py`
+- `run_h3_grid_reasoning.py`: main H3 2x2 estimator/intervention grid.
 - `run_prefill_decode_reasoning_sweeps.py`
-- `summarize_h3_grid.py`
+- `h3_decode_subspace_helpers.py`: local decode-shared subspace helper used by
+  the H3 grid runner.
+- `analysis/summarize_h3_grid.py`: JSON-to-table summary for H3 grid runs.
+- `legacy/`: older H3 variants and provenance scripts.
 
 Smoke check:
 

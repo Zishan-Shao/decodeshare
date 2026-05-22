@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py
+h3_decode_subspace_helpers.py
+
+Helper routines for H3 decode-aligned shared-subspace estimation and removal.
+This module is adapted from the H2 LOTO decode-ablation runner and is used by
+`run_h3_grid_reasoning.py`.
 
 Decode-last-token (decode-only) shared-subspace removal with:
   (1) Energy-balance sanity checks (shared vs random bases).
@@ -59,7 +63,7 @@ gsm8k,commonsenseqa,strategyqa,aqua,piqa,arc_challenge,openbookqa,qasc,logiqa,bo
 Example usage:
 
   # Single (all-tasks) basis estimation + evaluation:
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+  CUDA_VISIBLE_DEVICES=1 python h3_decode_subspace_helpers.py \
     --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
     --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
     --mode all \
@@ -70,7 +74,7 @@ Example usage:
     --do_sample 0 --out_json results/disturb_cot/all_tasks_energy_balance_results_llama2-7b-chat-hf_aligned.json --out_md results/disturb_cot/all_tasks_energy_balance_summary_llama2-7b-chat-hf_aligned.md
 
   # LOTO (estimate basis on N-1 tasks, evaluate held-out only):
-  CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+  CUDA_VISIBLE_DEVICES=1 python h3_decode_subspace_helpers.py \
     --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
     --tasks gsm8k,commonsenseqa,strategyqa,aqua,openbookqa,qasc,boolq,piqa \
     --mode loto \
@@ -86,7 +90,7 @@ Notes:
   - If a dataset fails to load, you can remove it from --tasks.
 
 # A) LOTO（只评估 heldout），只跑 greedy（最省时间，最适合先出结论）
-CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+CUDA_VISIBLE_DEVICES=1 python h3_decode_subspace_helpers.py \
   --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
   --mode loto --loto_eval_mode heldout \
   --tasks gsm8k,commonsenseqa,strategyqa,aqua,arc_challenge,openbookqa,qasc,logiqa \
@@ -98,7 +102,7 @@ CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energ
   --do_sample 0 --out_json energy_balance_loto8_results_llama2-7b-chat-hf.json --out_md energy_balance_loto8_summary_llama2-7b-chat-hf.md
 
 # B) 只跑某一个 holdout（debug / 快速迭代）
-CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+CUDA_VISIBLE_DEVICES=1 python h3_decode_subspace_helpers.py \
   --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
   --mode loto --loto_eval_mode heldout --loto_only commonsenseqa \
   --layer 10 --n_subspace 128 --n_eval 256 \
@@ -109,7 +113,7 @@ CUDA_VISIBLE_DEVICES=1 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energ
   --do_sample 0
 
 # C) 非 LOTO（all tasks 一把估 basis）
-CUDA_VISIBLE_DEVICES=0 python disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py \
+CUDA_VISIBLE_DEVICES=0 python h3_decode_subspace_helpers.py \
   --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
   --mode all \
   --tasks gsm8k,commonsenseqa,strategyqa,aqua,arc_challenge,openbookqa,qasc,logiqa \

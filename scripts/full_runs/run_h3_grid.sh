@@ -12,7 +12,7 @@ mkdir -p "${OUT_DIR}"
 
 RUN_TAG="${RUN_TAG:-h3_grid_${MODEL_TAG}_layer${LAYER:-10}_seed${SEED:-0}}"
 
-run_python_gpu run_h3_grid_reasoning_v2.py \
+run_python_gpu run_h3_grid_reasoning.py \
   --model "${MODEL}" \
   --device "${DEVICE}" \
   --model_dtype "${MODEL_DTYPE:-fp32}" \
@@ -38,7 +38,7 @@ run_python_gpu run_h3_grid_reasoning_v2.py \
   --out_json "${OUT_DIR}/${RUN_TAG}.json"
 
 if [[ "${SUMMARIZE:-1}" == "1" ]]; then
-  run_python summarize_h3_grid.py \
+  run_python analysis/summarize_h3_grid.py \
     --inputs "${OUT_DIR}/${RUN_TAG}.json" \
     --out_csv "${OUT_DIR}/${RUN_TAG}.csv" \
     --out_latex "${OUT_DIR}/${RUN_TAG}.tex" \

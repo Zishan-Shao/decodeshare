@@ -51,13 +51,18 @@ import json
 import math
 import os
 import random
+import sys
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import torch
 
-# ---- Reuse your pipeline code ----
-from disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8 import (
+# ---- Reuse the parent H3 helper module ----
+PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
+
+from h3_decode_subspace_helpers import (
     load_model_and_tokenizer,
     compute_shared_subspace_decode_aligned,
     orthonormalize_np,
