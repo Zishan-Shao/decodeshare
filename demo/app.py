@@ -102,6 +102,11 @@ def default_max_new_tokens(device: str) -> int:
     return 40 if device == "cpu" else 80
 
 
+def update_progress(progress: Optional[Any], value: float, desc: str) -> None:
+    if progress is not None:
+        progress(float(value), desc=desc)
+
+
 def demo_runtime():
     from demo import run_steering_projection_demo as runtime
 
@@ -350,7 +355,9 @@ def estimate_chat_core(
     seed: int,
     local_files_only: bool,
     trust_remote_code: bool,
+    progress: Optional[Any] = None,
 ) -> Dict[str, Any]:
+    update_progress(progress, 0.58, "Estimating decode-shared basis")
     base_args = make_runtime_args(
         model=model,
         device=str(runtime.model_device(model_obj)),
@@ -373,7 +380,9 @@ def estimate_chat_core(
     basis, basis_info = runtime.estimate_shared_basis(model_obj, tokenizer, base_args)
 
     vectors: Dict[str, Dict[str, Any]] = {}
-    for name, preset in VECTOR_PRESETS.items():
+    preset_items = list(VECTOR_PRESETS.items())
+    for idx, (name, preset) in enumerate(preset_items, start=1):
+        update_progress(progress, 0.62 + 0.28 * (idx - 1) / max(1, len(preset_items)), f"Estimating {name} vector")
         vec_args = make_runtime_args(
             model=model,
             device=str(runtime.model_device(model_obj)),
@@ -437,8 +446,11 @@ def prepare_chat_state(
     cache_path: str,
     use_cache: bool,
     save_cache: bool,
+    progress: Optional[Any] = None,
 ) -> Tuple[Dict[str, Any], str]:
+    update_progress(progress, 0.02, "Loading runtime dependencies")
     runtime = demo_runtime()
+    update_progress(progress, 0.08, "Checking device")
     if device == "cuda" and not runtime.torch.cuda.is_available():
         raise RuntimeError("CUDA is not available in this Python environment. Select cpu/mps or use a CUDA-enabled env.")
     expected_config = config_for_cache(
@@ -454,6 +466,7 @@ def prepare_chat_state(
     resolved_cache = resolve_cache_path(cache_path)
     messages: List[str] = []
 
+    update_progress(progress, 0.12, "Preparing model arguments")
     runtime.set_seed(int(seed))
     model_args = make_runtime_args(
         model=model,
@@ -474,10 +487,12 @@ def prepare_chat_state(
         local_files_only=local_files_only,
         trust_remote_code=trust_remote_code,
     )
+    update_progress(progress, 0.18, "Loading model and tokenizer")
     model_obj, tokenizer = runtime.load_model_and_tokenizer(model_args)
 
     core = None
     if use_cache and resolved_cache.exists():
+        update_progress(progress, 0.72, "Loading cached basis and vectors")
         try:
             core, msg = load_chat_cache(runtime, resolved_cache, expected_config)
             messages.append(msg)
@@ -501,12 +516,15 @@ def prepare_chat_state(
             seed=seed,
             local_files_only=local_files_only,
             trust_remote_code=trust_remote_code,
+            progress=progress,
         )
         messages.append("Estimated decode-shared basis and preset vectors.")
         if save_cache:
+            update_progress(progress, 0.92, "Saving basis/vector cache")
             save_chat_cache(runtime, resolved_cache, core)
             messages.append(f"Saved cache to {resolved_cache}.")
 
+    update_progress(progress, 0.96, "Finalizing demo state")
     state = {
         "runtime": runtime,
         "model": model_obj,
@@ -520,6 +538,7 @@ def prepare_chat_state(
             "dtype": dtype,
         },
     }
+    update_progress(progress, 1.0, "Ready")
     return state, " ".join(messages)
 
 
@@ -539,6 +558,7 @@ def initialize_chat_state(
     cache_path: str,
     use_cache: bool,
     save_cache: bool,
+    progress: Optional[Any] = None,
 ) -> Tuple[str, str, str]:
     state, status = prepare_chat_state(
         model=model,
@@ -556,6 +576,7 @@ def initialize_chat_state(
         cache_path=cache_path,
         use_cache=use_cache,
         save_cache=save_cache,
+        progress=progress,
     )
     session_id = uuid4().hex
     CHAT_SESSIONS[session_id] = state
@@ -621,6 +642,7 @@ def chat_once(
     beta: float,
     inject_first_n: int,
     max_new_tokens: int,
+    progress: Optional[Any] = None,
 ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]], List[Dict[str, str]], str, str]:
     baseline_history = list(baseline_history or [])
     prefill_history = list(prefill_history or [])
@@ -632,6 +654,7 @@ def chat_once(
     if state is None:
         return baseline_history, prefill_history, decode_history, message, "Initialize the model before chatting."
 
+    update_progress(progress, 0.02, "Preparing prompts")
     runtime = state["runtime"]
     config = state["config"]
     args = make_runtime_args(
@@ -655,6 +678,7 @@ def chat_once(
     )
 
     baseline_prompt = chat_prompt_from_history(baseline_history, message)
+    update_progress(progress, 0.10, "Generating baseline response (1/3)")
     baseline = runtime.generate_with_optional_vector(
         state["model"], state["tokenizer"], baseline_prompt, args, vector=None
     )
@@ -665,16 +689,19 @@ def chat_once(
 
     prefill_vector = None if prefill_record is None else selected_vector(prefill_record, mode, beta)
     prefill_prompt = chat_prompt_from_history(prefill_history, message)
+    update_progress(progress, 0.40, "Generating prefill-estimated response (2/3)")
     prefill = runtime.generate_with_optional_vector(
         state["model"], state["tokenizer"], prefill_prompt, args, vector=prefill_vector, alpha=alpha
     )
 
     decode_vector = None if decode_record is None else selected_vector(decode_record, mode, beta)
     decode_prompt = chat_prompt_from_history(decode_history, message)
+    update_progress(progress, 0.70, "Generating decode-estimated response (3/3)")
     decode = runtime.generate_with_optional_vector(
         state["model"], state["tokenizer"], decode_prompt, args, vector=decode_vector, alpha=alpha
     )
 
+    update_progress(progress, 0.94, "Updating chat")
     baseline_history.extend(
         [{"role": "user", "content": message}, {"role": "assistant", "content": baseline.get("text", "")}]
     )
@@ -690,6 +717,7 @@ def chat_once(
         + vector_status(preset, "decode-est", mode, beta, alpha, decode_record)
         + f" | decode hook apps={int(decode.get('hook_applications', 0))}"
     )
+    update_progress(progress, 1.0, "Done")
     return baseline_history, prefill_history, decode_history, "", status
 
 
@@ -744,6 +772,12 @@ def build_app():
         import gradio as gr
     except ImportError as exc:  # pragma: no cover
         raise SystemExit("Install demo dependencies first: pip install -r demo/requirements-demo.txt") from exc
+
+    def initialize_chat_state_ui(*args, progress=gr.Progress(track_tqdm=True)):
+        return initialize_chat_state(*args, progress=progress)
+
+    def chat_once_ui(*args, progress=gr.Progress(track_tqdm=True)):
+        return chat_once(*args, progress=progress)
 
     with gr.Blocks(css=CSS, title="DecodeShare Interactive Steering Chat") as app:
         chat_session = gr.State("")
@@ -813,7 +847,7 @@ def build_app():
                 inject_first_n = gr.Slider(1, 128, value=20, step=1, label="Inject first N decode steps")
 
         init_button.click(
-            initialize_chat_state,
+            initialize_chat_state_ui,
             inputs=[
                 chat_model,
                 chat_device,
@@ -832,9 +866,10 @@ def build_app():
                 save_cache,
             ],
             outputs=[chat_session, chat_intro, chat_status],
+            show_progress="full",
         )
         send_button.click(
-            chat_once,
+            chat_once_ui,
             inputs=[
                 chat_session,
                 user_message,
@@ -849,9 +884,10 @@ def build_app():
                 max_new_tokens,
             ],
             outputs=[baseline_chat, prefill_chat, decode_chat, user_message, chat_status],
+            show_progress="full",
         )
         user_message.submit(
-            chat_once,
+            chat_once_ui,
             inputs=[
                 chat_session,
                 user_message,
@@ -866,10 +902,11 @@ def build_app():
                 max_new_tokens,
             ],
             outputs=[baseline_chat, prefill_chat, decode_chat, user_message, chat_status],
+            show_progress="full",
         )
         load_example_button.click(load_example_prompt, inputs=[example_prompt], outputs=[user_message])
         clear_button.click(clear_chat, outputs=[baseline_chat, prefill_chat, decode_chat, chat_status])
-    return app
+    return app.queue()
 
 
 def main() -> None:
