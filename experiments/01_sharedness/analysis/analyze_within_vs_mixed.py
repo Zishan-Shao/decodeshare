@@ -13,7 +13,7 @@ analyze_within_vs_mixed.py
   - PNG（简单柱状图：within vs mixed(mean±std)）
 
 示例：
-  python analyze_within_vs_mixed.py \
+  python analysis/analyze_within_vs_mixed.py \
     --acts_dir results/acts/<MODEL_TAG>/layer10_... \
     --pca_var 0.95 --tau 0.001 --min_dim 1 --max_dim 4096 \
     --n_mixed 50 --seed 123 \
@@ -30,7 +30,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 
-from sharedness_base import (
+from decodeshare.sharedness import (
     compute_cross_task_subspace,
     compute_relvar_in_basis,
     compute_shared_indices_from_relvar,

@@ -22,7 +22,7 @@ Outputs:
 - out_png: 2-panel figure (left: overlap, right: shared_ratio_all)
 - out_png_single_*: optional separate figures if you pass --out_png_overlap / --out_png_shared
 
-CUDA_VISIBLE_DEVICES=0 python analyze_phase_convergence.py \
+CUDA_VISIBLE_DEVICES=0 python analysis/analyze_phase_convergence.py \
   --model meta-llama/Llama-2-7b-chat-hf \
   --device cuda \
   --model_dtype fp32 \
@@ -46,6 +46,7 @@ CUDA_VISIBLE_DEVICES=0 python analyze_phase_convergence.py \
 
 from __future__ import annotations
 import os
+import sys
 import csv
 import argparse
 from dataclasses import dataclass
@@ -56,7 +57,7 @@ import torch
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-import sharedness_base as base
+from decodeshare import sharedness as base
 
 
 # -------------------------
@@ -68,6 +69,9 @@ def load_prompts(loader: str, n_prompts: int, seed: int) -> Dict[str, List[str]]
         return base.load_calib_prompts(n_prompts, seed)
     if loader == "full":
         try:
+            exp_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if exp_dir not in sys.path:
+                sys.path.insert(0, exp_dir)
             import run_full_benchmark as full
             if hasattr(full, "load_calib_prompts_full"):
                 return full.load_calib_prompts_full(n_prompts, seed)

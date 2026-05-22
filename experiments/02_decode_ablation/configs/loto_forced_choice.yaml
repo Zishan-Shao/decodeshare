@@ -5,7 +5,7 @@ cluster:
 
 environment:
   conda_env: decodeshare
-  pythonpath: src
+  pythonpath: repo_root
 
 script: experiments/02_decode_ablation/run_loto_reasoning.py
 

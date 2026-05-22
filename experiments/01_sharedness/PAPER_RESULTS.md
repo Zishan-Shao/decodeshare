@@ -56,7 +56,7 @@ CUDA_VISIBLE_DEVICES="${GPU_ID:-0}" python collect_activations.py \
   --out_dir ../../outputs/01_sharedness/acts/llama2_layer10_seed42 \
   --save_dtype fp16
 
-python analyze_within_vs_mixed.py \
+python analysis/analyze_within_vs_mixed.py \
   --acts_dir ../../outputs/01_sharedness/acts/llama2_layer10_seed42 \
   --pca_var 0.95 \
   --tau 0.001 \
@@ -65,7 +65,7 @@ python analyze_within_vs_mixed.py \
   --out_csv ../../outputs/01_sharedness/exp1/llama_within_vs_mixed.csv \
   --out_png ../../outputs/01_sharedness/exp1/llama_within_vs_mixed.png
 
-python analyze_task_count_convergence.py \
+python analysis/analyze_task_count_convergence.py \
   --acts_dir ../../outputs/01_sharedness/acts/llama2_layer10_seed42 \
   --pca_var 0.95 \
   --repeats 20 \
@@ -73,7 +73,7 @@ python analyze_task_count_convergence.py \
   --out_csv ../../outputs/01_sharedness/exp2/llama_convergence.csv \
   --out_png ../../outputs/01_sharedness/exp2/llama_convergence.png
 
-python analyze_tau_sensitivity.py \
+python analysis/analyze_tau_sensitivity.py \
   --acts_dir ../../outputs/01_sharedness/acts/llama2_layer10_seed42 \
   --pca_vars 0.8,0.9,0.95,0.97,0.99 \
   --taus 1e-4,2e-4,5e-4,1e-3,2e-3,5e-3,1e-2 \
@@ -82,5 +82,5 @@ python analyze_tau_sensitivity.py \
   --out_png ../../outputs/01_sharedness/exp3/llama_sensitivity.png
 ```
 
-`analyze_phase_convergence.py` is the canonical script for the exp2.75
+`analysis/analyze_phase_convergence.py` is the canonical script for the exp2.75
 decode/prefill/decode-step diagnostic.

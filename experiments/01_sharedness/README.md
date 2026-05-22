@@ -8,14 +8,14 @@ and diagnostics. New runs should use the top-level scripts below.
 ## Structure
 
 - `run_full_benchmark.py`: canonical full H1 benchmark runner for Table 6 and appendix Tables 7-13.
-- `sharedness_base.py`: shared utilities plus the original fair-task existence runner.
+- `sharedness_base.py`: thin compatibility CLI for the original fair-task existence runner.
 - `summarize_full_benchmark.py`: aggregates full-benchmark JSON/TXT records into CSV, Markdown, and LaTeX summaries.
 - `collect_activations.py`: collects balanced decode-phase hidden states for diagnostic figures.
-- `analyze_within_vs_mixed.py`: within-category vs mixed-category sharedness diagnostic.
-- `analyze_task_count_convergence.py`: task-count convergence diagnostic.
-- `analyze_phase_convergence.py`: decode/prefill/decode-step convergence and sharedness diagnostic.
-- `analyze_tau_sensitivity.py`: PCA-retention and tau sensitivity diagnostic.
+- `analysis/`: H1 diagnostic analysis scripts.
 - `configs/`: paper parameter records for full runs and diagnostics.
+
+Shared method code lives in `decodeshare.sharedness` and
+`decodeshare.activations`; files in this folder are experiment entry points.
 
 ## Results
 

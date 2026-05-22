@@ -8,7 +8,7 @@ analyze_task_count_convergence.py
 输出：CSV + PNG
 
 示例：
-  python analyze_task_count_convergence.py \
+  python analysis/analyze_task_count_convergence.py \
     --acts_dir results/acts/<MODEL_TAG>/layer10_... \
     --pca_var 0.95 --min_dim 1 --max_dim 4096 \
     --repeats 20 --seed 123 \
@@ -25,7 +25,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 
-from sharedness_base import compute_cross_task_subspace
+from decodeshare.sharedness import compute_cross_task_subspace
 
 def load_acts(acts_dir: str) -> Tuple[Dict[str, np.ndarray], Dict]:
     meta_path = os.path.join(acts_dir, "meta.json")

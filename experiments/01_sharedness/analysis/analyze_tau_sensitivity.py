@@ -11,7 +11,7 @@ analyze_tau_sensitivity.py
   - PNG：shared_ratio 的 heatmap（y=pca_var, x=tau）
 
 示例：
-  python analyze_tau_sensitivity.py \
+  python analysis/analyze_tau_sensitivity.py \
     --acts_dir results/acts/<LLAMA_TAG>/layer10_... \
     --pca_vars 0.8,0.9,0.95,0.97,0.99 \
     --taus 1e-4,2e-4,5e-4,1e-3,2e-3,5e-3,1e-2 \
@@ -29,7 +29,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 
-from sharedness_base import (
+from decodeshare.sharedness import (
     compute_cross_task_subspace,
     compute_relvar_in_basis,
     compute_shared_indices_from_relvar,

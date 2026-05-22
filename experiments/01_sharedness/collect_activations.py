@@ -3,7 +3,7 @@
 collect_activations.py
 
 一次性采集：每个 task 的 decode-phase (seq_len==1) last-token hidden states，
-并做与 sharedness_base.py 一致的公平预处理：
+并做与 decodeshare.sharedness 一致的公平预处理：
   - per_task_max_states cap
   - balance_to="min"（所有 tasks 统一到同样的 state 数）
   - task-wise centering
@@ -31,7 +31,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import torch
 
-from sharedness_base import (
+from decodeshare.activations import (
     _should_write_txt,
     TeeStdout,
     set_global_seed,
@@ -100,7 +100,7 @@ def main():
 
         os.makedirs(args.out_dir, exist_ok=True)
 
-        # 1) load prompts（与 sharedness_base.py 一致）
+        # 1) load prompts (same loader as decodeshare.sharedness)
         prompts_by_task = load_calib_prompts(args.n_prompts, args.seed)
         want = _parse_tasks_arg(args.tasks)
         if want is not None:

@@ -24,5 +24,9 @@ Current public modules:
   answer parsing, correctness checks, and deterministic seeding.
 - `eval_perf`: forced-choice evaluation, decode/prefill shared-basis helpers,
   and shared evaluation utilities used by H2/H3 scripts.
+- `sharedness`: H1 sharedness prompt loading, decode-state collection,
+  shared-component scoring, null tests, and model loading helpers.
+- `activations`: public activation-collection helper namespace used by H1
+  diagnostics.
 - `joint_subspace_large`: shared subspace construction/intervention helpers
   used by the paper experiments.

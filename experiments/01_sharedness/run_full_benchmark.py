@@ -2,7 +2,7 @@
 """
 run_full_benchmark.py
 
-Self-contained runner that reuses utilities from sharedness_base.py (imported as base),
+Self-contained runner that reuses utilities from decodeshare.sharedness (imported as base),
 but DOES NOT call base.main() (avoids args parsing bugs when imported/wrapped).
 
 Pipeline (same as fair):
@@ -36,7 +36,7 @@ import torch
 from datasets import load_dataset
 from tqdm import tqdm
 
-import sharedness_base as base
+from decodeshare import sharedness as base
 
 
 # -----------------------------
@@ -983,7 +983,7 @@ def main():
 
         # pooled PCA via base.compute_cross_task_subspace (must exist)
         if not hasattr(base, "compute_cross_task_subspace"):
-            raise RuntimeError("base.compute_cross_task_subspace not found. Ensure sharedness_base imports it.")
+            raise RuntimeError("base.compute_cross_task_subspace not found. Ensure decodeshare.sharedness imports it.")
 
         task_acts: Dict[str, Dict[int, np.ndarray]] = {t: {int(args.layer): X_by_task[t]} for t in tasks}
         joint_subspace, cross_dim, contributions, full_pca_info = base.compute_cross_task_subspace(

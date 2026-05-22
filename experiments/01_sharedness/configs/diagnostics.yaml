@@ -5,7 +5,7 @@ cluster:
 
 environment:
   conda_env: decodeshare
-  pythonpath: src
+  pythonpath: repo_root
 
 activation_collection:
   script: experiments/01_sharedness/collect_activations.py
@@ -25,18 +25,18 @@ activation_collection:
 
 diagnostics:
   within_vs_mixed:
-    script: experiments/01_sharedness/analyze_within_vs_mixed.py
+    script: experiments/01_sharedness/analysis/analyze_within_vs_mixed.py
     pca_var: 0.95
     tau: 0.001
     n_mixed: 50
     seed: 123
   task_count_convergence:
-    script: experiments/01_sharedness/analyze_task_count_convergence.py
+    script: experiments/01_sharedness/analysis/analyze_task_count_convergence.py
     pca_var: 0.95
     repeats: 20
     seed: 123
   phase_convergence:
-    script: experiments/01_sharedness/analyze_phase_convergence.py
+    script: experiments/01_sharedness/analysis/analyze_phase_convergence.py
     loader: fair
     pca_var: 0.95
     tau: 0.001
@@ -44,7 +44,7 @@ diagnostics:
     decode_step_t: 8
     seed: 123
   tau_sensitivity:
-    script: experiments/01_sharedness/analyze_tau_sensitivity.py
+    script: experiments/01_sharedness/analysis/analyze_tau_sensitivity.py
     pca_vars:
       - 0.8
       - 0.9

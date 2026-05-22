@@ -5,7 +5,7 @@ cluster:
 
 environment:
   conda_env: decodeshare
-  pythonpath: src
+  pythonpath: repo_root
 
 script: experiments/01_sharedness/run_full_benchmark.py
 summary_script: experiments/01_sharedness/summarize_full_benchmark.py
