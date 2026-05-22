@@ -3,7 +3,7 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
 
-PATCHBACK_DIR="${REPO_ROOT}/downstream/patch_back"
+PATCHBACK_DIR="${REPO_ROOT}/experiments/03_patchback"
 cd "${PATCHBACK_DIR}"
 
 # MODEL_QWEN="Qwen/Qwen2.5-14B-Instruct" bash scripts/full_runs/run_patchback_qwen_suite_and_report.sh

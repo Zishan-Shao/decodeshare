@@ -17,7 +17,7 @@ Canonical scripts in this folder:
 - Task loading uses `decodeshare.benchmark_dataloaders`.
 - `disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py`: local LOTO/helper dependency used by the patchback scripts.
 
-The complete historical bundle remains in `downstream/patch_back/`; this folder
+The complete historical bundle remains in `downstream/patchback_legacy/`; this folder
 keeps only the paper-facing entry points.
 
 Smoke check:

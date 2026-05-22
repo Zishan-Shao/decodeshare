@@ -8,8 +8,9 @@ legacy provenance code that still feeds those runs.
 - `steering_controls/`: projection/repair controls for steering vectors.
 - `prefill_decode_mismatch/`: PCA mismatch diagnostics for prefill vs decode
   hidden-state distributions.
-- `patch_back/`: fuller patchback, open-answer patching, and transfer-control
-  implementation used by the H2 patchback entry points.
+- `patchback_legacy/`: historical patchback, open-answer patching, and
+  transfer-control bundle kept for provenance. Canonical paper-facing patchback
+  entry points live in `experiments/03_patchback/`.
 - `brittleness/`: legacy steering robustness and template-sensitivity scripts.
   This remains as provenance for older vector-generation workflows; it is not
   the main public entry point for steering rank-flip reproduction.
