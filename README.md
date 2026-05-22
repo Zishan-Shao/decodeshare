@@ -235,6 +235,8 @@ python demo/build_interactive_cache.py \
 With the cached TinyLlama demo, `alpha=3` is the default because smaller values
 often look identical under greedy decoding.
 
+Live Space: https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo
+
 ## Reproducing Experiments
 
 Full rerun wrappers live in `scripts/`. They share common overrides such as

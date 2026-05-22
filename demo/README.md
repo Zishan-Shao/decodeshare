@@ -110,3 +110,23 @@ Good example prompts to try:
 - `Explain the concept of 'Singular Value Decomposition' to a 5-year-old using a pirate metaphor.`
 - `I keep getting distracted when studying. Give me a plan for the next 30 minutes.`
 - `Give me a step-by-step checklist for debugging a Python script that suddenly became slow.`
+
+## Hugging Face Space
+
+The demo can be served as a Hugging Face Space. The deployment script builds a
+minimal Space bundle with the Gradio launcher, demo code, and the small
+TinyLlama basis/vector cache.
+
+Live Space: https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo
+
+```bash
+conda activate decodeshare
+hf auth login
+
+python demo/deploy_hf_space.py \
+  --space-id Zishan-Shao/decodeshare-demo
+```
+
+GPU hardware is recommended because the Space still loads TinyLlama model
+weights. To request hardware during upload, pass for example
+`--hardware t4-small`; otherwise choose hardware from the Space settings page.

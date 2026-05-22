@@ -1,0 +1,8 @@
+gradio>=5.49
+torch>=2.2
+transformers>=4.40
+accelerate>=0.28
+sentencepiece>=0.1.99
+protobuf>=4.25
+safetensors>=0.4
+numpy>=1.26,<3
