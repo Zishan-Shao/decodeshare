@@ -66,3 +66,19 @@ outputs/demo_steering_projection/
 
 Open the HTML report to see the projection split, overlap metrics, top logit
 changes, the rank-flip snapshot, and side-by-side generations.
+
+## Gradio App
+
+The optional Gradio UI renders an existing `projection_summary.json` as a compact
+dashboard and can also launch the live demo from the browser.
+
+```bash
+pip install -r demo/requirements-demo.txt
+
+python demo/app.py \
+  --summary outputs/demo_steering_projection/projection_summary.json \
+  --server_port 7860
+```
+
+The app defaults to loading an existing summary. Its live-run panel defaults to
+TinyLlama so the UI is easier to smoke-test than a full Llama-2 run.
