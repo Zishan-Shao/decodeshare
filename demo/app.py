@@ -798,7 +798,7 @@ def build_app():
         with gr.Row():
             preset = gr.Dropdown(["None"] + list(VECTOR_PRESETS.keys()), value="Step-by-step", label="Steering preset")
             vector_mode = gr.Dropdown(VECTOR_MODES, value="original vector", label="Vector mode")
-            alpha = gr.Slider(-8.0, 8.0, value=1.0, step=0.25, label="Alpha")
+            alpha = gr.Slider(-8.0, 8.0, value=3.0, step=0.25, label="Alpha")
             beta = gr.Slider(0.0, 1.0, value=1.0, step=0.05, label="Beta for partial removal")
         with gr.Row():
             inject_first_n = gr.Slider(1, 128, value=20, step=1, label="Inject first N decode steps")

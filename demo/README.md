@@ -100,3 +100,7 @@ python demo/build_interactive_cache.py \
 
 After that file exists, `demo/app.py` will reuse it by default and skip
 basis/vector estimation during initialization.
+
+For the cached TinyLlama demo, `alpha=3` is a useful starting point for visible
+differences. Lower values can look identical under greedy decoding; much higher
+values can push the small model into repetitive text.
