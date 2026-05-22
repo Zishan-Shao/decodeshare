@@ -759,6 +759,98 @@ def chat_once(
     return baseline_history, prefill_history, decode_history, "", status
 
 
+def chat_once_stream(
+    session_id: str,
+    message: str,
+    baseline_history: Optional[List[Dict[str, str]]],
+    prefill_history: Optional[List[Dict[str, str]]],
+    decode_history: Optional[List[Dict[str, str]]],
+    preset: str,
+    mode: str,
+    alpha: float,
+    beta: float,
+    inject_first_n: int,
+    max_new_tokens: int,
+):
+    baseline_history = list(baseline_history or [])
+    prefill_history = list(prefill_history or [])
+    decode_history = list(decode_history or [])
+    message = (message or "").strip()
+    if not message:
+        yield baseline_history, prefill_history, decode_history, "", "Enter a prompt first."
+        return
+    state = CHAT_SESSIONS.get(session_id or "")
+    if state is None:
+        yield baseline_history, prefill_history, decode_history, message, "Initialize the model before chatting."
+        return
+
+    runtime = state["runtime"]
+    config = state["config"]
+    args = make_runtime_args(
+        model=config["model"],
+        device=config["device"],
+        dtype=config["dtype"],
+        layer=config["layer"],
+        basis_k=config["basis_k"],
+        calib_max_new_tokens=config["calib_max_new_tokens"],
+        steer_max_new_tokens=config["steer_max_new_tokens"],
+        eval_max_new_tokens=max_new_tokens,
+        max_prompt_tokens=config["max_prompt_tokens"],
+        alpha=alpha,
+        inject_first_n=inject_first_n,
+        system=config["system"],
+        positive_style="",
+        negative_style="",
+        seed=config["seed"],
+        local_files_only=False,
+        trust_remote_code=False,
+    )
+
+    yield baseline_history, prefill_history, decode_history, message, "Generating baseline response (1/3)..."
+    baseline_prompt = chat_prompt_from_history(baseline_history, message)
+    baseline = runtime.generate_with_optional_vector(
+        state["model"], state["tokenizer"], baseline_prompt, args, vector=None
+    )
+    baseline_history = baseline_history + [
+        {"role": "user", "content": message},
+        {"role": "assistant", "content": baseline.get("text", "")},
+    ]
+
+    yield baseline_history, prefill_history, decode_history, message, "Generating prefill-estimated response (2/3)..."
+    preset_record = None if preset == "None" else state["vectors"].get(preset)
+    prefill_record = None if preset_record is None else preset_record["prefill"]
+    decode_record = None if preset_record is None else preset_record["decode"]
+
+    prefill_vector = None if prefill_record is None else selected_vector(prefill_record, mode, beta)
+    prefill_prompt = chat_prompt_from_history(prefill_history, message)
+    prefill = runtime.generate_with_optional_vector(
+        state["model"], state["tokenizer"], prefill_prompt, args, vector=prefill_vector, alpha=alpha
+    )
+    prefill_history = prefill_history + [
+        {"role": "user", "content": message},
+        {"role": "assistant", "content": prefill.get("text", "")},
+    ]
+
+    yield baseline_history, prefill_history, decode_history, message, "Generating decode-estimated response (3/3)..."
+    decode_vector = None if decode_record is None else selected_vector(decode_record, mode, beta)
+    decode_prompt = chat_prompt_from_history(decode_history, message)
+    decode = runtime.generate_with_optional_vector(
+        state["model"], state["tokenizer"], decode_prompt, args, vector=decode_vector, alpha=alpha
+    )
+    decode_history = decode_history + [
+        {"role": "user", "content": message},
+        {"role": "assistant", "content": decode.get("text", "")},
+    ]
+
+    status = (
+        vector_status(preset, "prefill-est", mode, beta, alpha, prefill_record)
+        + f" | prefill hook apps={int(prefill.get('hook_applications', 0))}\n"
+        + vector_status(preset, "decode-est", mode, beta, alpha, decode_record)
+        + f" | decode hook apps={int(decode.get('hook_applications', 0))}"
+    )
+    yield baseline_history, prefill_history, decode_history, "", status
+
+
 def clear_chat() -> Tuple[List[Dict[str, str]], List[Dict[str, str]], List[Dict[str, str]], str]:
     return [], [], [], "Cleared chat history."
 
@@ -813,21 +905,6 @@ CSS = """
 .gradio-container textarea,
 .gradio-container select {
   border-color: #c7d8e8 !important;
-}
-.gradio-container progress {
-  accent-color: #08bfd0;
-}
-.gradio-container progress::-webkit-progress-value {
-  background: linear-gradient(90deg, #08bfd0 0%, #2b65b1 100%);
-}
-.gradio-container progress::-moz-progress-bar {
-  background: linear-gradient(90deg, #08bfd0 0%, #2b65b1 100%);
-}
-.gradio-container [role="progressbar"] {
-  color: #08bfd0 !important;
-}
-.gradio-container [role="progressbar"] > div {
-  background: linear-gradient(90deg, #08bfd0 0%, #2b65b1 100%) !important;
 }
 .panel {
   border: 1px solid #c7dce9;
@@ -913,11 +990,12 @@ def build_app():
     except ImportError as exc:  # pragma: no cover
         raise SystemExit("Install demo dependencies first: pip install -r demo/requirements-demo.txt") from exc
 
-    def initialize_chat_state_ui(*args, progress=gr.Progress(track_tqdm=False)):
-        return initialize_chat_state(*args, progress=progress)
+    def initialize_chat_state_ui(*args):
+        yield "", render_chat_setup(None), "Loading model and cached DecodeShare vectors..."
+        yield initialize_chat_state(*args)
 
-    def chat_once_ui(*args, progress=gr.Progress(track_tqdm=False)):
-        return chat_once(*args, progress=progress)
+    def chat_once_ui(*args):
+        yield from chat_once_stream(*args)
 
     with gr.Blocks(css=CSS, title="DecodeShare Interactive Steering Chat") as app:
         chat_session = gr.State("")
@@ -1022,7 +1100,7 @@ def build_app():
                 save_cache,
             ],
             outputs=[chat_session, chat_intro, chat_status],
-            show_progress="minimal",
+            show_progress="hidden",
         )
         send_button.click(
             chat_once_ui,
@@ -1040,7 +1118,7 @@ def build_app():
                 max_new_tokens,
             ],
             outputs=[baseline_chat, prefill_chat, decode_chat, user_message, chat_status],
-            show_progress="minimal",
+            show_progress="hidden",
         )
         user_message.submit(
             chat_once_ui,
@@ -1058,7 +1136,7 @@ def build_app():
                 max_new_tokens,
             ],
             outputs=[baseline_chat, prefill_chat, decode_chat, user_message, chat_status],
-            show_progress="minimal",
+            show_progress="hidden",
         )
         load_example_button.click(
             load_example_config,
