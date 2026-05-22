@@ -95,6 +95,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_prompt_tokens", type=int, default=384)
     parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--inject_first_n", type=int, default=20)
+    parser.add_argument("--demo_vector_mode", choices=["caa", "caa_plus_shared"], default="caa_plus_shared")
+    parser.add_argument("--shared_component_scale", type=float, default=4.0)
+    parser.add_argument("--preserve_residual_norm", action="store_true")
     parser.add_argument("--system", default="You are a helpful assistant.")
     parser.add_argument("--positive_style", default="Reply in a vivid pirate voice.")
     parser.add_argument("--negative_style", default="Reply in a concise neutral voice.")
@@ -405,16 +408,57 @@ def project_vector(basis, vector) -> Dict[str, Any]:
     shared = basis @ coeff
     residual = vector - shared
     residual_preserve_norm = residual / (residual.norm() + 1e-12) * (vector.norm() + 1e-12)
+    residual_overlap = float((basis.T @ residual).norm().item() / (residual.norm().item() + 1e-12))
+    residual_preserve_overlap = float(
+        (basis.T @ residual_preserve_norm).norm().item()
+        / (residual_preserve_norm.norm().item() + 1e-12)
+    )
     return {
         "shared": shared.cpu().float(),
         "residual": residual.cpu().float(),
         "residual_preserve_norm": residual_preserve_norm.cpu().float(),
         "overlap_original": float(shared.norm().item() / (vector.norm().item() + 1e-12)),
-        "overlap_residual": float((basis.T @ residual_preserve_norm).norm().item() / (residual_preserve_norm.norm().item() + 1e-12)),
+        "overlap_residual": residual_overlap,
+        "overlap_residual_preserve_norm": residual_preserve_overlap,
         "shared_norm": float(shared.norm().item()),
         "residual_norm": float(residual.norm().item()),
         "residual_preserve_norm_value": float(residual_preserve_norm.norm().item()),
     }
+
+
+def build_demo_vector(basis, caa_vector, args: argparse.Namespace) -> Tuple[Any, Any, Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    caa_projection = project_vector(basis, caa_vector)
+    if args.demo_vector_mode == "caa":
+        demo_vector = caa_vector.float()
+        description = "raw CAA-style contrastive mean-difference vector"
+    else:
+        # For a short public demo, make the shared-channel term visible. This
+        # keeps the direction grounded in the CAA-style vector while amplifying
+        # the component DecodeShare will remove.
+        demo_vector = caa_projection["residual"] + float(args.shared_component_scale) * caa_projection["shared"]
+        description = (
+            "CAA-style vector with its shared component amplified "
+            f"{float(args.shared_component_scale):.2f}x for visual contrast"
+        )
+
+    demo_projection = project_vector(basis, demo_vector)
+    if bool(args.preserve_residual_norm):
+        projected_vector = demo_projection["residual_preserve_norm"]
+        norm_policy = "preserve original demo-vector norm"
+    else:
+        projected_vector = demo_projection["residual"]
+        norm_policy = "raw residual norm"
+
+    info = {
+        "mode": args.demo_vector_mode,
+        "description": description,
+        "shared_component_scale": float(args.shared_component_scale),
+        "projected_norm_policy": norm_policy,
+        "base_caa_overlap": float(caa_projection["overlap_original"]),
+        "demo_vector_norm": float(demo_vector.norm().item()),
+        "projected_vector_norm": float(projected_vector.norm().item()),
+    }
+    return demo_vector.cpu().float(), projected_vector.cpu().float(), demo_projection, caa_projection, info
 
 
 def generate_with_optional_vector(
@@ -566,11 +610,14 @@ def projection_svg(overlap: float) -> str:
 def write_report(out_dir: Path, summary: Dict[str, Any]) -> None:
     metrics = summary["projection_metrics"]
     metric_rows = [
+        {"metric": "demo vector mode", "value": summary["demo_vector"]["mode"]},
+        {"metric": "projection norm policy", "value": summary["demo_vector"]["projected_norm_policy"]},
+        {"metric": "base CAA shared overlap", "value": summary["demo_vector"]["base_caa_overlap"]},
         {"metric": "basis dimension", "value": summary["basis"]["basis_dim"]},
         {"metric": "decode states for basis", "value": summary["basis"]["n_states"]},
         {"metric": "demo PCA variance", "value": summary["basis"]["explained_variance_demo"]},
-        {"metric": "original shared overlap", "value": metrics["overlap_original"]},
-        {"metric": "residual shared overlap", "value": metrics["overlap_residual"]},
+        {"metric": "demo vector shared overlap", "value": metrics["overlap_original"]},
+        {"metric": "projected residual overlap", "value": metrics["overlap_residual"]},
         {"metric": "steering vector norm", "value": summary["steering_vector"]["vector_norm"]},
     ]
 
@@ -664,9 +711,10 @@ pre { white-space: pre-wrap; margin: 0; font-family: ui-monospace, SFMono-Regula
   <section class="panel">
     <h2>Vector Split</h2>
     <p>
-      The CAA-style contrastive steering vector is decomposed into the part
-      inside the demo decode-shared basis and the residual used after
-      DecodeShare projection.
+      The demo vector starts from a CAA-style contrastive steering vector. By
+      default, its shared-channel component is amplified so the before/after
+      behavior is visible in a short run; use <code>--demo_vector_mode caa</code>
+      to show the untouched CAA-style vector.
     </p>
     {projection_svg(metrics['overlap_original'])}
     {html_table(metric_rows, [("metric", "Metric"), ("value", "Value")])}
@@ -730,11 +778,14 @@ def print_console_summary(summary: Dict[str, Any], out_dir: Path) -> None:
         )
 
     print("\n[CAA-style vector projection]")
-    print(f"Original shared overlap: {float(metrics['overlap_original']):.3f}")
+    print("Demo vector:", summary["demo_vector"]["description"])
+    print(f"Base CAA shared overlap: {float(summary['demo_vector']['base_caa_overlap']):.3f}")
+    print(f"Demo vector shared overlap: {float(metrics['overlap_original']):.3f}")
     print(f"After projection overlap: {float(metrics['overlap_residual']):.6f}")
+    print("Projected norm policy:", summary["demo_vector"]["projected_norm_policy"])
     print(
-        "Interpretation: DecodeShare removes the component of this CAA-style vector "
-        "that lies in the demo decode-shared channel, then reuses the residual vector."
+        "Interpretation: DecodeShare removes the component of the demo vector "
+        "that lies in the decode-shared channel, then reuses the residual vector."
     )
 
     print("\n[Top one-step logit increases]")
@@ -763,6 +814,7 @@ def main() -> None:
         print(f"  model: {args.model}")
         print(f"  device: {args.device}")
         print(f"  layer: {args.layer}")
+        print(f"  demo_vector_mode: {args.demo_vector_mode}")
         print(f"  out_dir: {args.out_dir}")
         print("  dry_run: no model will be loaded")
         return
@@ -780,10 +832,10 @@ def main() -> None:
     print(f"[Basis] states={basis_info['n_states']} dim={basis_info['basis_dim']} var={basis_info['explained_variance_demo']:.3f}")
 
     print("[Vector] estimating contrastive steering vector")
-    steering_vector, steering_info = estimate_steering_vector(model, tokenizer, args)
-    projection = project_vector(basis, steering_vector)
-    residual = projection["residual_preserve_norm"]
-    print(f"[Projection] original overlap={projection['overlap_original']:.3f}")
+    caa_vector, steering_info = estimate_steering_vector(model, tokenizer, args)
+    demo_vector, residual, projection, caa_projection, demo_info = build_demo_vector(basis, caa_vector, args)
+    print(f"[Projection] base CAA overlap={caa_projection['overlap_original']:.3f}")
+    print(f"[Projection] demo vector overlap={projection['overlap_original']:.3f}")
     print(f"[Projection] residual overlap={projection['overlap_residual']:.6f}")
 
     print("[Generate] baseline/original/projected examples")
@@ -791,8 +843,11 @@ def main() -> None:
     for prompt in EVAL_PROMPTS:
         generations[prompt] = {
             "baseline (no steering)": generate_with_optional_vector(model, tokenizer, prompt, args, vector=None),
-            "before DecodeShare projection (CAA-style vector)": generate_with_optional_vector(
-                model, tokenizer, prompt, args, vector=steering_vector
+            "before DecodeShare projection (demo vector)": generate_with_optional_vector(
+                model, tokenizer, prompt, args, vector=demo_vector
+            ),
+            "removed shared component only": generate_with_optional_vector(
+                model, tokenizer, prompt, args, vector=projection["shared"]
             ),
             "after DecodeShare projection (shared removed)": generate_with_optional_vector(
                 model, tokenizer, prompt, args, vector=residual
@@ -801,7 +856,8 @@ def main() -> None:
 
     print("[Probe] one-step logit deltas")
     top_delta_blocks = [
-        top_logit_deltas(model, tokenizer, args, steering_vector, "Before DecodeShare projection"),
+        top_logit_deltas(model, tokenizer, args, demo_vector, "Before DecodeShare projection"),
+        top_logit_deltas(model, tokenizer, args, projection["shared"], "Removed shared component only"),
         top_logit_deltas(model, tokenizer, args, residual, "After DecodeShare projection"),
     ]
 
@@ -813,14 +869,20 @@ def main() -> None:
             "layer": int(args.layer),
             "alpha": float(args.alpha),
             "inject_first_n": int(args.inject_first_n),
+            "demo_vector_mode": args.demo_vector_mode,
+            "shared_component_scale": float(args.shared_component_scale),
+            "preserve_residual_norm": bool(args.preserve_residual_norm),
             "positive_style": args.positive_style,
             "negative_style": args.negative_style,
         },
         "basis": basis_info,
         "steering_vector": steering_info,
+        "demo_vector": demo_info,
+        "base_caa_projection_metrics": {k: v for k, v in caa_projection.items() if not hasattr(v, "shape")},
         "projection_metrics": {k: v for k, v in projection.items() if not hasattr(v, "shape")},
         "vector_preview": {
-            "original_first_values": tensor_to_list(steering_vector),
+            "base_caa_first_values": tensor_to_list(caa_vector),
+            "demo_vector_first_values": tensor_to_list(demo_vector),
             "shared_first_values": tensor_to_list(projection["shared"]),
             "residual_first_values": tensor_to_list(residual),
         },

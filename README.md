@@ -211,13 +211,16 @@ python demo/run_steering_projection_demo.py \
   --model meta-llama/Llama-2-7b-chat-hf \
   --device cuda \
   --layer 28 \
+  --demo_vector_mode caa_plus_shared \
   --out_dir outputs/demo_steering_projection
 ```
 
 The demo estimates a small decode-time shared basis, decomposes a contrastive
 steering vector into shared and residual components, includes the steering
 rank-flip snapshot, prints a CAA-style before/after example, and writes an HTML
-report. See `demo/README.md` for a smaller TinyLlama smoke-run option.
+report. The default demo amplifies the vector's shared component for visual
+contrast; use `--demo_vector_mode caa` for the untouched CAA-style vector. See
+`demo/README.md` for a smaller TinyLlama smoke-run option.
 
 ## Reproducing Experiments
 

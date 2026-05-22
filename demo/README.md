@@ -18,6 +18,11 @@ The script prints a concise rank-flip table and a CAA-style before/after
 generation example directly to the terminal. It also writes the same content,
 plus a visual vector split, to an HTML report.
 
+By default, the script uses a controlled demo vector: it starts from the
+CAA-style contrastive vector and amplifies the part that overlaps the
+decode-shared basis, so the before/after effect is visible in a short run. To
+use the untouched CAA-style vector, add `--demo_vector_mode caa`.
+
 ## Run
 
 ```bash
@@ -27,6 +32,7 @@ python demo/run_steering_projection_demo.py \
   --model meta-llama/Llama-2-7b-chat-hf \
   --device cuda \
   --layer 28 \
+  --demo_vector_mode caa_plus_shared \
   --out_dir outputs/demo_steering_projection
 ```
 
