@@ -105,6 +105,24 @@ For the cached TinyLlama demo, `alpha=3` is a useful starting point for visible
 differences. Lower values can look identical under greedy decoding; much higher
 values can push the small model into repetitive text.
 
+### Local CPU fallback
+
+The interactive demo can also run locally on CPU with the cached TinyLlama
+basis/vector artifact. This avoids any hosted GPU requirement, but generation is
+slow because the Space still runs a 1.1B-parameter model:
+
+```bash
+conda activate decodeshare
+pip install -r demo/requirements-demo.txt
+python demo/app.py --server_port 7860
+```
+
+When CUDA is unavailable, the UI defaults to `cpu` and `fp32`. If you have a
+working GPU, launching with `CUDA_VISIBLE_DEVICES=<id>` is strongly preferred.
+`llama.cpp`/GGUF is not used here because DecodeShare applies PyTorch layer
+hooks to hidden states during KV-cached decoding; llama.cpp does not expose the
+same intervention interface out of the box.
+
 Good example prompts to try:
 
 - `Explain the concept of 'Singular Value Decomposition' to a 5-year-old using a pirate metaphor.`
@@ -130,3 +148,5 @@ python demo/deploy_hf_space.py \
 GPU hardware is recommended because the Space still loads TinyLlama model
 weights. To request hardware during upload, pass for example
 `--hardware t4-small`; otherwise choose hardware from the Space settings page.
+Paid Space hardware requires Hugging Face billing credits; without credits the
+deployment still succeeds, but the Space remains on CPU.

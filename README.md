@@ -236,6 +236,8 @@ With the cached TinyLlama demo, `alpha=3` is the default because smaller values
 often look identical under greedy decoding.
 
 Live Space: https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo
+The same Gradio demo can also run locally on CPU with the bundled cache, though
+generation is much slower than on GPU.
 
 ## Reproducing Experiments
 

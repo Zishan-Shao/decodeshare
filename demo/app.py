@@ -94,6 +94,10 @@ def default_device_choice() -> str:
     return "cpu"
 
 
+def default_dtype_choice(device: str) -> str:
+    return "fp32" if device == "cpu" else "fp16"
+
+
 def demo_runtime():
     from demo import run_steering_projection_demo as runtime
 
@@ -780,8 +784,9 @@ def build_app():
                 use_cache = gr.Checkbox(value=True, label="Use cache if available")
                 save_cache = gr.Checkbox(value=True, label="Save cache after estimation")
             with gr.Row():
-                chat_device = gr.Dropdown(["cuda", "cpu", "mps"], value=default_device_choice(), label="Device")
-                chat_dtype = gr.Dropdown(["fp16", "bf16", "fp32"], value="fp16", label="Dtype")
+                default_device = default_device_choice()
+                chat_device = gr.Dropdown(["cuda", "cpu", "mps"], value=default_device, label="Device")
+                chat_dtype = gr.Dropdown(["fp16", "bf16", "fp32"], value=default_dtype_choice(default_device), label="Dtype")
                 chat_layer = gr.Number(value=16, precision=0, label="Layer")
                 chat_basis_k = gr.Number(value=24, precision=0, label="Basis dim")
             with gr.Row():

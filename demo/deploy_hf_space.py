@@ -58,6 +58,7 @@ def build_bundle(bundle_dir: Path) -> Path:
 def upload_bundle(bundle_dir: Path, space_id: str, private: bool, hardware: str) -> None:
     try:
         from huggingface_hub import HfApi
+        from huggingface_hub.errors import HfHubHTTPError
     except ImportError as exc:
         raise SystemExit("Install huggingface_hub first: pip install huggingface_hub") from exc
 
@@ -79,7 +80,18 @@ def upload_bundle(bundle_dir: Path, space_id: str, private: bool, hardware: str)
     print(f"Commit: {commit.oid}")
 
     if hardware:
-        runtime = api.request_space_hardware(repo_id=space_id, hardware=hardware)
+        try:
+            runtime = api.request_space_hardware(repo_id=space_id, hardware=hardware)
+        except HfHubHTTPError as exc:
+            status = getattr(exc.response, "status_code", None)
+            if status == 402:
+                print(
+                    "Hardware request skipped: Hugging Face returned 402 Payment Required. "
+                    "Add pre-paid credits in HF billing settings or choose hardware manually "
+                    "from the Space settings page."
+                )
+                return
+            raise
         print(f"Requested hardware: {hardware}")
         print(f"Runtime stage: {runtime.stage}")
 
