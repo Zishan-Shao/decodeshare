@@ -17,7 +17,7 @@ bash scripts/01_h1_sharedness/run_mock.sh
 bash scripts/02_h2_decode_ablation/run_mock.sh
 bash scripts/03_h2_patchback/run_mock.sh
 bash scripts/04_h3_prefill_decode/run_mock.sh
-bash scripts/05_steering_repair/run_mock.sh
+bash scripts/05_steering_rank_flip/run_mock.sh
 ```
 
 ## Full Reruns

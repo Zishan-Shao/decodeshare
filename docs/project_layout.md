@@ -2,14 +2,14 @@
 
 This document defines the public camera-ready layout. The goal is that a new
 reader can find the code for each paper result without seeing exploratory
-folders or rebuttal-only scratch work as first-class project structure.
+folders or review-phase scratch work as first-class project structure.
 
 ## Top-Level Directories
 
 - `src/decodeshare/`: reusable package code shared across experiments.
 - `experiments/`: one folder per paper experiment block, ordered by paper body.
-- `downstream/`: patchback, brittleness/steering, and rebuttal bundles grouped
-  outside the main paper-section flow.
+- `downstream/`: downstream steering, patchback, mismatch diagnostics, and
+  legacy provenance grouped outside the main paper-section flow.
 - `scripts/`: command-line wrappers for smoke tests and reproducibility entry
   points.
 - `paper_artifacts/`: compact table/figure artifacts and summaries.
@@ -17,7 +17,7 @@ folders or rebuttal-only scratch work as first-class project structure.
 - `tests/`: lightweight tests that do not require long GPU runs.
 
 Historical top-level directories such as `Hype1/`, `patch_back/`,
-`brittleness/`, `reasoning/`, `lateruse/`, `rebuttal/`, and `results/` are not
+`brittleness/`, `reasoning/`, `lateruse/`, and `results/` are not
 part of the public root layout. Their current camera-ready homes are
 `experiments/`, `downstream/`, `paper_artifacts/`, and `src/`.
 

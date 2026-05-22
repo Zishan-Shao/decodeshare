@@ -3,9 +3,9 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
 
-cd "${REPO_ROOT}/experiments/05_steering_repair"
+cd "${REPO_ROOT}/experiments/05_steering_controls"
 
-OUT_DIR="${OUT_DIR:-${REPO_ROOT}/outputs/05_steering_repair/multibench}"
+OUT_DIR="${OUT_DIR:-${REPO_ROOT}/outputs/05_steering_controls/multibench}"
 mkdir -p "${OUT_DIR}"
 
 run_python_gpu steering_vector_reliability_multibench_patch_v3.py \

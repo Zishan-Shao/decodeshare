@@ -49,7 +49,7 @@ TRAD_FAMILY_JSON="${DEPLOY_DIR}/ranking_flip_trad_family.json"
 mkdir -p "${RANKING_DIR}" "${DEPLOY_DIR}"
 
 if [[ "${RUN_CROSS_METHOD}" == "1" ]]; then
-  run_python_gpu downstream/rebuttal/orthogonal_steer/exp_A1_cross_method_rankflip.py \
+  run_python_gpu downstream/steering_rank_flip/exp_cross_method_rank_flip.py \
     --model "${MODEL_NAME}" \
     --device "${DEVICE}" \
     --model_dtype "${MODEL_DTYPE}" \
@@ -79,7 +79,7 @@ if [[ "${RUN_CROSS_METHOD}" == "1" ]]; then
 fi
 
 if [[ "${RUN_DIAGNOSTIC}" == "1" ]]; then
-  run_python_gpu downstream/rebuttal/exp_ranking_flip_steering_layer28_rand100_full.py \
+  run_python_gpu downstream/steering_rank_flip/exp_diagnostic_rank_flip.py \
     --model "${MODEL_NAME}" \
     --device "${DEVICE}" \
     --model_dtype "${MODEL_DTYPE}" \
@@ -102,7 +102,7 @@ if [[ "${RUN_DIAGNOSTIC}" == "1" ]]; then
     --out_dir "${DEPLOY_DIR}" \
     --out_json "${DIAG_JSON}"
 
-  run_python_gpu downstream/rebuttal/exp_ranking_flip_trad_family.py \
+  run_python_gpu downstream/steering_rank_flip/exp_trad_family_rank_flip.py \
     --base_json "${DIAG_JSON}" \
     --vectors_manifest "${DIAG_MANIFEST}" \
     --model "${MODEL_NAME}" \

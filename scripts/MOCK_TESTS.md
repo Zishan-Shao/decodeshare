@@ -23,7 +23,7 @@ the project environment.
 | H2 ablation/energy | `bash scripts/02_h2_decode_ablation/run_mock.sh` | PASS |
 | H2 patchback | `bash scripts/03_h2_patchback/run_mock.sh` | PASS |
 | H3 prefill/decode | `bash scripts/04_h3_prefill_decode/run_mock.sh` | PASS |
-| Steering repair | `bash scripts/05_steering_repair/run_mock.sh` | PASS |
+| Steering rank flip | `bash scripts/05_steering_rank_flip/run_mock.sh` | PASS |
 
 ## What Was Validated
 

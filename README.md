@@ -143,9 +143,9 @@ bash scripts/reproduce_steering_flip_tables.sh
 
 Implementation and command records:
 
-- `downstream/rebuttal/orthogonal_steer/`
-- `downstream/rebuttal/`
-- `scripts/05_steering_repair/COMMANDS.md`
+- `downstream/steering_rank_flip/`
+- `downstream/steering_controls/`
+- `scripts/05_steering_rank_flip/COMMANDS.md`
 
 ### Shared Channel Contents
 
@@ -235,7 +235,7 @@ Section command notes:
 - `scripts/02_h2_decode_ablation/COMMANDS.md`
 - `scripts/03_h2_patchback/COMMANDS.md`
 - `scripts/04_h3_prefill_decode/COMMANDS.md`
-- `scripts/05_steering_repair/COMMANDS.md`
+- `scripts/05_steering_rank_flip/COMMANDS.md`
 
 ## Repository Layout
 
@@ -245,7 +245,7 @@ decodeshare/
   experiments/              # Paper-section experiment code
   scripts/                  # Smoke checks and full reproduction wrappers
   src/decodeshare/          # Shared package namespace
-  downstream/               # Patchback, steering, and rebuttal bundles
+  downstream/               # Downstream experiments and legacy provenance bundles
   paper_artifacts/figures/  # Lightweight paper figures for browsing
   docs/                     # Setup and reproduction notes
   tests/                    # Lightweight local checks
@@ -259,7 +259,8 @@ decodeshare/
 | H2 decode ablation | Remove shared decode components with LOTO controls | `experiments/02_decode_ablation/` |
 | H2 patchback | Patch shared subspaces back into corrupted decisions | `experiments/03_patchback/` |
 | H3 prefill/decode | Compare estimator and intervention timing | `experiments/04_prefill_decode/` |
-| Steering repair | Test downstream robustness and steering repair | `experiments/05_steering_repair/` |
+| Steering rank flip | Compare prefill/decode steering validation against held-out deployment | `downstream/steering_rank_flip/`, `scripts/05_steering_rank_flip/` |
+| Steering controls | Projection controls and robustness checks for steering vectors | `downstream/steering_controls/`, `experiments/05_steering_controls/` |
 
 ## Notes
 

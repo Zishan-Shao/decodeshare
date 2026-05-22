@@ -37,7 +37,7 @@ Section-level smoke scripts:
 - `scripts/02_h2_decode_ablation/run_mock.sh`
 - `scripts/03_h2_patchback/run_mock.sh`
 - `scripts/04_h3_prefill_decode/run_mock.sh`
-- `scripts/05_steering_repair/run_mock.sh`
+- `scripts/05_steering_rank_flip/run_mock.sh`
 
 ## Full Reruns
 

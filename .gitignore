@@ -19,6 +19,7 @@ outputs/
 runs/
 wandb/
 checkpoints/
+downstream/**/results/
 
 # Keep compact paper summaries in git, but keep raw heavy artifacts external.
 paper_artifacts/*.pdf
