@@ -754,7 +754,7 @@ def clip_for_console(text: str, limit: int = 900) -> str:
 def print_console_summary(summary: Dict[str, Any], out_dir: Path) -> None:
     metrics = summary["projection_metrics"]
     print("\n" + "=" * 88)
-    print("DecodeShare steering demo: rank flip + CAA-style before/after")
+    print("DecodeShare steering demo: rank flip + example vector before/after")
     print("=" * 88)
     print("\n[Rank flip snapshot: paper-level steering result]")
     print(f"{'Pool':<18} {'Prefill rho':>12} {'Decode rho':>12} {'Delta':>10}")
@@ -777,9 +777,11 @@ def print_console_summary(summary: Dict[str, Any], out_dir: Path) -> None:
             f"{float(row['regret_at_1']):>10.3f}"
         )
 
-    print("\n[CAA-style vector projection]")
+    print("\n[Example steering-vector projection]")
+    print("Protocol role: inspect and remove overlap with the decode-shared channel.")
+    print("Base vector source:", summary["steering_vector"]["source"])
     print("Demo vector:", summary["demo_vector"]["description"])
-    print(f"Base CAA shared overlap: {float(summary['demo_vector']['base_caa_overlap']):.3f}")
+    print(f"Base vector shared overlap: {float(summary['demo_vector']['base_caa_overlap']):.3f}")
     print(f"Demo vector shared overlap: {float(metrics['overlap_original']):.3f}")
     print(f"After projection overlap: {float(metrics['overlap_residual']):.6f}")
     print("Projected norm policy:", summary["demo_vector"]["projected_norm_policy"])

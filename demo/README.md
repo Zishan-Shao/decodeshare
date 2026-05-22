@@ -14,9 +14,9 @@ The demo is intentionally small. It is not a replacement for the paper's full
 steering-ranking experiments, but it gives a concrete view of how DecodeShare
 changes a steering vector.
 
-The script prints a concise rank-flip table and a CAA-style before/after
-generation example directly to the terminal. It also writes the same content,
-plus a visual vector split, to an HTML report.
+The script prints a concise rank-flip table and an example steering-vector
+before/after directly to the terminal. It also writes the same content, plus a
+visual vector split, to an HTML report.
 
 By default, the script uses a controlled demo vector: it starts from the
 CAA-style contrastive vector and amplifies the part that overlaps the
