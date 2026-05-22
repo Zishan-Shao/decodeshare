@@ -40,7 +40,7 @@ Outputs:
     - <prefix>_tasks.csv (one row per task per JSON)
 
 Example:
-  python summarize_energy_kmatch_outputs.py \
+  python analysis/summarize_energy_kmatch_outputs.py \
     --results_dir ./results/energy_kmatch \
     --pattern "*.json" \
     --output ./results/energy_kmatch/SUMMARY.md \
@@ -48,13 +48,13 @@ Example:
     --csv_prefix ./results/energy_kmatch/summary
     
 1) 最常用：汇总一个目录下所有 out_json
-python summarize_energy_kmatch_outputs.py \
+python analysis/summarize_energy_kmatch_outputs.py \
   --results_dir ../../outputs/02_decode_ablation/energy_kmatch_alpha_sweep \
   --pattern "*.json" \
   --output ../../outputs/02_decode_ablation/energy_kmatch_alpha_sweep/SUMMARY.md
   
 2) 同时输出 CSV（方便你画图）
-python summarize_energy_kmatch_outputs.py \
+python analysis/summarize_energy_kmatch_outputs.py \
   --results_dir ./results/energy_kmatch \
   --pattern "*.json" \
   --output ./results/energy_kmatch/SUMMARY.md \
@@ -62,7 +62,7 @@ python summarize_energy_kmatch_outputs.py \
   --csv_prefix ./results/energy_kmatch/summary
 
 3) 只看某几个任务
-python summarize_energy_kmatch_outputs.py \
+python analysis/summarize_energy_kmatch_outputs.py \
   --results_dir ./results/energy_kmatch \
   --tasks commonsenseqa,strategyqa,aqua \
   --output ./results/energy_kmatch/SUMMARY_small.md

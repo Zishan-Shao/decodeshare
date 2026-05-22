@@ -55,7 +55,7 @@ cat > "${TMPDIR}/mixed_protocol_loto.json" <<'JSON'
   }
 }
 JSON
-(cd "${REPO_ROOT}" && run_python experiments/02_decode_ablation/summarize_disturb_cot_results.py --results_dir "${TMPDIR}" --pattern mixed_protocol_loto.json --no_recursive --output "${TMPDIR}/summary.md" >/dev/null)
+(cd "${REPO_ROOT}" && run_python experiments/02_decode_ablation/analysis/summarize_disturb_cot_results.py --results_dir "${TMPDIR}" --pattern mixed_protocol_loto.json --no_recursive --output "${TMPDIR}/summary.md" >/dev/null)
 grep -E '\| gsm8k +\| 1 +\| greedy +' "${TMPDIR}/summary.md" >/dev/null
 grep -E '\| commonsenseqa +\| 1 +\| forced_choice +' "${TMPDIR}/summary.md" >/dev/null
 

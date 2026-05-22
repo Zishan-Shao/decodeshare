@@ -11,7 +11,7 @@ Key upgrades vs the older summarizer:
   
   Most common:
 
-python summarize_disturb_cot_results.py \
+python analysis/summarize_disturb_cot_results.py \
   --results_dir ../../outputs/02_decode_ablation/loto \
   --recursive \
   --pattern "*.json"
@@ -19,7 +19,7 @@ python summarize_disturb_cot_results.py \
 
 If you only want the loto8 runs:
 
-python summarize_disturb_cot_results.py \
+python analysis/summarize_disturb_cot_results.py \
   --results_dir outputs/02_decode_ablation/loto \
   --recursive \
   --pattern "*.json" \
@@ -716,19 +716,19 @@ if __name__ == "__main__":
 # comprehensive summary reports.
 
 # # Basic usage (default: results/disturb_cot/)
-# python summarize_disturb_cot_results.py
+# python analysis/summarize_disturb_cot_results.py
 
 # # Specify custom directory
-# python summarize_disturb_cot_results.py --results_dir ../outputs/02_decode_ablation/loto
+# python analysis/summarize_disturb_cot_results.py --results_dir ../outputs/02_decode_ablation/loto
 
 # # Custom output file
-# python summarize_disturb_cot_results.py --output outputs/02_decode_ablation/loto/COMPREHENSIVE_SUMMARY.md
+# python analysis/summarize_disturb_cot_results.py --output outputs/02_decode_ablation/loto/COMPREHENSIVE_SUMMARY.md
 
 # # Custom file pattern
-# python summarize_disturb_cot_results.py --pattern "*loto*.json"
+# python analysis/summarize_disturb_cot_results.py --pattern "*loto*.json"
 
 # # Filter for no_aqua files only
-# python summarize_disturb_cot_results.py --no_aqua
+# python analysis/summarize_disturb_cot_results.py --no_aqua
 
 # """
 

@@ -23,7 +23,7 @@ Modes:
   baseline / shared_full / shared_staged / rand_full / rand_staged
 
 Usage example:
-  python summarize_disturb_cot_diagnostics.py \
+  python analysis/summarize_disturb_cot_diagnostics.py \
     --results_dir ../../outputs/02_decode_ablation/loto \
     --pattern "*.json" \
     --output ../../outputs/02_decode_ablation/loto/DIAGNOSTIC_SUMMARY.md
@@ -713,14 +713,14 @@ if __name__ == "__main__":
 #     If loto_eval_mode="all", it will summarize all datasets inside each fold.
 
 # Example:
-#   python summarize_disturb_cot_diagnostics.py \
+#   python analysis/summarize_disturb_cot_diagnostics.py \
 #     --results_dir outputs/02_decode_ablation/loto \
 #     --pattern "*.json" \
 #     --output outputs/02_decode_ablation/loto/DIAGNOSTIC_SUMMARY.md
 
 # 默认（总结 greedy，输出到 DIAGNOSTIC_SUMMARY.md）：
 
-# python summarize_disturb_cot_diagnostics.py \
+# python analysis/summarize_disturb_cot_diagnostics.py \
 #   --results_dir ../../outputs/02_decode_ablation/loto \
 #   --pattern "*.json" \
 #   --output ../../outputs/02_decode_ablation/loto/DIAGNOSTIC_SUMMARY.md
@@ -728,7 +728,7 @@ if __name__ == "__main__":
 
 # 只看某个模型（比如 qwen）：
 
-# python summarize_disturb_cot_diagnostics.py \
+# python analysis/summarize_disturb_cot_diagnostics.py \
 #   --results_dir outputs/02_decode_ablation/loto \
 #   --only_model_substr qwen \
 #   --output outputs/02_decode_ablation/loto/DIAG_qwen.md
@@ -736,7 +736,7 @@ if __name__ == "__main__":
 
 # 把阈值调得更敏感/更保守（例如：更敏感地抓“解析失败”）：
 
-# python summarize_disturb_cot_diagnostics.py \
+# python analysis/summarize_disturb_cot_diagnostics.py \
 #   --results_dir outputs/02_decode_ablation/loto \
 #   --parse_drop_thresh 0.10 \
 #   --extr_floor 0.70 \
@@ -746,7 +746,7 @@ if __name__ == "__main__":
 
 # 同时输出 accuracy 表（用于对齐“掉点是否对应解析失败”）：
 
-# python summarize_disturb_cot_diagnostics.py \
+# python analysis/summarize_disturb_cot_diagnostics.py \
 #   --results_dir outputs/02_decode_ablation/loto \
 #   --include_accuracy \
 #   --output outputs/02_decode_ablation/loto/DIAG_with_acc.md

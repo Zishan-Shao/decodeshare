@@ -26,9 +26,7 @@ The canonical H2 runners also avoid using `torch.cuda.is_available()` while buil
 - `run_loto_reasoning.py`: canonical H2 LOTO/all-task decode-only removal runner with forced-choice support.
 - `run_energy_kmatch_reasoning.py`: alpha-match and k-match energy controls for reasoning tasks.
 - `run_energy_kmatch_generation.py`: generation-side energy-control runner.
-- `summarize_disturb_cot_results.py`: aggregates LOTO/all-task result JSONs.
-- `summarize_disturb_cot_diagnostics.py`: diagnostic summary tables.
-- `summarize_energy_kmatch_outputs.py`: energy-control summary aggregation.
+- `analysis/`: summary and diagnostic aggregation scripts.
 - `configs/`: paper parameter records.
 
 Shared benchmark loading, prompt construction, answer parsing, correctness, and
