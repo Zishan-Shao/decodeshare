@@ -1,24 +1,14 @@
 # DecodeShare
 
-DecodeShare asks whether large language models reuse a task-general decision
-channel during KV-cached decoding. Under modern inference, the prompt is first
-processed in a prefill pass, but each next-token decision is made by a
-single-token decode step. DecodeShare therefore studies the hidden states that
-actually drive decode-time logits, rather than treating prefill activations as
-the default intervention target.
+DecodeShare is a protocol for finding task-general decision channels in
+KV-cached decode-time hidden states. It estimates low-dimensional subspaces
+shared across tasks, then tests their causal role by removing them only during
+decoding under matched intervention budgets.
 
-The protocol identifies low-dimensional subspaces that are consistently shared
-across tasks in decode-time hidden states, then tests their causal role by
-removing the subspace only during decoding under matched intervention budgets.
-Across the paper's experiments, disturbing this decode-shared subspace harms
-decision performance more than matched prefill-derived or random controls. The
-same channel also matters for activation steering: steering vectors can overlap
-task-general decode structure, and decode-time validation gives a more reliable
-selection signal for held-out KV-cached deployment than prefill-based proxies.
-
-This repository contains the public artifact for reproducing those sharedness,
-decode ablation, patchback, prefill/decode mismatch, and steering-ranking
-experiments.
+The artifact reproduces the paper's sharedness, decode ablation, patchback,
+prefill/decode mismatch, and steering-ranking experiments, including the result
+that decode-time validation is a stronger proxy for held-out steering utility
+than prefill-based validation.
 
 <p align="center">
   <img src="paper_artifacts/figures/decodeshare_pipeline.jpg" alt="DecodeShare pipeline" width="96%">
