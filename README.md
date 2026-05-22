@@ -201,6 +201,23 @@ helpers. It does not download models or run long GPU experiments.
 The conda environment installs the local package in editable mode through
 `pyproject.toml`, so a separate `pip install -e .` step is not needed.
 
+## Demo
+
+For a compact visual example of how DecodeShare changes a steering vector, run
+the Llama steering projection demo:
+
+```bash
+python demo/run_steering_projection_demo.py \
+  --model meta-llama/Llama-2-7b-chat-hf \
+  --device cuda \
+  --layer 28 \
+  --out_dir outputs/demo_steering_projection
+```
+
+The demo estimates a small decode-time shared basis, decomposes a contrastive
+steering vector into shared and residual components, and writes an HTML report.
+See `demo/README.md` for a smaller TinyLlama smoke-run option.
+
 ## Reproducing Experiments
 
 Full rerun wrappers live in `scripts/`. They share common overrides such as
@@ -230,6 +247,7 @@ Section command notes:
 
 ```text
 decodeshare/
+  demo/                     # Compact steering vector projection demo
   experiments/              # Paper-section experiment code
   scripts/                  # Smoke checks and full reproduction wrappers
   src/decodeshare/          # Shared package namespace
