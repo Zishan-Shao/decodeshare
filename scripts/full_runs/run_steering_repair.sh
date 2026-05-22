@@ -8,7 +8,7 @@ cd "${REPO_ROOT}/experiments/05_steering_controls"
 OUT_DIR="${OUT_DIR:-${REPO_ROOT}/outputs/05_steering_controls/multibench}"
 mkdir -p "${OUT_DIR}"
 
-run_python_gpu steering_vector_reliability_multibench_patch_v3.py \
+run_python_gpu steering_vector_reliability_multibench_patch.py \
   --model "${MODEL:-meta-llama/Llama-2-7b-chat-hf}" \
   --device "${DEVICE}" \
   --dtype "${MODEL_DTYPE:-fp32}" \
@@ -29,7 +29,7 @@ run_python_gpu steering_vector_reliability_multibench_patch_v3.py \
   --show_per_template "${SHOW_PER_TEMPLATE:-1}"
 
 if [[ "${SUMMARIZE:-1}" == "1" ]]; then
-  run_python summarize_multibench_v3_full.py \
+  run_python summarize_multibench_full.py \
     --root_dir "${OUT_DIR}" \
     --out_dir "${OUT_DIR}/summary_pack"
 fi

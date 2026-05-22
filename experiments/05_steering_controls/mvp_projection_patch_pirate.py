@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-mvp_projection_patch_pirate_v4_debug.py
+mvp_projection_patch_pirate.py
 
-基于你的 mvp_pirate_v4 脚本，加入以下“快速发现问题/早停”能力：
+Pirate steering projection sanity check with fail-fast debugging:
 
 Debug / Fail-fast:
   1) chat template 下 tokenize 修复：chat 模式不重复 add_special_tokens（常见“全0命中”原因）
@@ -28,15 +28,15 @@ Debug / Fail-fast:
   - v / B npy
 
 # 只跑 v + probe（几十秒内知道 hook/v 有没有推动 pirate token）
-CUDA_VISIBLE_DEVICES=0 python mvp_projection_patch_pirate_v5.py \
+CUDA_VISIBLE_DEVICES=0 python mvp_projection_patch_pirate.py \
   --layer 28 --dtype fp32 \
   --v_mode decode --v_decode_steps 16 --v_n 8 \
   --probe_alpha 12 --fail_fast 1 --debug_only 1 \
-  --out_dir results/mvp_pirate_v4_debug_probe
+  --out_dir results/mvp_pirate_debug_probe
   
 
 # 小子集快速 eval（1~2 分钟内确认能不能出 hits）
-CUDA_VISIBLE_DEVICES=0 python mvp_projection_patch_pirate_v5.py \
+CUDA_VISIBLE_DEVICES=0 python mvp_projection_patch_pirate.py \
   --layer 28 --dtype bf16 \
   --v_mode decode --v_decode_steps 16 --v_n 8 \
   --alphas 6,10,14 --inject_first_n 64 \
@@ -46,7 +46,7 @@ CUDA_VISIBLE_DEVICES=0 python mvp_projection_patch_pirate_v5.py \
   --basis_n_prompts 4 --calib_max_new_tokens 16 \
   --max_new_tokens 64 \
   --early_abort_after 30 --early_abort_if_all_zero 1 \
-  --out_dir results/mvp_pirate_v4_debug_small
+  --out_dir results/mvp_pirate_debug_small
  
   
 
@@ -843,7 +843,7 @@ def main():
     ap.add_argument("--stop_on_first_success", type=int, default=0)
 
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out_dir", type=str, default="results/mvp_pirate_v4")
+    ap.add_argument("--out_dir", type=str, default="results/mvp_pirate")
 
     args = ap.parse_args()
     seed_everything(args.seed)
@@ -1110,7 +1110,7 @@ def main():
 
     md_path = os.path.join(args.out_dir, "summary.md")
     with open(md_path, "w", encoding="utf-8") as f:
-        f.write("# MVP v4+debug: Pirate steering projection repair\n\n")
+        f.write("# Pirate steering projection repair\n\n")
         f.write(f"- model: {args.model}\n")
         f.write(f"- layer: {args.layer}\n")
         f.write(f"- v_mode: {args.v_mode}\n")

@@ -2,9 +2,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-steering_vector_reliability_multibench_patch_v3.py
+steering_vector_reliability_multibench_patch.py
 
-v3 = v2 + two minimal, high-yield fixes to improve SST-2 & RTE without big engineering:
+Multibench steering-vector projection controls with two high-yield fixes to
+improve SST-2 and RTE without substantial extra machinery:
 
 (A) Per-task candidate calibration (still single-token when possible)
     We try a small set of semantically appropriate candidate pairs per task and pick the one
@@ -25,7 +26,7 @@ Optional extra benchmarks (add via --tasks):
   - imdb (sentiment)
 
 Example:
- CUDA_VISIBLE_DEVICES=1 python steering_vector_reliability_multibench_patch_v3.py \
+ CUDA_VISIBLE_DEVICES=1 python steering_vector_reliability_multibench_patch.py \
   --model meta-llama/Llama-2-7b-chat-hf \
   --device cuda --dtype fp32 \
   --layer 10 \
@@ -36,7 +37,7 @@ Example:
   --lambdas 0,0.5,1.0 \
   --n_rand 5 \
   --cand_calib_per_class 32 --cand_calib_templates all \
-  --out_dir results/steer_repair_multibench_v3 \
+  --out_dir results/steer_repair_multibench \
   --show_per_template 1
 
 
@@ -291,7 +292,7 @@ def make_boolq_task() -> TaskSpec:
 def make_glue_rte_task() -> TaskSpec:
     templates = [
         "Premise:\n{premise}\n\nHypothesis:\n{hypothesis}\n\nDoes the premise entail the hypothesis?\nAnswer ({POS}/{NEG}): ",
-        # v3 fixed T1:
+        # Fixed RTE template:
         "Reply with only '{POS}' or '{NEG}'.\nReturn '{POS}' if the premise entails the hypothesis; otherwise return '{NEG}'.\n\nPremise: {premise}\nHypothesis: {hypothesis}\nAnswer ({POS}/{NEG}): ",
         "One-token answer: '{POS}' or '{NEG}'.\n\nPremise: {premise}\nHypothesis: {hypothesis}\nEntailment ({POS}/{NEG}): ",
     ]

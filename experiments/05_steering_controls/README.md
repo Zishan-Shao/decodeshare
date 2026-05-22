@@ -15,9 +15,9 @@ Current command records:
 
 Canonical scripts in this folder:
 
-- `steering_vector_reliability_multibench_patch_v3.py`: multibench steering controls.
-- `summarize_multibench_v3_full.py`: paper-ready repair tables.
-- `mvp_projection_patch_pirate_v5.py`: pirate/template sanity check.
+- `steering_vector_reliability_multibench_patch.py`: multibench steering controls.
+- `summarize_multibench_full.py`: paper-ready repair tables.
+- `mvp_projection_patch_pirate.py`: pirate/template sanity check.
 
 The complete historical bundle remains in `downstream/brittleness/`; this
 folder keeps only the paper-facing entry points.
