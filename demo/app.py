@@ -1045,6 +1045,26 @@ def build_app():
             chat_status = gr.Textbox(label="Status", interactive=False, scale=4)
 
         with gr.Row():
+            baseline_chat = gr.Chatbot(
+                label="Baseline",
+                height=400,
+                type="messages",
+                elem_classes=["baseline-card"],
+            )
+            prefill_chat = gr.Chatbot(
+                label="Prefill-estimated vector",
+                height=400,
+                type="messages",
+                elem_classes=["prefill-card"],
+            )
+            decode_chat = gr.Chatbot(
+                label="Decode-estimated vector",
+                height=400,
+                type="messages",
+                elem_classes=["decode-card"],
+            )
+
+        with gr.Row():
             example_prompt = gr.Dropdown(
                 list(EXAMPLE_CONFIGS.keys()),
                 value="SVD pirate metaphor",
@@ -1072,25 +1092,6 @@ def build_app():
         with gr.Row():
             send_button = gr.Button("Send", variant="primary")
             clear_button = gr.Button("Clear")
-        with gr.Row():
-            baseline_chat = gr.Chatbot(
-                label="Baseline",
-                height=420,
-                type="messages",
-                elem_classes=["baseline-card"],
-            )
-            prefill_chat = gr.Chatbot(
-                label="Prefill-estimated vector",
-                height=420,
-                type="messages",
-                elem_classes=["prefill-card"],
-            )
-            decode_chat = gr.Chatbot(
-                label="Decode-estimated vector",
-                height=420,
-                type="messages",
-                elem_classes=["decode-card"],
-            )
 
         with gr.Accordion("Advanced Settings", open=False):
             with gr.Row():
