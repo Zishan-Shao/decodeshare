@@ -807,6 +807,21 @@ CSS = """
 .gradio-container select {
   border-color: #c7d8e8 !important;
 }
+.gradio-container progress {
+  accent-color: #08bfd0;
+}
+.gradio-container progress::-webkit-progress-value {
+  background: linear-gradient(90deg, #08bfd0 0%, #2b65b1 100%);
+}
+.gradio-container progress::-moz-progress-bar {
+  background: linear-gradient(90deg, #08bfd0 0%, #2b65b1 100%);
+}
+.gradio-container [role="progressbar"] {
+  color: #08bfd0 !important;
+}
+.gradio-container [role="progressbar"] > div {
+  background: linear-gradient(90deg, #08bfd0 0%, #2b65b1 100%) !important;
+}
 .panel {
   border: 1px solid #c7dce9;
   border-radius: 8px;
@@ -891,10 +906,10 @@ def build_app():
     except ImportError as exc:  # pragma: no cover
         raise SystemExit("Install demo dependencies first: pip install -r demo/requirements-demo.txt") from exc
 
-    def initialize_chat_state_ui(*args, progress=gr.Progress(track_tqdm=True)):
+    def initialize_chat_state_ui(*args, progress=gr.Progress(track_tqdm=False)):
         return initialize_chat_state(*args, progress=progress)
 
-    def chat_once_ui(*args, progress=gr.Progress(track_tqdm=True)):
+    def chat_once_ui(*args, progress=gr.Progress(track_tqdm=False)):
         return chat_once(*args, progress=progress)
 
     with gr.Blocks(css=CSS, title="DecodeShare Interactive Steering Chat") as app:
@@ -1000,7 +1015,7 @@ def build_app():
                 save_cache,
             ],
             outputs=[chat_session, chat_intro, chat_status],
-            show_progress="full",
+            show_progress="minimal",
         )
         send_button.click(
             chat_once_ui,
@@ -1018,7 +1033,7 @@ def build_app():
                 max_new_tokens,
             ],
             outputs=[baseline_chat, prefill_chat, decode_chat, user_message, chat_status],
-            show_progress="full",
+            show_progress="minimal",
         )
         user_message.submit(
             chat_once_ui,
@@ -1036,7 +1051,7 @@ def build_app():
                 max_new_tokens,
             ],
             outputs=[baseline_chat, prefill_chat, decode_chat, user_message, chat_status],
-            show_progress="full",
+            show_progress="minimal",
         )
         load_example_button.click(
             load_example_config,
