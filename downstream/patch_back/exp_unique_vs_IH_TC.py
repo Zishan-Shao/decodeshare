@@ -117,7 +117,7 @@ except Exception:
 # -----------------------------------------------------------------------------
 # Import cross-task PCA + sharedness scorer (same as your main pipeline)
 # -----------------------------------------------------------------------------
-from joint_subspace_large.disturb_cross_task_all_shared import (  # type: ignore
+from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import (  # type: ignore
     get_model_layers,
     compute_cross_task_subspace,
     find_fully_shared_basis_improved,

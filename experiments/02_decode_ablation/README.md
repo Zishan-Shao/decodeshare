@@ -36,11 +36,11 @@ The canonical H2 runners also avoid using `torch.cuda.is_available()` while buil
 ## Reproduction Notes
 
 - Use only `Node0` and `Node1` for camera-ready reruns unless the cluster availability changes.
-- Keep `PYTHONPATH` pointed at repo `src/` when running from this branch.
+- Keep `PYTHONPATH` pointed at the repo root when running direct Python commands.
 - The paper LOTO command uses `n_eval=2048` and `--use_forced_choice 1` for MC/Yes-No tasks; `gsm8k` remains generation-based.
 
 ```bash
-export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
+export PYTHONPATH="${PWD}:${PYTHONPATH:-}"
 bash scripts/02_h2_decode_ablation/run_mock.sh
 ```
 

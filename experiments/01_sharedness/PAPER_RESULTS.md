@@ -41,7 +41,7 @@ Canonical diagnostic pipeline:
 
 ```bash
 cd experiments/01_sharedness
-export PYTHONPATH="../../src:${PYTHONPATH:-}"
+export PYTHONPATH="../..:${PYTHONPATH:-}"
 
 CUDA_VISIBLE_DEVICES="${GPU_ID:-0}" python collect_activations.py \
   --model meta-llama/Llama-2-7b-chat-hf \

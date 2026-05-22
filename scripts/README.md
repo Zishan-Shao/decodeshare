@@ -3,6 +3,8 @@
 This directory contains the public reproduction entry points. Section folders
 hold lightweight smoke checks and command notes; `full_runs/` contains GPU
 rerun wrappers.
+Experiment folders under `experiments/` and `downstream/` intentionally keep
+Python implementations only; shell entry points live here.
 
 Current cluster constraint: use only `Node0` and `Node1`.
 

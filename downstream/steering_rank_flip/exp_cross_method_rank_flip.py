@@ -96,7 +96,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # benchmark_dataloaders.py with the experiment/downstream bundles.
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 for _candidate in [
-    os.path.join(THIS_DIR, "..", "..", "src"),
     os.path.join(THIS_DIR, "..", "brittleness"),
     os.path.join(THIS_DIR, "..", "patch_back"),
     os.path.join(THIS_DIR, "..", "..", "experiments", "02_decode_ablation"),
@@ -120,7 +119,7 @@ try:
 except Exception as e:  # pragma: no cover
     raise RuntimeError(
         "benchmark_dataloaders is required for this script.\n"
-        "Please ensure your repo `src/` is on PYTHONPATH (this script auto-adds ../../src when present).\n"
+        "Please run from the repo root or ensure the experiment bundles are on PYTHONPATH.\n"
         f"Import error: {e}"
     )
 

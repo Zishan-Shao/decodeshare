@@ -1,21 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$(conda info --base)/etc/profile.d/conda.sh"
-cd "${SCRIPT_DIR}"
-conda activate "${CONDA_ENV:-decodeshare}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
 
-MODEL="Qwen/Qwen2.5-7B-Instruct" #"meta-llama/Llama-2-7b-chat-hf"
-DEVICE="cuda"
-DTYPE="fp32"
-LAYER="10"
+PATCHBACK_DIR="${REPO_ROOT}/downstream/patch_back"
+cd "${PATCHBACK_DIR}"
+
+MODEL="${MODEL:-Qwen/Qwen2.5-7B-Instruct}"
+DEVICE="${DEVICE:-cuda}"
+DTYPE="${DTYPE:-${MODEL_DTYPE:-fp32}}"
+LAYER="${LAYER:-10}"
 
 BASE_SCRIPT="subspace_patching_transfer.py"
 FLIP_SCRIPT="flipset_alpha_sweep_and_transfer.py"
 
-# Absolute output directory as requested
-OUTDIR="results/runs_flip_supplement/layer${LAYER}_${MODEL//\//_}"
+OUTDIR="${OUT_DIR:-${REPO_ROOT}/outputs/03_patchback/flip_supplement/layer${LAYER}_${MODEL//\//_}}"
 mkdir -p "${OUTDIR}"
 
 echo "[Info] OUTDIR=${OUTDIR}"
@@ -37,7 +36,7 @@ fi
 # SEED=123 suite
 # ============================================================
 SEED="123"
-QS_SEED123="Q_shared_layer${LAYER}_seed${SEED}.npy"
+QS_SEED123="${OUTDIR}/Q_shared_layer${LAYER}_seed${SEED}.npy"
 
 echo ""
 echo "============================================================"
@@ -47,7 +46,7 @@ echo "============================================================"
 # (0) Ensure Q_shared exists (seed-specific)
 if [ ! -f "${QS_SEED123}" ]; then
   echo "[Run] Computing Q_shared for seed=${SEED} -> ${QS_SEED123}"
-  CUDA_VISIBLE_DEVICES=3 python "${BASE_SCRIPT}" \
+  run_python_gpu "${BASE_SCRIPT}" \
     --model "${MODEL}" --device "${DEVICE}" --dtype "${DTYPE}" \
     --layer "${LAYER}" --seed "${SEED}" \
     --compute_Qs 1 --Qs_out "${QS_SEED123}" \
@@ -62,7 +61,7 @@ fi
 
 # (1) Alpha sweep on AQuA flip-set
 echo "[Run] Alpha sweep on AQuA flip-set (seed=${SEED})"
-CUDA_VISIBLE_DEVICES=3 python "${FLIP_SCRIPT}" \
+run_python_gpu "${FLIP_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED}" \
@@ -75,7 +74,7 @@ CUDA_VISIBLE_DEVICES=3 python "${FLIP_SCRIPT}" \
 
 # (2) Transfer patch: same-task donors (random pick), with self reference
 echo "[Run] Transfer patch SAME-TASK donors on AQuA flip-set (seed=${SEED})"
-CUDA_VISIBLE_DEVICES=3 python "${FLIP_SCRIPT}" \
+run_python_gpu "${FLIP_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED}" \
@@ -89,7 +88,7 @@ CUDA_VISIBLE_DEVICES=3 python "${FLIP_SCRIPT}" \
 
 # (3) Transfer patch: cross-task "generation-ish" donors (no baseline-correct filtering)
 echo "[Run] Transfer patch CROSS-TASK donors (gsm8k,strategyqa) on AQuA flip-set (seed=${SEED})"
-CUDA_VISIBLE_DEVICES=3 python "${FLIP_SCRIPT}" \
+run_python_gpu "${FLIP_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED}" \
@@ -104,7 +103,7 @@ CUDA_VISIBLE_DEVICES=3 python "${FLIP_SCRIPT}" \
 
 # (4) Transfer patch: cross-task MC donors, filtered to gold in candidates + baseline-correct
 echo "[Run] Transfer patch CROSS-TASK MC donors (commonsenseqa,openbookqa) baseline-correct on AQuA flip-set (seed=${SEED})"
-CUDA_VISIBLE_DEVICES=3 python "${FLIP_SCRIPT}" \
+run_python_gpu "${FLIP_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED}" \
@@ -122,7 +121,7 @@ CUDA_VISIBLE_DEVICES=3 python "${FLIP_SCRIPT}" \
 # SEED=456 robustness suite (IMPORTANT: recompute Q_shared for this seed)
 # ============================================================
 SEED2="456"
-QS_SEED456="Q_shared_layer${LAYER}_seed${SEED2}.npy"
+QS_SEED456="${OUTDIR}/Q_shared_layer${LAYER}_seed${SEED2}.npy"
 
 echo ""
 echo "============================================================"
@@ -132,7 +131,7 @@ echo "============================================================"
 # (5) Ensure Q_shared exists for seed=456
 if [ ! -f "${QS_SEED456}" ]; then
   echo "[Run] Computing Q_shared for seed=${SEED2} -> ${QS_SEED456}"
-  CUDA_VISIBLE_DEVICES=3 python "${BASE_SCRIPT}" \
+  run_python_gpu "${BASE_SCRIPT}" \
     --model "${MODEL}" --device "${DEVICE}" --dtype "${DTYPE}" \
     --layer "${LAYER}" --seed "${SEED2}" \
     --compute_Qs 1 --Qs_out "${QS_SEED456}" \
@@ -147,7 +146,7 @@ fi
 
 # (6) Robustness run: alpha sweep (optional but nice)
 echo "[Run] Alpha sweep on AQuA flip-set (seed=${SEED2})"
-CUDA_VISIBLE_DEVICES=3 python "${FLIP_SCRIPT}" \
+run_python_gpu "${FLIP_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED2}" \
@@ -160,7 +159,7 @@ CUDA_VISIBLE_DEVICES=3 python "${FLIP_SCRIPT}" \
 
 # (7) Robustness run: cross-task MC donors baseline-correct (the key setting)
 echo "[Run] Robustness transfer CROSS-TASK MC donors baseline-correct (seed=${SEED2})"
-CUDA_VISIBLE_DEVICES=3 python "${FLIP_SCRIPT}" \
+run_python_gpu "${FLIP_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED2}" \

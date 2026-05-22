@@ -3,7 +3,7 @@
 Summarize results from disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py
 
 Key upgrades vs the older summarizer:
-  - Recursively scans results_dir (so it works with src/results/disturb_cot/**).
+  - Recursively scans results_dir (so it works with outputs/02_decode_ablation/loto/**).
   - Summarizes multiple models cleanly (overview + per-model sections).
   - Treats EACH json as a run (so you don't silently collapse different configs).
   - Defaults to --decoding auto, which handles mixed greedy/forced_choice LOTO
@@ -12,7 +12,7 @@ Key upgrades vs the older summarizer:
   Most common:
 
 python summarize_disturb_cot_results.py \
-  --results_dir ../src/results/disturb_cot_reason \
+  --results_dir ../../outputs/02_decode_ablation/loto \
   --recursive \
   --pattern "*.json"
 
@@ -20,7 +20,7 @@ python summarize_disturb_cot_results.py \
 If you only want the loto8 runs:
 
 python summarize_disturb_cot_results.py \
-  --results_dir src/results/disturb_cot \
+  --results_dir outputs/02_decode_ablation/loto \
   --recursive \
   --pattern "*.json" \
   --contains "loto8"
@@ -84,18 +84,18 @@ def load_json_file(filepath: str) -> Optional[Dict[str, Any]]:
 def default_results_dir() -> str:
     """
     Try a few sensible defaults:
-      - src/results/disturb_cot   (common repo layout)
-      - results/disturb_cot       (older layout)
+      - outputs/02_decode_ablation/loto   (public repo layout)
+      - results/disturb_cot               (older layout)
     """
     candidates = [
-        Path("src/results/disturb_cot"),
+        Path("outputs/02_decode_ablation/loto"),
         Path("results/disturb_cot"),
     ]
     for c in candidates:
         if c.exists():
             return str(c)
     # fallback
-    return "src/results/disturb_cot"
+    return "outputs/02_decode_ablation/loto"
 
 
 def find_json_files(results_dir: Path, pattern: str, recursive: bool) -> List[Path]:
@@ -602,7 +602,7 @@ def main():
     parser.add_argument(
         "--recursive",
         action="store_true",
-        help="Recursively scan results_dir (recommended for src/results/disturb_cot)"
+        help="Recursively scan results_dir (recommended for outputs/02_decode_ablation/loto)"
     )
     parser.add_argument(
         "--no_recursive",
@@ -719,10 +719,10 @@ if __name__ == "__main__":
 # python summarize_disturb_cot_results.py
 
 # # Specify custom directory
-# python summarize_disturb_cot_results.py --results_dir ../src/results/disturb_cot
+# python summarize_disturb_cot_results.py --results_dir ../outputs/02_decode_ablation/loto
 
 # # Custom output file
-# python summarize_disturb_cot_results.py --output src/results/disturb_cot/COMPREHENSIVE_SUMMARY.md
+# python summarize_disturb_cot_results.py --output outputs/02_decode_ablation/loto/COMPREHENSIVE_SUMMARY.md
 
 # # Custom file pattern
 # python summarize_disturb_cot_results.py --pattern "*loto*.json"

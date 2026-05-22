@@ -86,10 +86,10 @@ except Exception as e:
 
 # We still need get_model_layers for attaching collectors
 try:
-    from joint_subspace_large.disturb_cross_task_all_shared import get_model_layers  # type: ignore
+    from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import get_model_layers  # type: ignore
 except Exception as e:
     raise ImportError(
-        "Failed to import joint_subspace_large.disturb_cross_task_all_shared.get_model_layers."
+        "Failed to import decodeshare.joint_subspace_large.disturb_cross_task_all_shared.get_model_layers."
     ) from e
 
 

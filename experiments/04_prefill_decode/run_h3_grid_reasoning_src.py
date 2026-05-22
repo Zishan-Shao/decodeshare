@@ -35,7 +35,7 @@ It also prints:
 Requires your project modules:
   - disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py
   - benchmark_dataloaders.py
-  - joint_subspace_large.disturb_cross_task_all_shared.get_model_layers
+  - decodeshare.joint_subspace_large.disturb_cross_task_all_shared.get_model_layers
   
   
 Example: 
@@ -85,7 +85,7 @@ from benchmark_dataloaders import (
     stable_int_seed,
 )
 
-from joint_subspace_large.disturb_cross_task_all_shared import get_model_layers
+from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import get_model_layers
 
 
 # -----------------------------

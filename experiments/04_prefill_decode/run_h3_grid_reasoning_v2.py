@@ -67,7 +67,7 @@ from benchmark_dataloaders import (
     is_correct,
 )
 
-from joint_subspace_large.disturb_cross_task_all_shared import get_model_layers
+from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import get_model_layers
 
 
 # -----------------------------

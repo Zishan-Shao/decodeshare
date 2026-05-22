@@ -24,9 +24,9 @@ Modes:
 
 Usage example:
   python summarize_disturb_cot_diagnostics.py \
-    --results_dir ../src/results/disturb_cot_full \
+    --results_dir ../../outputs/02_decode_ablation/loto \
     --pattern "*.json" \
-    --output ../src/results/disturb_cot_full/DIAGNOSTIC_SUMMARY.md
+    --output ../../outputs/02_decode_ablation/loto/DIAGNOSTIC_SUMMARY.md
 """
 
 import argparse
@@ -714,42 +714,42 @@ if __name__ == "__main__":
 
 # Example:
 #   python summarize_disturb_cot_diagnostics.py \
-#     --results_dir src/results/disturb_cot \
+#     --results_dir outputs/02_decode_ablation/loto \
 #     --pattern "*.json" \
-#     --output src/results/disturb_cot/DIAGNOSTIC_SUMMARY.md
+#     --output outputs/02_decode_ablation/loto/DIAGNOSTIC_SUMMARY.md
 
 # 默认（总结 greedy，输出到 DIAGNOSTIC_SUMMARY.md）：
 
 # python summarize_disturb_cot_diagnostics.py \
-#   --results_dir ../src/results/disturb_cot_full \
+#   --results_dir ../../outputs/02_decode_ablation/loto \
 #   --pattern "*.json" \
-#   --output ../src/results/disturb_cot_full/DIAGNOSTIC_SUMMARY.md
+#   --output ../../outputs/02_decode_ablation/loto/DIAGNOSTIC_SUMMARY.md
 
 
 # 只看某个模型（比如 qwen）：
 
 # python summarize_disturb_cot_diagnostics.py \
-#   --results_dir src/results/disturb_cot \
+#   --results_dir outputs/02_decode_ablation/loto \
 #   --only_model_substr qwen \
-#   --output src/results/disturb_cot/DIAG_qwen.md
+#   --output outputs/02_decode_ablation/loto/DIAG_qwen.md
 
 
 # 把阈值调得更敏感/更保守（例如：更敏感地抓“解析失败”）：
 
 # python summarize_disturb_cot_diagnostics.py \
-#   --results_dir src/results/disturb_cot \
+#   --results_dir outputs/02_decode_ablation/loto \
 #   --parse_drop_thresh 0.10 \
 #   --extr_floor 0.70 \
 #   --require_base_extr 0.75 \
-#   --output src/results/disturb_cot/DIAG_sensitive.md
+#   --output outputs/02_decode_ablation/loto/DIAG_sensitive.md
 
 
 # 同时输出 accuracy 表（用于对齐“掉点是否对应解析失败”）：
 
 # python summarize_disturb_cot_diagnostics.py \
-#   --results_dir src/results/disturb_cot \
+#   --results_dir outputs/02_decode_ablation/loto \
 #   --include_accuracy \
-#   --output src/results/disturb_cot/DIAG_with_acc.md
+#   --output outputs/02_decode_ablation/loto/DIAG_with_acc.md
 
 # """
 

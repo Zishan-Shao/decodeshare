@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-export PYTHONPATH="${ROOT}/src:${PYTHONPATH:-}"
+export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
 
 tests=(
   "scripts/01_h1_sharedness/run_mock.sh"

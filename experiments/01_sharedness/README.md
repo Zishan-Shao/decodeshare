@@ -37,11 +37,11 @@ The full-benchmark directory includes compact raw result records (`*_exist*.json
 ## Reproduction Notes
 
 - Use only `Node0` and `Node1` for camera-ready reruns unless the cluster availability changes.
-- Keep `PYTHONPATH` pointed at repo `src/` when running from this branch.
+- Keep `PYTHONPATH` pointed at the repo root when running direct Python commands.
 - Full model reruns are expensive; the smoke tests only check CLI/import validity and summary regeneration.
 
 ```bash
-export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
+export PYTHONPATH="${PWD}:${PYTHONPATH:-}"
 bash scripts/01_h1_sharedness/run_mock.sh
 ```
 

@@ -1,29 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ========= Environment =========
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$(conda info --base)/etc/profile.d/conda.sh"
-cd "${SCRIPT_DIR}"
-conda activate "${CONDA_ENV:-decodeshare}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common.sh"
 
-# MODEL_QWEN="Qwen/Qwen2.5-14B-Instruct" bash run_qwen_suite_and_report.sh
+PATCHBACK_DIR="${REPO_ROOT}/downstream/patch_back"
+cd "${PATCHBACK_DIR}"
+
+# MODEL_QWEN="Qwen/Qwen2.5-14B-Instruct" bash scripts/full_runs/run_patchback_qwen_suite_and_report.sh
 
 # ========= Config =========
 MODEL_QWEN="${MODEL_QWEN:-Qwen/Qwen2.5-7B-Instruct}"   # change if you want
 DEVICE="${DEVICE:-cuda}"
-DTYPE="${DTYPE:-fp32}"                                # fp32 for comparability
+DTYPE="${DTYPE:-${MODEL_DTYPE:-fp32}}"                # fp32 for comparability
 LAYER="${LAYER:-10}"
 
-SEED_MAIN="123"
-SEED_ROBUST="456"
+SEED_MAIN="${SEED_MAIN:-123}"
+SEED_ROBUST="${SEED_ROBUST:-456}"
 
 BASE_SCRIPT="subspace_patching_transfer.py"
 FLIP_SCRIPT="flipset_alpha_sweep_and_transfer.py"
 OPEN_SCRIPT="openanswer_subspace_patching.py"
 SUM_SCRIPT="summarize_patching_jsons.py"              # the unified summarizer you already have
 
-OUTROOT="results/${MODEL_QWEN//\//_}/layer${LAYER}"
+OUTROOT="${OUT_DIR:-${REPO_ROOT}/outputs/03_patchback/qwen_suite/${MODEL_QWEN//\//_}/layer${LAYER}}"
 mkdir -p "${OUTROOT}"
 
 echo "[Info] MODEL_QWEN=${MODEL_QWEN}"
@@ -46,7 +45,7 @@ QS_ROBUST="${OUTROOT}/Q_shared_layer${LAYER}_seed${SEED_ROBUST}.npy"
 
 if [ ! -f "${QS_MAIN}" ]; then
   echo "[Run] Compute Q_shared (seed=${SEED_MAIN}) -> ${QS_MAIN}"
-  CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
+  run_python_gpu "${BASE_SCRIPT}" \
     --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
     --layer "${LAYER}" --seed "${SEED_MAIN}" \
     --compute_Qs 1 --Qs_out "${QS_MAIN}" \
@@ -61,7 +60,7 @@ fi
 
 if [ ! -f "${QS_ROBUST}" ]; then
   echo "[Run] Compute Q_shared (seed=${SEED_ROBUST}) -> ${QS_ROBUST}"
-  CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
+  run_python_gpu "${BASE_SCRIPT}" \
     --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
     --layer "${LAYER}" --seed "${SEED_ROBUST}" \
     --compute_Qs 1 --Qs_out "${QS_ROBUST}" \
@@ -81,7 +80,7 @@ MC_DIR="${OUTROOT}/subspace_mc_seed${SEED_MAIN}"
 mkdir -p "${MC_DIR}"
 
 echo "[Run] MC patching: AQuA"
-CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
+run_python_gpu "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
   --compute_Qs 0 --Qs_path "${QS_MAIN}" \
@@ -90,7 +89,7 @@ CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
   --out_json "${MC_DIR}/aqua.json"
 
 echo "[Run] MC patching: ARC-Challenge"
-CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
+run_python_gpu "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
   --compute_Qs 0 --Qs_path "${QS_MAIN}" \
@@ -99,7 +98,7 @@ CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
   --out_json "${MC_DIR}/arc_challenge.json"
 
 echo "[Run] MC patching: CommonsenseQA"
-CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
+run_python_gpu "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
   --compute_Qs 0 --Qs_path "${QS_MAIN}" \
@@ -108,7 +107,7 @@ CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
   --out_json "${MC_DIR}/commonsenseqa.json"
 
 echo "[Run] MC patching: LogiQA"
-CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
+run_python_gpu "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
   --compute_Qs 0 --Qs_path "${QS_MAIN}" \
@@ -117,7 +116,7 @@ CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
   --out_json "${MC_DIR}/logiqa.json"
 
 echo "[Run] MC patching: OpenBookQA"
-CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
+run_python_gpu "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
   --compute_Qs 0 --Qs_path "${QS_MAIN}" \
@@ -126,7 +125,7 @@ CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
   --out_json "${MC_DIR}/openbookqa.json"
 
 echo "[Run] MC patching: PIQA"
-CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
+run_python_gpu "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
   --compute_Qs 0 --Qs_path "${QS_MAIN}" \
@@ -135,7 +134,7 @@ CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
   --out_json "${MC_DIR}/piqa.json"
 
 echo "[Run] MC patching: QASC (assuming 8-choice; if your loader differs, change candidate_labels)"
-CUDA_VISIBLE_DEVICES=2 python "${BASE_SCRIPT}" \
+run_python_gpu "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
   --compute_Qs 0 --Qs_path "${QS_MAIN}" \
@@ -150,7 +149,7 @@ FLIP_DIR="${OUTROOT}/flipset"
 mkdir -p "${FLIP_DIR}"
 
 echo "[Run] Flipset alpha sweep (seed=${SEED_MAIN})"
-CUDA_VISIBLE_DEVICES=2 python "${FLIP_SCRIPT}" \
+run_python_gpu "${FLIP_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
@@ -162,7 +161,7 @@ CUDA_VISIBLE_DEVICES=2 python "${FLIP_SCRIPT}" \
   --out_json "${FLIP_DIR}/aqua_alpha_sweep_seed${SEED_MAIN}.json"
 
 echo "[Run] Flipset alpha sweep (seed=${SEED_ROBUST})"
-CUDA_VISIBLE_DEVICES=2 python "${FLIP_SCRIPT}" \
+run_python_gpu "${FLIP_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_ROBUST}" \
@@ -174,7 +173,7 @@ CUDA_VISIBLE_DEVICES=2 python "${FLIP_SCRIPT}" \
   --out_json "${FLIP_DIR}/aqua_alpha_sweep_seed${SEED_ROBUST}.json"
 
 echo "[Run] Flipset transfer donors (same task, seed=${SEED_MAIN})"
-CUDA_VISIBLE_DEVICES=2 python "${FLIP_SCRIPT}" \
+run_python_gpu "${FLIP_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
@@ -187,7 +186,7 @@ CUDA_VISIBLE_DEVICES=2 python "${FLIP_SCRIPT}" \
   --out_json "${FLIP_DIR}/aqua_transfer_same_task_seed${SEED_MAIN}.json"
 
 echo "[Run] Flipset transfer donors (cross-task MC baseline-correct, seed=${SEED_MAIN})"
-CUDA_VISIBLE_DEVICES=2 python "${FLIP_SCRIPT}" \
+run_python_gpu "${FLIP_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
@@ -208,7 +207,7 @@ OA_DIR="${OUTROOT}/openanswer_seed${SEED_MAIN}"
 mkdir -p "${OA_DIR}"
 
 echo "[Run] OpenAnswer GSM8K pair_logprob"
-CUDA_VISIBLE_DEVICES=2 python "${OPEN_SCRIPT}" \
+run_python_gpu "${OPEN_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
@@ -219,7 +218,7 @@ CUDA_VISIBLE_DEVICES=2 python "${OPEN_SCRIPT}" \
   --out_json "${OA_DIR}/gsm8k_pairlogprob.json"
 
 echo "[Run] OpenAnswer GSM8K gen_math (max_new_tokens=64; appendix-style)"
-CUDA_VISIBLE_DEVICES=2 python "${OPEN_SCRIPT}" \
+run_python_gpu "${OPEN_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
@@ -230,7 +229,7 @@ CUDA_VISIBLE_DEVICES=2 python "${OPEN_SCRIPT}" \
   --out_json "${OA_DIR}/gsm8k_genmath.json"
 
 echo "[Run] OpenAnswer HumanEval pair_logprob"
-CUDA_VISIBLE_DEVICES=2 python "${OPEN_SCRIPT}" \
+run_python_gpu "${OPEN_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
@@ -244,7 +243,7 @@ CUDA_VISIBLE_DEVICES=2 python "${OPEN_SCRIPT}" \
   --out_json "${OA_DIR}/humaneval_pairlogprob.json"
 
 echo "[Run] OpenAnswer HumanEval gen_code_compile (safe proxy; max_new_tokens=256)"
-CUDA_VISIBLE_DEVICES=2 python "${OPEN_SCRIPT}" \
+run_python_gpu "${OPEN_SCRIPT}" \
   --base_script_path "${BASE_SCRIPT}" \
   --model "${MODEL_QWEN}" --device "${DEVICE}" --dtype "${DTYPE}" \
   --layer "${LAYER}" --seed "${SEED_MAIN}" \
@@ -263,7 +262,7 @@ SUM_DIR="${OUTROOT}/_summary"
 mkdir -p "${SUM_DIR}"
 
 echo "[Run] Summarize all JSONs under ${OUTROOT}"
-CUDA_VISIBLE_DEVICES=2 python "${SUM_SCRIPT}" \
+run_python "${SUM_SCRIPT}" \
   --dir "${OUTROOT}" \
   --pattern "**/*.json" \
   --recursive \
@@ -530,7 +529,7 @@ ALPHA_CSV="${SUM_DIR}/alpha_sweep.csv" \
 OUT_MD="${REPORT_MD}" \
 OUT_TEX="${TABLES_TEX}" \
 PLOT_DIR="${PLOT_DIR}" \
-python "${ANALYSIS_PY}"
+run_python "${ANALYSIS_PY}"
 
 echo ""
 echo "[Done] Qwen suite complete."

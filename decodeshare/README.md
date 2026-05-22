@@ -14,6 +14,6 @@ Planned module boundaries:
 - `stats`: bootstrap, confidence interval, and multiple-comparison utilities.
 - `plotting`: table and figure formatting helpers.
 
-Paper-specific entry points live under `experiments/`. Compatibility helpers
-that still need their historical import path can live as sibling packages under
-`src/`, for example `src/joint_subspace_large/`.
+Paper-specific entry points live under `experiments/`. Historical compatibility
+helpers that are still shared by several experiment scripts live under
+`decodeshare/joint_subspace_large/`.

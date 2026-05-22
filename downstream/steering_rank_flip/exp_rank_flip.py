@@ -92,7 +92,6 @@ python exp_rank_flip.py \
 # script execution work from either the repo root or this directory.
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 for _candidate in [
-    os.path.join(THIS_DIR, "..", "src"),
     os.path.join(THIS_DIR, "..", "brittleness"),
     os.path.join(THIS_DIR, "..", "patch_back"),
     os.path.join(THIS_DIR, "..", "..", "experiments", "02_decode_ablation"),

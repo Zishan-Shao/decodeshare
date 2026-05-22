@@ -49,9 +49,9 @@ Example:
     
 1) 最常用：汇总一个目录下所有 out_json
 python summarize_energy_kmatch_outputs.py \
-  --results_dir ../src/results/alpha_sweep_decode_aligned \
+  --results_dir ../../outputs/02_decode_ablation/energy_kmatch_alpha_sweep \
   --pattern "*.json" \
-  --output ../src/results/alpha_sweep_decode_aligned/SUMMARY.md
+  --output ../../outputs/02_decode_ablation/energy_kmatch_alpha_sweep/SUMMARY.md
   
 2) 同时输出 CSV（方便你画图）
 python summarize_energy_kmatch_outputs.py \

@@ -50,7 +50,7 @@ if THIS_DIR not in sys.path:
     sys.path.append(THIS_DIR)
 sys.path.append(os.path.join(THIS_DIR, ".."))
 
-from joint_subspace_large.disturb_cross_task_all_shared import (  # noqa: E402
+from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import (  # noqa: E402
     get_model_layers,
     compute_cross_task_subspace,
     find_fully_shared_basis_improved,

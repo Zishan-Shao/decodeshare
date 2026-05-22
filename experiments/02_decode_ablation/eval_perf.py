@@ -26,7 +26,7 @@ Key design points:
 Dependencies (typical in your environment):
   - transformers, datasets, numpy, torch, tqdm
   - benchmark_dataloaders.py (your project)
-  - joint_subspace_large.disturb_cross_task_all_shared.py (your project utilities)
+  - decodeshare.joint_subspace_large.disturb_cross_task_all_shared (project utilities)
 
 If benchmark_dataloaders is not importable (different filename), this module will
 attempt a fallback import of benchmark_dataloaders_aqua_prefix_default.
@@ -71,7 +71,7 @@ except Exception:
 # -----------------------------------------------------------------------------
 # We try the canonical project import first; fallback to a local file if needed.
 try:
-    from joint_subspace_large.disturb_cross_task_all_shared import (  # type: ignore
+    from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import (  # type: ignore
         get_model_layers,
         compute_cross_task_subspace,
         find_fully_shared_basis_improved,
@@ -87,7 +87,7 @@ except Exception:
         raise ImportError(
             "Could not import shared-subspace utilities.\n"
             "Expected one of:\n"
-            "  - joint_subspace_large.disturb_cross_task_all_shared\n"
+            "  - decodeshare.joint_subspace_large.disturb_cross_task_all_shared\n"
             "  - disturb_cross_task_all_shared (local)\n"
             "Please ensure your project is on PYTHONPATH."
         ) from e
@@ -2012,5 +2012,4 @@ def build_summary_table(eval_results: Dict[str, Any], *, k: int) -> str:
         "p",
     ]
     return md_table(rows, header)
-
 

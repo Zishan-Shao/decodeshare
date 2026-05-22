@@ -6,7 +6,7 @@ folders or review-phase scratch work as first-class project structure.
 
 ## Top-Level Directories
 
-- `src/decodeshare/`: reusable package code shared across experiments.
+- `decodeshare/`: reusable package code shared across experiments.
 - `experiments/`: one folder per paper experiment block, ordered by paper body.
 - `downstream/`: downstream steering, patchback, mismatch diagnostics, and
   legacy provenance grouped outside the main paper-section flow.
@@ -19,7 +19,7 @@ folders or review-phase scratch work as first-class project structure.
 Historical top-level directories such as `Hype1/`, `patch_back/`,
 `brittleness/`, `reasoning/`, `lateruse/`, and `results/` are not
 part of the public root layout. Their current camera-ready homes are
-`experiments/`, `downstream/`, `paper_artifacts/`, and `src/`.
+`experiments/`, `downstream/`, `paper_artifacts/`, and `decodeshare/`.
 
 ## Experiment Folder Format
 
@@ -28,7 +28,7 @@ Each `experiments/NN_name/` folder should contain:
 - `README.md`: paper outputs covered, source provenance, and commands.
 - `configs/`: YAML or JSON configs for model, layer, seed, dataset, and method
   settings.
-- `run_*.py` or `run_*.sh`: canonical full-run entry points.
+- `run_*.py`: experiment implementations; executable shell wrappers live under `scripts/`.
 - `summarize_*.py`: scripts that convert raw outputs into compact paper
   summaries.
 
