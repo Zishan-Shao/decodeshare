@@ -212,16 +212,25 @@ an HTML report. The default demo amplifies the vector's shared component for vis
 contrast; use `--demo_vector_mode caa` for the untouched CAA-style vector. See
 `demo/README.md` for a smaller TinyLlama smoke-run option.
 
-An optional Gradio dashboard can render an existing demo summary or launch a
-small live run:
+An optional Gradio app keeps only the interactive steering chat. It compares
+baseline, prefill-estimated steering, and decode-estimated steering side by
+side:
 
 ```bash
 pip install -r demo/requirements-demo.txt
-python demo/app.py --summary outputs/demo_steering_projection/projection_summary.json
+python demo/app.py --server_port 7860
 ```
 
-The Gradio app also includes an interactive steering chat that compares
-baseline, prefill-estimated steering, and decode-estimated steering side by side.
+The app still has to load the model. To skip repeated basis/vector estimation,
+precompute the optional cache once:
+
+```bash
+python demo/build_interactive_cache.py \
+  --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
+  --device cuda \
+  --layer 16 \
+  --cache demo/assets/interactive_tinyllama_chat_cache.pt
+```
 
 ## Reproducing Experiments
 

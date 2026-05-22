@@ -69,31 +69,34 @@ changes, the rank-flip snapshot, and side-by-side generations.
 
 ## Gradio App
 
-The optional Gradio UI renders an existing `projection_summary.json` as a compact
-dashboard and can also launch the live demo from the browser.
-
-```bash
-pip install -r demo/requirements-demo.txt
-
-python demo/app.py \
-  --summary outputs/demo_steering_projection/projection_summary.json \
-  --server_port 7860
-```
-
-The app defaults to loading an existing summary. Its live-run panel defaults to
-TinyLlama so the UI is easier to smoke-test than a full Llama-2 run.
-
-The app also includes an **Interactive Steering Chat** tab. After initialization,
-it estimates a small decode-shared basis plus several preset steering vectors
-(`Pirate`, `Concise`, `Step-by-step`, and `Confident`) and displays three
-responses for each prompt:
+The optional Gradio UI is a focused **Interactive Steering Chat**. It displays
+three responses for each prompt:
 
 - baseline,
 - prefill-estimated steering vector,
 - decode-estimated steering vector.
 
-This chat view is a qualitative inspection tool. It is meant to make the
-prefill-vs-decode validation mismatch easy to inspect: both vectors are
-deployed during KV-cached decoding, but one is estimated from prefill states and
-the other from decode states. It does not claim that every preset is repaired or
-improved by projection.
+Both steering vectors are deployed during KV-cached decoding; only the
+estimation source differs. This is a qualitative inspection tool and does not
+claim that every preset is repaired or improved by projection.
+
+```bash
+pip install -r demo/requirements-demo.txt
+
+python demo/app.py --server_port 7860
+```
+
+The app still has to load the selected model. To avoid repeated calibration
+work, it can load a small cache containing the demo decode-shared basis and
+preset steering vectors. The cache does not contain model weights.
+
+```bash
+python demo/build_interactive_cache.py \
+  --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
+  --device cuda \
+  --layer 16 \
+  --cache demo/assets/interactive_tinyllama_chat_cache.pt
+```
+
+After that file exists, `demo/app.py` will reuse it by default and skip
+basis/vector estimation during initialization.
