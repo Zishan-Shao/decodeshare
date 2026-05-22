@@ -104,3 +104,9 @@ basis/vector estimation during initialization.
 For the cached TinyLlama demo, `alpha=3` is a useful starting point for visible
 differences. Lower values can look identical under greedy decoding; much higher
 values can push the small model into repetitive text.
+
+Good example prompts to try:
+
+- `Explain the concept of 'Singular Value Decomposition' to a 5-year-old using a pirate metaphor.`
+- `I keep getting distracted when studying. Give me a plan for the next 30 minutes.`
+- `Give me a step-by-step checklist for debugging a Python script that suddenly became slow.`

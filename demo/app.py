@@ -51,6 +51,13 @@ VECTOR_MODES = [
 
 CHAT_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
+EXAMPLE_PROMPTS: Dict[str, str] = {
+    "SVD pirate metaphor": "Explain the concept of 'Singular Value Decomposition' to a 5-year-old using a pirate metaphor.",
+    "30-minute study plan": "I keep getting distracted when studying. Give me a plan for the next 30 minutes.",
+    "Debugging checklist": "Give me a step-by-step checklist for debugging a Python script that suddenly became slow.",
+    "Concise exam advice": "I have an exam tomorrow and only two hours to prepare. What should I do?",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -682,6 +689,10 @@ def clear_chat() -> Tuple[List[Dict[str, str]], List[Dict[str, str]], List[Dict[
     return [], [], [], "Cleared chat history."
 
 
+def load_example_prompt(label: str) -> str:
+    return EXAMPLE_PROMPTS.get(label, "")
+
+
 CSS = """
 .gradio-container { max-width: 1280px !important; }
 .panel {
@@ -744,6 +755,14 @@ def build_app():
             placeholder="Ask a question, request a style, or test a reasoning prompt.",
             lines=3,
         )
+        with gr.Row():
+            example_prompt = gr.Dropdown(
+                list(EXAMPLE_PROMPTS.keys()),
+                value=None,
+                label="Example prompt",
+                scale=4,
+            )
+            load_example_button = gr.Button("Use Example", scale=1)
         with gr.Row():
             send_button = gr.Button("Send", variant="primary")
             clear_button = gr.Button("Clear")
@@ -833,6 +852,7 @@ def build_app():
             ],
             outputs=[baseline_chat, prefill_chat, decode_chat, user_message, chat_status],
         )
+        load_example_button.click(load_example_prompt, inputs=[example_prompt], outputs=[user_message])
         clear_button.click(clear_chat, outputs=[baseline_chat, prefill_chat, decode_chat, chat_status])
     return app
 
