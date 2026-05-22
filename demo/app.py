@@ -55,7 +55,7 @@ EXAMPLE_CONFIGS: Dict[str, Dict[str, Any]] = {
     "SVD pirate metaphor": {
         "prompt": "Explain the concept of 'Singular Value Decomposition' to a 5-year-old using a pirate metaphor.",
         "preset": "Pirate",
-        "alpha": 3.0,
+        "alpha": 1.5,
         "max_new_tokens": 80,
         "vector_mode": "original vector",
         "beta": 1.0,

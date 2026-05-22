@@ -232,8 +232,9 @@ python demo/build_interactive_cache.py \
   --cache demo/assets/interactive_tinyllama_chat_cache.pt
 ```
 
-With the cached TinyLlama demo, `alpha=3` is the default because smaller values
-often look identical under greedy decoding.
+The cached TinyLlama demo uses example-specific defaults: the pirate prompt uses
+`alpha=1.5` to avoid repetitive text, while more structural prompts use stronger
+values for visible differences under greedy decoding.
 
 Live Space: https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo
 The same Gradio demo can also run locally on CPU with the bundled cache, though
