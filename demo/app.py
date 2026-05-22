@@ -98,6 +98,10 @@ def default_dtype_choice(device: str) -> str:
     return "fp32" if device == "cpu" else "fp16"
 
 
+def default_max_new_tokens(device: str) -> int:
+    return 40 if device == "cpu" else 80
+
+
 def demo_runtime():
     from demo import run_steering_projection_demo as runtime
 
@@ -744,6 +748,7 @@ def build_app():
     with gr.Blocks(css=CSS, title="DecodeShare Interactive Steering Chat") as app:
         chat_session = gr.State("")
         chat_intro = gr.HTML(render_chat_setup(None))
+        default_device = default_device_choice()
 
         with gr.Row():
             init_button = gr.Button("Initialize Demo", variant="primary", scale=1)
@@ -752,7 +757,13 @@ def build_app():
         with gr.Row():
             preset = gr.Dropdown(["None"] + list(VECTOR_PRESETS.keys()), value="Step-by-step", label="Steering preset")
             alpha = gr.Slider(-8.0, 8.0, value=3.0, step=0.25, label="Alpha")
-            max_new_tokens = gr.Slider(8, 192, value=80, step=4, label="Max new tokens")
+            max_new_tokens = gr.Slider(
+                8,
+                192,
+                value=default_max_new_tokens(default_device),
+                step=4,
+                label="Max new tokens",
+            )
 
         user_message = gr.Textbox(
             label="Prompt",
@@ -784,7 +795,6 @@ def build_app():
                 use_cache = gr.Checkbox(value=True, label="Use cache if available")
                 save_cache = gr.Checkbox(value=True, label="Save cache after estimation")
             with gr.Row():
-                default_device = default_device_choice()
                 chat_device = gr.Dropdown(["cuda", "cpu", "mps"], value=default_device, label="Device")
                 chat_dtype = gr.Dropdown(["fp16", "bf16", "fp32"], value=default_dtype_choice(default_device), label="Dtype")
                 chat_layer = gr.Number(value=16, precision=0, label="Layer")
