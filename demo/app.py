@@ -262,13 +262,19 @@ def render_chat_setup(state: Optional[Dict[str, Any]]) -> str:
     if not state:
         return """
 <div class="panel intro-panel">
-  <h2>DecodeShare Steering Chat</h2>
+  <div class="title-row">
+    <h2>DecodeShare Steering Chat</h2>
+    <span class="channel-chip">prefill vs decode</span>
+  </div>
 </div>
 """
     basis = state["basis_info"]
     return f"""
 <div class="panel intro-panel">
-  <h2>DecodeShare Steering Chat</h2>
+  <div class="title-row">
+    <h2>DecodeShare Steering Chat</h2>
+    <span class="channel-chip">ready</span>
+  </div>
   <div class="metric-grid">
     <div class="metric"><span>model</span><strong>{esc(state["config"]["model"])}</strong></div>
     <div class="metric"><span>layer</span><strong>{esc(state["config"]["layer"])}</strong></div>
@@ -730,18 +736,76 @@ def load_example_prompt(label: str) -> str:
 
 
 CSS = """
-.gradio-container { max-width: 1280px !important; }
+.gradio-container {
+  max-width: 1280px !important;
+  color: #182233;
+  background:
+    linear-gradient(180deg, #f4fbff 0%, #ffffff 38%, #f8fafc 100%) !important;
+}
+.gradio-container a { color: #1667a8; }
+.gradio-container button.primary {
+  color: #ffffff !important;
+  border: 1px solid #008ea6 !important;
+  background: linear-gradient(135deg, #0fbad0 0%, #2466b4 100%) !important;
+  box-shadow: 0 9px 22px rgba(19, 128, 177, .23) !important;
+}
+.gradio-container button.secondary,
+.gradio-container button:not(.primary) {
+  border: 1px solid #cdddeb !important;
+  color: #1f3550 !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f3f8fc 100%) !important;
+}
+.gradio-container label,
+.gradio-container .block-title {
+  color: #26374a !important;
+  font-weight: 650 !important;
+}
+.gradio-container input,
+.gradio-container textarea,
+.gradio-container select {
+  border-color: #c7d8e8 !important;
+}
 .panel {
-  border: 1px solid #dce3ea;
+  border: 1px solid #c7dce9;
   border-radius: 8px;
-  background: #ffffff;
+  background: rgba(255,255,255,.94);
   padding: 18px;
   margin: 14px 0;
+  box-shadow: 0 14px 36px rgba(33, 83, 138, .10);
 }
 .intro-panel {
-  background: linear-gradient(135deg, #f8fafc 0%, #eef5f8 55%, #f8f4ee 100%);
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(0, 188, 212, .34);
+  background:
+    linear-gradient(135deg, rgba(0, 201, 216, .18) 0%, rgba(255,255,255,.96) 46%, rgba(255, 212, 91, .18) 100%);
 }
-.panel h2 { margin: 0 0 12px; font-size: 21px; color: #162330; }
+.intro-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  background: linear-gradient(90deg, #03bfd2 0%, #2b65b1 54%, #ffd35b 100%);
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.channel-chip {
+  flex: 0 0 auto;
+  border: 1px solid rgba(0, 170, 192, .36);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #095b74;
+  background: rgba(231, 254, 255, .78);
+  font-size: 12px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+.panel h2 { margin: 0 0 12px; font-size: 22px; color: #10233f; letter-spacing: 0; }
+.title-row h2 { margin: 0; }
 .chat-note { color: #415160; margin: 0; line-height: 1.55; }
 .metric-grid {
   display: grid;
@@ -750,19 +814,31 @@ CSS = """
   margin: 16px 0;
 }
 .metric {
-  border: 1px solid #dce3ea;
+  border: 1px solid #d5e5f0;
   border-radius: 8px;
-  background: rgba(255,255,255,.86);
+  background: linear-gradient(180deg, rgba(255,255,255,.92) 0%, rgba(239,249,252,.86) 100%);
   padding: 13px 14px;
 }
 .metric span { display: block; color: #667585; font-size: 12px; text-transform: uppercase; margin-bottom: 7px; }
-.metric strong { font-size: 18px; color: #162330; overflow-wrap: anywhere; }
+.metric strong { font-size: 18px; color: #10233f; overflow-wrap: anywhere; }
+.baseline-card,
+.prefill-card,
+.decode-card {
+  border-radius: 8px !important;
+  overflow: hidden;
+  border: 1px solid #d7e4ef !important;
+  background: #ffffff !important;
+}
+.baseline-card { border-top: 4px solid #2f77b4 !important; }
+.prefill-card { border-top: 4px solid #c53e72 !important; }
+.decode-card { border-top: 4px solid #08bfd0 !important; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th, td { border-bottom: 1px solid #e6edf3; padding: 8px 9px; text-align: left; vertical-align: top; }
-th { color: #405162; background: #f6f8fa; font-weight: 650; }
+th, td { border-bottom: 1px solid #e2edf5; padding: 8px 9px; text-align: left; vertical-align: top; }
+th { color: #405162; background: #f4f9fc; font-weight: 650; }
 td { color: #1e2935; }
 @media (max-width: 900px) {
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .title-row { align-items: flex-start; flex-direction: column; }
 }
 """
 
@@ -816,9 +892,24 @@ def build_app():
             send_button = gr.Button("Send", variant="primary")
             clear_button = gr.Button("Clear")
         with gr.Row():
-            baseline_chat = gr.Chatbot(label="Baseline", height=420, type="messages")
-            prefill_chat = gr.Chatbot(label="Prefill-estimated vector", height=420, type="messages")
-            decode_chat = gr.Chatbot(label="Decode-estimated vector", height=420, type="messages")
+            baseline_chat = gr.Chatbot(
+                label="Baseline",
+                height=420,
+                type="messages",
+                elem_classes=["baseline-card"],
+            )
+            prefill_chat = gr.Chatbot(
+                label="Prefill-estimated vector",
+                height=420,
+                type="messages",
+                elem_classes=["prefill-card"],
+            )
+            decode_chat = gr.Chatbot(
+                label="Decode-estimated vector",
+                height=420,
+                type="messages",
+                elem_classes=["decode-card"],
+            )
 
         with gr.Accordion("Advanced Settings", open=False):
             with gr.Row():
