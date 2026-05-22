@@ -6,8 +6,9 @@ from __future__ import annotations
 import argparse
 import html
 import sys
+import warnings
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 
@@ -63,25 +64,6 @@ def esc(value: Any) -> str:
     return html.escape("" if value is None else str(value))
 
 
-def fmt(value: Any, digits: int = 3, signed: bool = False) -> str:
-    try:
-        v = float(value)
-    except Exception:
-        return esc(value)
-    if signed:
-        return f"{v:+.{digits}f}"
-    return f"{v:.{digits}f}"
-
-
-def table(headers: Iterable[str], rows: Iterable[Iterable[Any]], *, cls: str = "") -> str:
-    head = "".join(f"<th>{esc(h)}</th>" for h in headers)
-    body = []
-    for row in rows:
-        body.append("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>")
-    cls_attr = f" class='{cls}'" if cls else ""
-    return f"<table{cls_attr}><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table>"
-
-
 def resolve_cache_path(path: str) -> Path:
     p = Path(path or DEFAULT_CHAT_CACHE).expanduser()
     if not p.is_absolute():
@@ -94,9 +76,13 @@ def default_device_choice() -> str:
         import torch
     except Exception:
         return "cuda"
-    if torch.cuda.is_available():
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cuda_available = torch.cuda.is_available()
+        mps_available = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+    if cuda_available:
         return "cuda"
-    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    if mps_available:
         return "mps"
     return "cpu"
 
@@ -256,46 +242,19 @@ def render_chat_setup(state: Optional[Dict[str, Any]]) -> str:
     if not state:
         return """
 <div class="panel intro-panel">
-  <h2>Interactive Steering Chat</h2>
-  <p class="chat-note">
-    Initialize a Llama-style model, then compare baseline, prefill-estimated
-    steering, and decode-estimated steering side by side. If a cache artifact is
-    present, the app reuses its decode-shared basis and preset vectors instead
-    of estimating them again.
-  </p>
+  <h2>DecodeShare Steering Chat</h2>
 </div>
 """
-    rows = []
-    for name, record in state["vectors"].items():
-        pre = record["prefill"]
-        dec = record["decode"]
-        rows.append(
-            [
-                esc(name),
-                esc(record["description"]),
-                fmt(pre["overlap_original"], 3),
-                fmt(dec["overlap_original"], 3),
-                fmt(pre["overlap_residual"], 6),
-                fmt(dec["overlap_residual"], 6),
-            ]
-        )
     basis = state["basis_info"]
     return f"""
 <div class="panel intro-panel">
-  <h2>Interactive Steering Chat</h2>
-  <p class="chat-note">
-    Model is initialized. Both steering vectors are deployed during KV-cached
-    decoding; only the estimation source differs. Treat the chat output as a
-    qualitative inspection surface. The paper-level claim is the
-    rank-flip/validation result, not that every preset visibly improves here.
-  </p>
+  <h2>DecodeShare Steering Chat</h2>
   <div class="metric-grid">
     <div class="metric"><span>model</span><strong>{esc(state["config"]["model"])}</strong></div>
     <div class="metric"><span>layer</span><strong>{esc(state["config"]["layer"])}</strong></div>
     <div class="metric"><span>basis dim</span><strong>{esc(basis.get("basis_dim", ""))}</strong></div>
     <div class="metric"><span>decode states</span><strong>{esc(basis.get("n_states", ""))}</strong></div>
   </div>
-  {table(["Preset", "Role", "Prefill-vector shared overlap", "Decode-vector shared overlap", "Prefill residual overlap", "Decode residual overlap"], rows)}
 </div>
 """
 
@@ -771,7 +730,29 @@ def build_app():
         chat_session = gr.State("")
         chat_intro = gr.HTML(render_chat_setup(None))
 
-        with gr.Accordion("Initialize model and steering vectors", open=True):
+        with gr.Row():
+            init_button = gr.Button("Initialize Demo", variant="primary", scale=1)
+            chat_status = gr.Textbox(label="Status", interactive=False, scale=4)
+
+        with gr.Row():
+            preset = gr.Dropdown(["None"] + list(VECTOR_PRESETS.keys()), value="Step-by-step", label="Steering preset")
+            alpha = gr.Slider(-8.0, 8.0, value=3.0, step=0.25, label="Alpha")
+            max_new_tokens = gr.Slider(8, 192, value=80, step=4, label="Max new tokens")
+
+        user_message = gr.Textbox(
+            label="Prompt",
+            placeholder="Ask a question, request a style, or test a reasoning prompt.",
+            lines=3,
+        )
+        with gr.Row():
+            send_button = gr.Button("Send", variant="primary")
+            clear_button = gr.Button("Clear")
+        with gr.Row():
+            baseline_chat = gr.Chatbot(label="Baseline", height=420, type="messages")
+            prefill_chat = gr.Chatbot(label="Prefill-estimated vector", height=420, type="messages")
+            decode_chat = gr.Chatbot(label="Decode-estimated vector", height=420, type="messages")
+
+        with gr.Accordion("Advanced Settings", open=False):
             with gr.Row():
                 chat_model = gr.Textbox(value=DEFAULT_CHAT_MODEL, label="Model")
                 chat_system = gr.Textbox(value="You are a helpful assistant.", label="System prompt")
@@ -792,29 +773,10 @@ def build_app():
             with gr.Row():
                 chat_local_files = gr.Checkbox(value=False, label="Local files only")
                 chat_trust_remote = gr.Checkbox(value=False, label="Trust remote code")
-                init_button = gr.Button("Initialize Chat Demo", variant="primary")
-        chat_status = gr.Textbox(label="Status", interactive=False)
-
-        with gr.Row():
-            preset = gr.Dropdown(["None"] + list(VECTOR_PRESETS.keys()), value="Step-by-step", label="Steering preset")
-            vector_mode = gr.Dropdown(VECTOR_MODES, value="original vector", label="Vector mode")
-            alpha = gr.Slider(-8.0, 8.0, value=3.0, step=0.25, label="Alpha")
-            beta = gr.Slider(0.0, 1.0, value=1.0, step=0.05, label="Beta for partial removal")
-        with gr.Row():
-            inject_first_n = gr.Slider(1, 128, value=20, step=1, label="Inject first N decode steps")
-            max_new_tokens = gr.Slider(8, 192, value=80, step=4, label="Max new tokens")
-        user_message = gr.Textbox(
-            label="Prompt",
-            placeholder="Ask a question, request a style, or test a reasoning prompt.",
-            lines=3,
-        )
-        with gr.Row():
-            send_button = gr.Button("Send", variant="primary")
-            clear_button = gr.Button("Clear")
-        with gr.Row():
-            baseline_chat = gr.Chatbot(label="Baseline", height=420, type="messages")
-            prefill_chat = gr.Chatbot(label="Prefill-estimated vector", height=420, type="messages")
-            decode_chat = gr.Chatbot(label="Decode-estimated vector", height=420, type="messages")
+            with gr.Row():
+                vector_mode = gr.Dropdown(VECTOR_MODES, value="original vector", label="Vector mode")
+                beta = gr.Slider(0.0, 1.0, value=1.0, step=0.05, label="Beta for partial removal")
+                inject_first_n = gr.Slider(1, 128, value=20, step=1, label="Inject first N decode steps")
 
         init_button.click(
             initialize_chat_state,
