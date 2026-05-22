@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-prefill_vs_decode_alignment_experiment_reasoning_fixed.py
+run_prefill_decode_reasoning_sweeps.py
 
- NOTE：n_eval should be 2048, and use_forced_choice should be 1. 这个代码在reasoning folder里面也有一个，那个也是对的，实验是用那个跑的
-
-This is a patched version of your `prefill_vs_decode_alignment_experiment_reasoning.py`
-focused on making forced-choice results "make sense" when using warmup tokens and/or
-when prompts do not already end with an explicit answer prefix.
+Prefill/decode alignment sweeps for H3. The runner focuses on making
+forced-choice results well-defined when using warmup tokens and/or when prompts
+do not already end with an explicit answer prefix.
 
 Key fixes vs your original script:
   1) Forced-choice now supports a prefix policy via --fc_prefix_mode {auto,always,never}.

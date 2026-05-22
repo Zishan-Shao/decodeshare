@@ -20,7 +20,6 @@ Canonical scripts in this folder:
 - `h3_decode_subspace_helpers.py`: local decode-shared subspace helper used by
   the H3 grid runner.
 - `analysis/summarize_h3_grid.py`: JSON-to-table summary for H3 grid runs.
-- `legacy/`: older H3 variants and provenance scripts.
 
 Smoke check:
 
