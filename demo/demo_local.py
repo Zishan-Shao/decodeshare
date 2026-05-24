@@ -16,14 +16,14 @@ try:
     import tkinter as tk
     from tkinter import messagebox, ttk
 except ImportError as exc:  # pragma: no cover
-    raise SystemExit("Tkinter is required for demo_local.py. Install python3-tk or use demo/app.py.") from exc
+    raise SystemExit("Tkinter is required for demo/demo_local.py. Install python3-tk or use demo.py.") from exc
 
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from demo.app import (  # noqa: E402
+from demo.gradio_app import (  # noqa: E402
     CHAT_SESSIONS,
     DEFAULT_CHAT_CACHE,
     DEFAULT_CHAT_MODEL,

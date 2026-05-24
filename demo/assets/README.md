@@ -1,6 +1,6 @@
 Optional Gradio cache files live here.
 
-`demo/app.py` looks for `interactive_tinyllama_chat_cache.pt` by default. The
+`demo.py` looks for `interactive_tinyllama_chat_cache.pt` by default. The
 cache contains the demo decode-shared basis, preset steering vectors, and
 metadata only; it does not contain model weights.
 That default cache filename is allowed by `.gitignore`, so it can be committed

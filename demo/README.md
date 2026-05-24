@@ -83,7 +83,7 @@ claim that every preset is repaired or improved by projection.
 ```bash
 pip install -r demo/requirements-demo.txt
 
-python demo/app.py --server_port 7860
+python demo.py --server_port 7860
 ```
 
 The app still has to load the selected model. To avoid repeated calibration
@@ -98,7 +98,7 @@ python demo/build_interactive_cache.py \
   --cache demo/assets/interactive_tinyllama_chat_cache.pt
 ```
 
-After that file exists, `demo/app.py` will reuse it by default and skip
+After that file exists, `demo.py` will reuse it by default and skip
 basis/vector estimation during initialization.
 
 For the cached TinyLlama demo, use the bundled example defaults first. The pirate
@@ -115,7 +115,7 @@ slow because the Space still runs a 1.1B-parameter model:
 ```bash
 conda activate decodeshare
 pip install -r demo/requirements-demo.txt
-python demo/app.py --server_port 7860
+python demo.py --server_port 7860
 ```
 
 When CUDA is unavailable, the UI defaults to `cpu` and `fp32`. If you have a
@@ -127,6 +127,16 @@ trackable.
 `llama.cpp`/GGUF is not used here because DecodeShare applies PyTorch layer
 hooks to hidden states during KV-cached decoding; llama.cpp does not expose the
 same intervention interface out of the box.
+
+### Desktop Local Launcher
+
+The Tk desktop launcher is kept under `demo/` as a local fallback:
+
+```bash
+python demo/demo_local.py
+```
+
+The Gradio web entry point remains the recommended demo surface.
 
 Good example prompts to try:
 

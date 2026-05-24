@@ -43,7 +43,9 @@ def build_bundle(bundle_dir: Path) -> Path:
     for name in ["README.md", "requirements.txt", "app.py"]:
         copy_file(TEMPLATE_DIR / name, bundle_dir / name)
 
-    copy_file(REPO_ROOT / "demo" / "app.py", bundle_dir / "demo" / "app.py")
+    copy_file(REPO_ROOT / "demo.py", bundle_dir / "demo.py")
+    copy_file(REPO_ROOT / "demo" / "__init__.py", bundle_dir / "demo" / "__init__.py")
+    copy_file(REPO_ROOT / "demo" / "gradio_app.py", bundle_dir / "demo" / "gradio_app.py")
     copy_file(
         REPO_ROOT / "demo" / "run_steering_projection_demo.py",
         bundle_dir / "demo" / "run_steering_projection_demo.py",
@@ -52,7 +54,6 @@ def build_bundle(bundle_dir: Path) -> Path:
         REPO_ROOT / "demo" / "assets" / "interactive_tinyllama_chat_cache.pt",
         bundle_dir / "demo" / "assets" / "interactive_tinyllama_chat_cache.pt",
     )
-    (bundle_dir / "demo" / "__init__.py").write_text("", encoding="utf-8")
     return bundle_dir
 
 

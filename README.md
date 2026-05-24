@@ -234,7 +234,7 @@ side:
 
 ```bash
 pip install -r demo/requirements-demo.txt
-python demo/app.py --server_port 7860
+python demo.py --server_port 7860
 ```
 
 The app still has to load the model. To skip repeated basis/vector estimation,
