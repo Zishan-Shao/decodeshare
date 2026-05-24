@@ -8,8 +8,8 @@ Small camera-ready artifacts live in this directory.
 - `figures/`: final or regenerated paper figures.
 - `summaries/`: compact human-readable summaries used to audit paper results.
 - `figures/decodeshare_steering_demo.gif`: README-embedded GPU demo preview.
-- `figures/decodeshare_steering_demo.mp4`: compact GPU demo clip linked from
-  the repository README.
+- `figures/decodeshare_steering_demo.mp4`: compact source clip corresponding
+  to the README demo preview.
 
 ## External
 

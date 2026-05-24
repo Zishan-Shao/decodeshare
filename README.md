@@ -30,7 +30,7 @@ before launching model inference.
 </p>
 
 <p align="center">
-  <a href="paper_artifacts/figures/decodeshare_steering_demo.mp4">MP4 demo clip</a>
+  <a href="https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo">Try the interactive demo</a>
 </p>
 
 ## Core Results
