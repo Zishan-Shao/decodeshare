@@ -25,6 +25,10 @@ Large raw model outputs are intentionally not committed. Full reruns write to
 `outputs/` by default, and long-running jobs can be inspected with `DRY_RUN=1`
 before launching model inference.
 
+<p align="center">
+  <video src="paper_artifacts/figures/decodeshare_steering_demo.mp4" controls muted loop playsinline width="96%"></video>
+</p>
+
 ## Core Results
 
 ### Leave-One-Task-Out Decode Ablation
