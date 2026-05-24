@@ -142,6 +142,10 @@ code, and the small TinyLlama basis/vector cache.
 
 Hosted CPU Space: https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo
 
+Visitors can open the hosted Space directly; they do not need a local checkout,
+Hugging Face token, or paid hardware. The commands below are only for
+maintainers updating the Space bundle.
+
 ```bash
 conda activate decodeshare
 hf auth login
