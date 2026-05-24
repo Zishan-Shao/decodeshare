@@ -298,6 +298,12 @@ def render_chat_setup(state: Optional[Dict[str, Any]]) -> str:
     <h2>DecodeShare Steering Chat</h2>
     <span class="channel-chip">prefill vs decode</span>
   </div>
+  <div class="metric-grid">
+    <div class="metric"><span>model</span><strong>not initialized</strong></div>
+    <div class="metric"><span>layer</span><strong>-</strong></div>
+    <div class="metric"><span>basis dim</span><strong>-</strong></div>
+    <div class="metric"><span>decode states</span><strong>-</strong></div>
+  </div>
 </div>
 """
     basis = state["basis_info"]
@@ -685,6 +691,14 @@ def stream_status(label: str, stage: int, token_count: int, max_new_tokens: int)
     return f"Generating {label} response ({stage}/3) - token {int(token_count)}/{int(max_new_tokens)}"
 
 
+def normalize_chat_numeric_controls(alpha: Any, max_new_tokens: Any) -> Tuple[float, int]:
+    alpha_value = 1.0 if alpha is None else float(alpha)
+    token_value = (
+        default_max_new_tokens(default_device_choice()) if max_new_tokens is None else int(max_new_tokens)
+    )
+    return alpha_value, max(1, min(512, token_value))
+
+
 def chat_once(
     session_id: str,
     message: str,
@@ -708,6 +722,7 @@ def chat_once(
     state = CHAT_SESSIONS.get(session_id or "")
     if state is None:
         return baseline_history, prefill_history, decode_history, message, "Initialize the model before chatting."
+    alpha, max_new_tokens = normalize_chat_numeric_controls(alpha, max_new_tokens)
 
     update_progress(progress, 0.02, "Preparing prompts")
     runtime = state["runtime"]
@@ -800,6 +815,7 @@ def chat_once_stream(
     if state is None:
         yield baseline_history, prefill_history, decode_history, message, "Initialize the model before chatting."
         return
+    alpha, max_new_tokens = normalize_chat_numeric_controls(alpha, max_new_tokens)
 
     runtime = state["runtime"]
     config = state["config"]
@@ -907,19 +923,135 @@ def load_example_config(label: str) -> Tuple[str, str, float, int, str, float, i
     )
 
 
+def load_example_config_and_clear(
+    label: str,
+) -> Tuple[
+    str,
+    str,
+    float,
+    int,
+    str,
+    float,
+    int,
+    List[Dict[str, str]],
+    List[Dict[str, str]],
+    List[Dict[str, str]],
+    str,
+]:
+    (
+        prompt,
+        preset,
+        alpha,
+        max_new_tokens,
+        vector_mode,
+        beta,
+        inject_first_n,
+        _status,
+    ) = load_example_config(label)
+    return (
+        prompt,
+        preset,
+        alpha,
+        max_new_tokens,
+        vector_mode,
+        beta,
+        inject_first_n,
+        [],
+        [],
+        [],
+        f"Loaded example: {label}. Cleared chat history.",
+    )
+
+
 CSS = """
+html,
+body {
+  min-width: 0 !important;
+  overflow-x: hidden !important;
+  background: #f6f9fc;
+}
 .gradio-container {
-  max-width: 1280px !important;
-  margin: 0 auto !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  margin: 0 !important;
   color: #182233;
   background:
     linear-gradient(180deg, #f4fbff 0%, #ffffff 38%, #f8fafc 100%) !important;
 }
 .gradio-container > .main,
-.gradio-container .contain {
-  max-width: 1280px !important;
+.gradio-container > .contain,
+.gradio-container main {
+  width: min(100%, 1320px) !important;
+  max-width: 1320px !important;
   margin-left: auto !important;
   margin-right: auto !important;
+  padding-left: clamp(12px, 2vw, 24px) !important;
+  padding-right: clamp(12px, 2vw, 24px) !important;
+  box-sizing: border-box !important;
+}
+.gradio-container *,
+.gradio-container *::before,
+.gradio-container *::after {
+  box-sizing: border-box;
+}
+.gradio-container .block,
+.gradio-container .form,
+.gradio-container .wrap,
+.gradio-container .gap {
+  min-width: 0 !important;
+}
+.status-row,
+.example-row,
+.control-row,
+.action-row,
+.advanced-row,
+.chat-grid {
+  width: 100% !important;
+  min-width: 0 !important;
+  gap: 14px !important;
+}
+.status-row {
+  display: grid !important;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) !important;
+  align-items: end !important;
+}
+.example-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(144px, 190px) !important;
+  align-items: end !important;
+}
+.control-row {
+  display: grid !important;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(120px, .8fr) minmax(150px, .9fr) !important;
+  align-items: end !important;
+}
+.action-row {
+  display: grid !important;
+  grid-template-columns: minmax(120px, 180px) minmax(120px, 180px) minmax(0, 1fr) !important;
+  align-items: center !important;
+}
+.chat-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  align-items: stretch !important;
+}
+.advanced-row {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)) !important;
+  align-items: end !important;
+}
+.wide-advanced-row {
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)) !important;
+}
+.status-row > *,
+.example-row > *,
+.control-row > *,
+.action-row > *,
+.advanced-row > *,
+.chat-grid > * {
+  min-width: 0 !important;
+  width: 100% !important;
 }
 .gradio-container a { color: #1667a8; }
 .gradio-container button.primary {
@@ -944,6 +1076,10 @@ CSS = """
 .gradio-container select {
   border-color: #c7d8e8 !important;
 }
+.compact-number input {
+  min-height: 42px !important;
+  font-variant-numeric: tabular-nums;
+}
 .panel {
   border: 1px solid #c7dce9;
   border-radius: 8px;
@@ -951,6 +1087,7 @@ CSS = """
   padding: 18px;
   margin: 14px 0;
   box-shadow: 0 14px 36px rgba(33, 83, 138, .10);
+  width: 100%;
 }
 .intro-panel {
   position: relative;
@@ -1007,6 +1144,8 @@ CSS = """
   overflow: hidden;
   border: 1px solid #d7e4ef !important;
   background: #ffffff !important;
+  min-width: 0 !important;
+  width: 100% !important;
 }
 .baseline-card { border-top: 4px solid #2f77b4 !important; }
 .prefill-card { border-top: 4px solid #c53e72 !important; }
@@ -1015,9 +1154,25 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { border-bottom: 1px solid #e2edf5; padding: 8px 9px; text-align: left; vertical-align: top; }
 th { color: #405162; background: #f4f9fc; font-weight: 650; }
 td { color: #1e2935; }
+@media (max-width: 980px) {
+  .chat-grid { grid-template-columns: 1fr !important; }
+  .control-row { grid-template-columns: minmax(0, 1fr) minmax(120px, .5fr) minmax(150px, .6fr) !important; }
+}
+@media (max-width: 720px) {
+  .status-row,
+  .example-row,
+  .control-row,
+  .action-row {
+    grid-template-columns: 1fr !important;
+  }
+  .panel { padding: 14px; }
+}
 @media (max-width: 900px) {
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .title-row { align-items: flex-start; flex-direction: column; }
+}
+@media (max-width: 520px) {
+  .metric-grid { grid-template-columns: 1fr; }
 }
 """
 
@@ -1040,31 +1195,11 @@ def build_app():
         chat_intro = gr.HTML(render_chat_setup(None))
         default_device = default_device_choice()
 
-        with gr.Row():
+        with gr.Row(elem_classes=["status-row"]):
             init_button = gr.Button("Initialize Demo", variant="primary", scale=1)
             chat_status = gr.Textbox(label="Status", interactive=False, scale=4)
 
-        with gr.Row():
-            baseline_chat = gr.Chatbot(
-                label="Baseline",
-                height=400,
-                type="messages",
-                elem_classes=["baseline-card"],
-            )
-            prefill_chat = gr.Chatbot(
-                label="Prefill-estimated vector",
-                height=400,
-                type="messages",
-                elem_classes=["prefill-card"],
-            )
-            decode_chat = gr.Chatbot(
-                label="Decode-estimated vector",
-                height=400,
-                type="messages",
-                elem_classes=["decode-card"],
-            )
-
-        with gr.Row():
+        with gr.Row(elem_classes=["example-row"]):
             example_prompt = gr.Dropdown(
                 list(EXAMPLE_CONFIGS.keys()),
                 value="SVD pirate metaphor",
@@ -1073,15 +1208,23 @@ def build_app():
             )
             load_example_button = gr.Button("Use Example", scale=1)
 
-        with gr.Row():
-            preset = gr.Dropdown(["None"] + list(VECTOR_PRESETS.keys()), value="Step-by-step", label="Steering preset")
-            alpha = gr.Slider(-3.0, 3.0, value=3.0, step=0.25, label="Alpha")
-            max_new_tokens = gr.Slider(
-                8,
-                192,
+        with gr.Row(elem_classes=["control-row"]):
+            preset = gr.Dropdown(
+                ["None"] + list(VECTOR_PRESETS.keys()),
+                value="Step-by-step",
+                label="Steering preset",
+            )
+            alpha = gr.Number(
+                value=3.0,
+                precision=2,
+                label="Alpha",
+                elem_classes=["compact-number"],
+            )
+            max_new_tokens = gr.Number(
                 value=default_max_new_tokens(default_device),
-                step=4,
+                precision=0,
                 label="Max new tokens",
+                elem_classes=["compact-number"],
             )
 
         user_message = gr.Textbox(
@@ -1089,32 +1232,58 @@ def build_app():
             placeholder="Ask a question, request a style, or test a reasoning prompt.",
             lines=3,
         )
-        with gr.Row():
+        with gr.Row(elem_classes=["action-row"]):
             send_button = gr.Button("Send", variant="primary")
             clear_button = gr.Button("Clear")
 
-        with gr.Accordion("Advanced Settings", open=False):
-            with gr.Row():
+        with gr.Row(elem_classes=["chat-grid"]):
+            baseline_chat = gr.Chatbot(
+                label="Baseline",
+                height=400,
+                type="messages",
+                elem_classes=["baseline-card"],
+                scale=1,
+                min_width=260,
+            )
+            prefill_chat = gr.Chatbot(
+                label="Prefill-estimated vector",
+                height=400,
+                type="messages",
+                elem_classes=["prefill-card"],
+                scale=1,
+                min_width=260,
+            )
+            decode_chat = gr.Chatbot(
+                label="Decode-estimated vector",
+                height=400,
+                type="messages",
+                elem_classes=["decode-card"],
+                scale=1,
+                min_width=260,
+            )
+
+        with gr.Accordion("Advanced Settings", open=False, elem_classes=["advanced-panel"]):
+            with gr.Row(elem_classes=["advanced-row", "wide-advanced-row"]):
                 chat_model = gr.Textbox(value=DEFAULT_CHAT_MODEL, label="Model")
                 chat_system = gr.Textbox(value="You are a helpful assistant.", label="System prompt")
-            with gr.Row():
+            with gr.Row(elem_classes=["advanced-row"]):
                 cache_path = gr.Textbox(value=str(DEFAULT_CHAT_CACHE.relative_to(REPO_ROOT)), label="Basis/vector cache")
                 use_cache = gr.Checkbox(value=True, label="Use cache if available")
                 save_cache = gr.Checkbox(value=True, label="Save cache after estimation")
-            with gr.Row():
+            with gr.Row(elem_classes=["advanced-row"]):
                 chat_device = gr.Dropdown(["cuda", "cpu", "mps"], value=default_device, label="Device")
                 chat_dtype = gr.Dropdown(["fp16", "bf16", "fp32"], value=default_dtype_choice(default_device), label="Dtype")
                 chat_layer = gr.Number(value=16, precision=0, label="Layer")
                 chat_basis_k = gr.Number(value=24, precision=0, label="Basis dim")
-            with gr.Row():
+            with gr.Row(elem_classes=["advanced-row"]):
                 chat_calib_tokens = gr.Number(value=6, precision=0, label="Basis decode tokens")
                 chat_steer_tokens = gr.Number(value=6, precision=0, label="Vector decode tokens")
                 chat_max_prompt = gr.Number(value=384, precision=0, label="Max prompt tokens")
                 chat_seed = gr.Number(value=7, precision=0, label="Seed")
-            with gr.Row():
+            with gr.Row(elem_classes=["advanced-row"]):
                 chat_local_files = gr.Checkbox(value=False, label="Local files only")
                 chat_trust_remote = gr.Checkbox(value=False, label="Trust remote code")
-            with gr.Row():
+            with gr.Row(elem_classes=["advanced-row"]):
                 vector_mode = gr.Dropdown(VECTOR_MODES, value="original vector", label="Vector mode")
                 beta = gr.Slider(0.0, 1.0, value=1.0, step=0.05, label="Beta for partial removal")
                 inject_first_n = gr.Slider(1, 128, value=20, step=1, label="Inject first N decode steps")
@@ -1178,9 +1347,38 @@ def build_app():
             show_progress="hidden",
         )
         load_example_button.click(
-            load_example_config,
+            load_example_config_and_clear,
             inputs=[example_prompt],
-            outputs=[user_message, preset, alpha, max_new_tokens, vector_mode, beta, inject_first_n, chat_status],
+            outputs=[
+                user_message,
+                preset,
+                alpha,
+                max_new_tokens,
+                vector_mode,
+                beta,
+                inject_first_n,
+                baseline_chat,
+                prefill_chat,
+                decode_chat,
+                chat_status,
+            ],
+        )
+        example_prompt.change(
+            load_example_config_and_clear,
+            inputs=[example_prompt],
+            outputs=[
+                user_message,
+                preset,
+                alpha,
+                max_new_tokens,
+                vector_mode,
+                beta,
+                inject_first_n,
+                baseline_chat,
+                prefill_chat,
+                decode_chat,
+                chat_status,
+            ],
         )
         clear_button.click(clear_chat, outputs=[baseline_chat, prefill_chat, decode_chat, chat_status])
     return app.queue()
