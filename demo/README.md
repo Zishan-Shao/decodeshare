@@ -136,11 +136,11 @@ Good example prompts to try:
 
 ## Hugging Face Space
 
-The demo can be served as a Hugging Face Space. The deployment script builds a
-minimal Space bundle with the Gradio launcher, demo code, and the small
-TinyLlama basis/vector cache.
+The demo can be served as a Hugging Face Space on free CPU hardware. The
+deployment script builds a minimal Space bundle with the Gradio launcher, demo
+code, and the small TinyLlama basis/vector cache.
 
-Live Space: https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo
+Hosted CPU Space: https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo
 
 ```bash
 conda activate decodeshare
@@ -150,8 +150,8 @@ python demo/deploy_hf_space.py \
   --space-id Zishan-Shao/decodeshare-demo
 ```
 
-GPU hardware is recommended because the Space still loads TinyLlama model
-weights. To request hardware during upload, pass for example
-`--hardware t4-small`; otherwise choose hardware from the Space settings page.
-Paid Space hardware requires Hugging Face billing credits; without credits the
-deployment still succeeds, but the Space remains on CPU.
+The free CPU Space may sleep when inactive and cold-start slowly. It still loads
+TinyLlama model weights at startup, so CPU generation is slow but usable for
+short prompts and small `Max new tokens` values. GPU hardware can be selected
+from the Space settings page later if paid credits are available, but it is not
+required for deployment.

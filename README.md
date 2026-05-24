@@ -30,7 +30,7 @@ before launching model inference.
 </p>
 
 <p align="center">
-  <a href="https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo">Try the interactive demo</a>
+  <a href="https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo">Try the free CPU Space</a>
 </p>
 
 ## Core Results
@@ -244,10 +244,12 @@ The cached TinyLlama demo uses example-specific defaults: the pirate prompt uses
 `alpha=1.5` to avoid repetitive text, while more structural prompts use stronger
 values for visible differences under greedy decoding.
 
-Live Space: https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo
-The same Gradio demo can also run locally on CPU with the bundled cache, though
-generation is much slower than on GPU. Responses stream sequentially so CPU
-runs remain trackable.
+Hosted CPU Space: https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo
+
+The hosted Space uses Hugging Face's free CPU hardware by default. It may be
+sleeping when opened and can take time to cold-start. The same Gradio demo can
+also run locally on CPU with the bundled cache, though generation is much slower
+than on GPU. Responses stream sequentially so CPU runs remain trackable.
 
 ## Reproducing Experiments
 

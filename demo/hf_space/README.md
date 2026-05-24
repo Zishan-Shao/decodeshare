@@ -4,7 +4,7 @@ sdk: gradio
 sdk_version: 5.49.1
 app_file: app.py
 python_version: "3.10"
-suggested_hardware: t4-small
+suggested_hardware: cpu-basic
 short_description: Interactive prefill-vs-decode steering demo for DecodeShare.
 models:
   - TinyLlama/TinyLlama-1.1B-Chat-v1.0
@@ -21,7 +21,8 @@ three generations for the same prompt:
 
 The bundled cache contains the demo decode-shared basis and preset steering
 vectors for TinyLlama. It does not contain model weights. The Space still loads
-`TinyLlama/TinyLlama-1.1B-Chat-v1.0` at startup, so GPU hardware is recommended.
+`TinyLlama/TinyLlama-1.1B-Chat-v1.0` at startup. Free CPU hardware works, but
+startup and generation are slow; keep `Max new tokens` small for CPU runs.
 
 Recommended prompt:
 
