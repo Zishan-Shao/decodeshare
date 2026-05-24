@@ -1,32 +1,36 @@
 # DecodeShare Package Namespace
 
-This package is the target home for reusable code promoted from the historical
-experiment scripts.
+`decodeshare/` contains reusable library code shared by the paper experiments.
+Paper-specific runners and provenance scripts live under `experiments/` and
+`downstream/`.
 
-Planned module boundaries:
+## Current Structure
 
-- `data`: dataset adapters and prompt/task loading.
-- `models`: model/tokenizer loading and device placement helpers.
-- `subspace`: basis construction, projection, and sharedness utilities.
-- `collect`: activation collection entry points.
-- `interventions`: ablation and patching primitives.
-- `evaluation`: task metrics and aggregation helpers.
-- `stats`: bootstrap, confidence interval, and multiple-comparison utilities.
-- `plotting`: table and figure formatting helpers.
+```text
+decodeshare/
+  __init__.py
+  activations.py                  # H1 activation collection helpers
+  benchmark_dataloaders.py        # Benchmark loading, prompt building, answer checks
+  decode_loto.py                  # Shared decode-stage LOTO utilities
+  eval_perf.py                    # Forced-choice and generation evaluation helpers
+  sharedness.py                   # H1 sharedness estimation and null tests
+  subspace.py                     # Shared basis construction and intervention helpers
+  disturb_cross_task_all_shared.py # Legacy compatibility shim for old imports
+```
 
-Paper-specific entry points live under `experiments/`. Historical compatibility
-helpers that are still shared by several experiment scripts live under
-`decodeshare/joint_subspace_large/`.
-
-Current public modules:
+## Public Modules
 
 - `benchmark_dataloaders`: shared HF benchmark loading, prompt construction,
   answer parsing, correctness checks, and deterministic seeding.
-- `eval_perf`: forced-choice evaluation, decode/prefill shared-basis helpers,
-  and shared evaluation utilities used by H2/H3 scripts.
+- `subspace`: shared subspace construction, model-layer discovery, shared-basis
+  scoring, and subspace removal hooks.
 - `sharedness`: H1 sharedness prompt loading, decode-state collection,
   shared-component scoring, null tests, and model loading helpers.
-- `activations`: public activation-collection helper namespace used by H1
-  diagnostics.
-- `joint_subspace_large`: shared subspace construction/intervention helpers
-  used by the paper experiments.
+- `activations`: activation-collection helper namespace used by H1 diagnostics.
+- `eval_perf`: forced-choice evaluation, decode/prefill shared-basis helpers,
+  and shared evaluation utilities used by H2/H3 scripts.
+- `decode_loto`: shared decode-stage LOTO utilities used by patchback and
+  brittleness experiments.
+
+`disturb_cross_task_all_shared.py` is intentionally only a compatibility shim;
+new code should import from `decodeshare.subspace`.

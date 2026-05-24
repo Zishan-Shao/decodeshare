@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Compatibility CLI for the H1 sharedness existence runner."""
 
 from pathlib import Path

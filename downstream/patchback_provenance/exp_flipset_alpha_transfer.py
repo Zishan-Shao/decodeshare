@@ -1,112 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-flipset_alpha_sweep_and_transfer.py
-
-Two works on top of your existing subspace_patching_transfer script:
-
-Work 1) Flip-set (defined at alpha=1) -> alpha sweep on flip-set only
-        Report flip-rate / margins (and delta-margins vs baseline).
-
-Work 2) Transfer-donor subspace patching on flip-set:
-        donor comes from other example (same task or other tasks),
-        not self donor.
-
-This script dynamically imports your existing script (the one you pasted),
-and reuses its utilities:
-  - load_aux_modules
-  - get_transformer_layers
-  - orthonormalize_np, project_cpu
-  - DecodeStepHiddenCaptureHook, SubspacePatchHook
-  - forced_choice_decode_aligned
-  - load_selected_tasks_eval_only / maybe_compute_Qs (optional)
-and uses loto8.LastTokenRemovalHook from the imported loto8 module.
-
-Recommended: patch_window=steps_0 for transfer donor (robust across cache types).
-
-Example:
-python flipset_alpha_sweep_and_transfer.py \
-  --base_script_path subspace_patching_transfer.py \
-  --model meta-llama/Llama-2-7b-chat-hf \
-  --device cuda --dtype fp16 \
-  --layer 10 \
-  --task aqua --n_eval 1024 --flipset_max 128 \
-  --Qs_path Q_shared_layer10.npy \
-  --alpha_list 0,0.05,0.1,0.2,0.5,1.0 \
-  --run_alpha_sweep 1 \
-  --run_transfer_patching 1 \
-  --donor_source cross_task_eval \
-  --donor_tasks gsm8k,commonsenseqa,strategyqa \
-  --donor_n_eval 64 \
-  --patch_window steps_0 \
-  --out_json flipset_sweep_transfer.json
-  
-A) 只跑 flip-set 上的 α sweep（Work 1）
-python flipset_alpha_sweep_and_transfer.py \
-  --base_script_path subspace_patching_transfer.py \
-  --model meta-llama/Llama-2-7b-chat-hf \
-  --device cuda --dtype fp16 \
-  --layer 10 \
-  --task aqua --n_eval 256 --flipset_max 128 \
-  --Qs_path Q_shared_layer10.npy \
-  --run_alpha_sweep 1 \
-  --alpha_list 0,0.02,0.05,0.1,0.2,0.5,1.0 \
-  --run_transfer_patching 0 \
-  --out_json flipset_alpha_sweep.json
-
-
-你会在输出 JSON 里得到：
-
-alpha_sweep_summary_on_flipset：每个 alpha 的 flip_rate / mean_margin / mean Δmargin(vs baseline)
-
-alpha_sweep_rows_by_alpha：逐样本结果（方便你画曲线）
-
-B) 跑 transfer donor patching（Work 2）
-1) donor 来自同 task 的 eval 其他样本
-python flipset_alpha_sweep_and_transfer.py \
-  --base_script_path subspace_patching_transfer.py \
-  --model meta-llama/Llama-2-7b-chat-hf \
-  --device cuda --dtype fp16 \
-  --layer 10 \
-  --task aqua --n_eval 256 --flipset_max 64 \
-  --Qs_path Q_shared_layer10.npy \
-  --run_alpha_sweep 0 \
-  --run_transfer_patching 1 \
-  --donor_source same_task_eval \
-  --donor_n_eval 128 \
-  --patch_window steps_0 \
-  --run_self_patch_ref 1 \
-  --out_json flipset_transfer_same_task.json
-
-2) donor 来自别的 task
-python flipset_alpha_sweep_and_transfer.py \
-  --base_script_path subspace_patching_transfer.py \
-  --model meta-llama/Llama-2-7b-chat-hf \
-  --device cuda --dtype fp16 \
-  --layer 10 \
-  --task aqua --n_eval 256 --flipset_max 64 \
-  --Qs_path Q_shared_layer10.npy \
-  --run_alpha_sweep 0 \
-  --run_transfer_patching 1 \
-  --donor_source cross_task_eval \
-  --donor_tasks gsm8k,commonsenseqa,strategyqa \
-  --donor_n_eval 64 \
-  --patch_window steps_0 \
-  --run_self_patch_ref 1 \
-  --out_json flipset_transfer_cross_task.json
-
-我刻意做的几个“稳健性处理”
-
-flip-set 固定按 α=1 定义（你说的 common+reasonable 定义）。
-
-transfer patching 默认建议 --patch_window steps_0：
-因为在 Transformers 新 cache 路径下，step>0 往往变成 per-candidate 循环（batch 维度不同），你原脚本里也提到 beyond step0 在 fallback path “less meaningful”。
-所以这个脚本会：
-
-如果你请求 steps_01/full，会先 probe 一次是否 batched-candidate；
-
-不满足就自动降级到 {0}，避免 shape mismatch 和语义歧义。
-
-"""
+"""Flip-set alpha sweep and transfer-donor patchback provenance experiment."""
 
 from __future__ import annotations
 
@@ -132,29 +24,14 @@ def import_module_from_path(module_name: str, file_path: str):
 
     mod = importlib.util.module_from_spec(spec)
 
-    # 关键：先注册到 sys.modules，dataclasses/typing 才能找到模块命名空间
     sys.modules[module_name] = mod
     try:
         spec.loader.exec_module(mod)  # type: ignore[attr-defined]
     except Exception:
-        # 失败就清理，避免 sys.modules 里残留半初始化模块
         sys.modules.pop(module_name, None)
         raise
 
     return mod
-
-
-# # -----------------------------------------------------------------------------
-# # Dynamic import of your existing script
-# # -----------------------------------------------------------------------------
-# def import_module_from_path(module_name: str, file_path: str):
-#     spec = importlib.util.spec_from_file_location(module_name, file_path)
-#     if spec is None or spec.loader is None:
-#         raise ImportError(f"Cannot import {module_name} from {file_path}")
-#     mod = importlib.util.module_from_spec(spec)
-#     spec.loader.exec_module(mod)  # type: ignore[attr-defined]
-#     return mod
-
 
 def parse_csv_list(s: str) -> List[str]:
     return [x.strip() for x in (s or "").split(",") if x.strip()]
@@ -171,7 +48,7 @@ def parse_float_list(s: str) -> List[float]:
 
 
 def build_candidate_texts(base_mod: Any, candidate_labels: List[str], style: str) -> List[str]:
-    # reuse base helper if present; fallback to same logic
+
     if hasattr(base_mod, "build_candidate_texts"):
         return base_mod.build_candidate_texts(candidate_labels, style)
     if style == "raw":
@@ -188,7 +65,7 @@ def ensure_dir(path: str):
 
 
 def fc_to_dict(res: Any) -> Dict[str, Any]:
-    # base_mod.FCResult is a dataclass; but be defensive
+
     if hasattr(res, "__dict__"):
         return dict(res.__dict__)
     return {
@@ -283,18 +160,18 @@ def detect_batched_candidate_path(
     h1 = cap.hidden_by_step.get(1, None)
     if h1 is None:
         return False
-    # In batched path, step1 often has batch=K (num candidates)
+
     return int(h1.shape[0]) == int(len(candidate_labels))
 
 
 def main():
     ap = argparse.ArgumentParser()
 
-    # --- where to import your existing script ---
-    ap.add_argument("--base_script_path", type=str, required=True,
-                    help="Path to your existing script (the one you pasted), e.g. subspace_patching_transfer.py")
 
-    # --- model / data ---
+    ap.add_argument("--base_script_path", type=str, required=True,
+                    help="Path to your existing script (the one you pasted), e.g. exp_subspace_patching_transfer.py")
+
+
     ap.add_argument("--model", type=str, required=True)
     ap.add_argument("--device", type=str, default="cuda")
     ap.add_argument("--dtype", type=str, default="fp16", choices=["fp16", "bf16", "fp32"])
@@ -303,16 +180,16 @@ def main():
     ap.add_argument("--task", type=str, default="aqua", help="Target eval task to build flip-set from")
     ap.add_argument("--n_eval", type=int, default=256, help="How many eval examples to scan to find flips")
 
-    # flip-set controls
+
     ap.add_argument("--flipset_max", type=int, default=128,
                     help="How many flip examples to actually use downstream (alpha sweep / patching)")
 
-    # candidates
+
     ap.add_argument("--candidate_labels", type=str, default="ABCDE")
     ap.add_argument("--candidate_text_style", type=str, default="space_letter", choices=["space_letter", "raw"])
     ap.add_argument("--add_special_tokens_prompt", type=int, default=1)
 
-    # Q_shared
+
     ap.add_argument("--Qs_path", type=str, default="", help="Path to Q_shared .npy [d,k]")
     ap.add_argument("--compute_Qs", type=int, default=0)
     ap.add_argument("--Qs_out", type=str, default="Q_shared_computed.npy")
@@ -328,21 +205,21 @@ def main():
     ap.add_argument("--tau", type=float, default=0.001)
     ap.add_argument("--m_shared", type=str, default="all")
 
-    # modules
-    ap.add_argument("--loto8_path", type=str, default="disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py")
+
+    ap.add_argument("--loto8_path", type=str, default="exp_patchback_loto.py")
     ap.add_argument("--dataloaders_path", type=str, default="")
 
-    # prompt formatting
+
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
     ap.add_argument("--template_randomization", type=int, default=1)
     ap.add_argument("--shuffle_choices", type=int, default=1)
     ap.add_argument("--seed", type=int, default=123)
 
-    # Work 1: alpha sweep on flip-set
+
     ap.add_argument("--run_alpha_sweep", type=int, default=1)
     ap.add_argument("--alpha_list", type=str, default="0,0.05,0.1,0.2,0.5,1.0")
 
-    # Work 2: transfer donor patching
+
     ap.add_argument("--run_transfer_patching", type=int, default=1)
     ap.add_argument("--patch_window", type=str, default="steps_0", choices=["steps_0", "steps_01", "full_steps"],
                     help="Patch steps for transfer donor. Recommend steps_0 for robustness.")
@@ -363,17 +240,15 @@ def main():
     ap.add_argument("--out_json", type=str, default="flipset_alpha_sweep_transfer.json")
     args = ap.parse_args()
 
-    # -------------------------------------------------------------------------
-    # Import your base script and aux modules
-    # -------------------------------------------------------------------------
+
     base_mod = import_module_from_path("base_subspace_patching_transfer", args.base_script_path)
     loto8, dl = base_mod.load_aux_modules(args.loto8_path, args.dataloaders_path)
 
-    # seeds
+
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    # model
+
     dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
     torch_dtype = dtype_map[args.dtype]
 
@@ -401,7 +276,7 @@ def main():
     layer_module = layers[args.layer]
     print(f"[Info] Hooking layer={args.layer} at path {path_used}")
 
-    # candidates
+
     candidate_labels = list(args.candidate_labels.strip())
     candidate_texts = build_candidate_texts(base_mod, candidate_labels, args.candidate_text_style)
 
@@ -418,9 +293,7 @@ def main():
     print("[Info] Candidate token lens:", {lab: l for lab, l in zip(candidate_labels, cand_lens)})
     print(f"[Info] patch steps requested ({args.patch_window}): {sorted(list(patch_steps_user))}")
 
-    # -------------------------------------------------------------------------
-    # Load / compute Q_shared
-    # -------------------------------------------------------------------------
+
     Qs: Optional[np.ndarray] = None
     if args.Qs_path:
         Qs = base_mod.orthonormalize_np(np.load(args.Qs_path).astype(np.float32))
@@ -455,9 +328,7 @@ def main():
     assert Qs is not None
     d, k = Qs.shape
 
-    # -------------------------------------------------------------------------
-    # Load eval examples for target task (build flip-set from alpha=1)
-    # -------------------------------------------------------------------------
+
     _, eval_by, meta_by = base_mod.load_selected_tasks_eval_only(
         dl,
         task=args.task,
@@ -474,9 +345,7 @@ def main():
     if len(eval_examples) == 0:
         raise RuntimeError("No eval examples loaded. Check dataset availability / splits / extraction.")
 
-    # -------------------------------------------------------------------------
-    # Scan ALL eval examples (up to n_eval loaded) to build flip-set @ alpha=1
-    # -------------------------------------------------------------------------
+
     scan_rows: List[Dict[str, Any]] = []
     flip_examples: List[Any] = []
     baseline_cache: Dict[str, Dict[str, Any]] = {}
@@ -487,7 +356,7 @@ def main():
         gold = (ex.gold or "").strip().upper()
         ex_id = ex.ex_id
 
-        # skip if gold not in candidate labels (keeps "correct" meaningful)
+
         if gold not in candidate_labels:
             scan_rows.append({
                 "ex_id": ex_id,
@@ -555,9 +424,7 @@ def main():
         print(f"[Done] No flips. Wrote {args.out_json}")
         return
 
-    # -------------------------------------------------------------------------
-    # Work 1: Alpha sweep on flip-set only
-    # -------------------------------------------------------------------------
+
     alpha_rows_by_alpha: Dict[float, List[Dict[str, Any]]] = {}
     alpha_summary: Dict[str, Any] = {}
 
@@ -575,7 +442,7 @@ def main():
                 prompt = ex.prompt
                 gold = (ex.gold or "").strip().upper()
 
-                base_d = baseline_cache[ex_id]  # baseline correct by construction
+                base_d = baseline_cache[ex_id]
                 remove = loto8.LastTokenRemovalHook(Qs, alpha=float(a), stats=loto8.HookStats(f"remove_shared_a{a:g}"))
                 ablt = base_mod.forced_choice_decode_aligned(
                     model, tok, prompt,
@@ -597,24 +464,22 @@ def main():
 
         alpha_summary = summarize_alpha_sweep(alpha_rows_by_alpha)
 
-        # quick print
+
         print("[AlphaSweep Summary] (on flip-set)")
         for a_str, s in alpha_summary.items():
             print(f"  alpha={a_str:>6s}  flip_rate={s.get('flip_rate', float('nan')):.3f}  "
                   f"mean_margin={s.get('mean_margin', float('nan')):.3f}  "
-                  f"meanΔm(vs base)={s.get('mean_delta_margin_vs_baseline', float('nan')):.3f}")
+                  f"mean_delta_margin(vs base)={s.get('mean_delta_margin_vs_baseline', float('nan')):.3f}")
 
-    # -------------------------------------------------------------------------
-    # Work 2: Transfer donor patching on flip-set
-    # -------------------------------------------------------------------------
+
     patch_rows: List[Dict[str, Any]] = []
     patch_summary: Dict[str, Any] = {}
     donors_meta: List[Dict[str, Any]] = []
     patch_steps_final = set(patch_steps_user)
 
     if bool(args.run_transfer_patching):
-        # Detect whether batched-candidate path is available.
-        # If user requested steps beyond 0, but we are NOT batched, auto downgrade to step0.
+
+
         if any(s > 0 for s in patch_steps_user):
             probe_prompt = flip_used[0].prompt
             batched = detect_batched_candidate_path(
@@ -628,9 +493,7 @@ def main():
 
         print(f"[TransferPatch] patch_steps_final={sorted(list(patch_steps_final))}")
 
-        # -------------------------
-        # Build donor pool
-        # -------------------------
+
         donor_examples: List[Any] = []
         donor_tasks = [args.task] if args.donor_source == "same_task_eval" else parse_csv_list(args.donor_tasks)
         if args.donor_source == "cross_task_eval" and len(donor_tasks) == 0:
@@ -651,7 +514,7 @@ def main():
             donor_examples.extend(exs)
             print(f"[Donors] loaded task={t} n={len(exs)} meta={meta_by_d.get(t, {})}")
 
-        # Optional filters
+
         if bool(args.donor_require_gold_in_candidates) or bool(args.donor_require_baseline_correct):
             filtered: List[Any] = []
             for ex in donor_examples:
@@ -675,13 +538,11 @@ def main():
         if len(donor_examples) == 0:
             raise RuntimeError("Donor pool is empty after loading/filtering.")
 
-        # Precompute donor shared vectors (by decode step)
-        # Use dummy gold for capture run if needed.
+
         rng = np.random.default_rng(args.seed + 9999)
         donor_bank: List[Dict[str, Any]] = []
 
-        # To keep memory bounded, we only keep up to N donors = max( len(flip_used), donor_n_eval*#tasks )
-        # but you can change this if you want.
+
         max_donors_keep = min(len(donor_examples), max(len(flip_used), 256))
         donor_indices = list(range(len(donor_examples)))
         rng.shuffle(donor_indices)
@@ -717,7 +578,7 @@ def main():
             donor_bank.append({
                 "donor_ex_id": exd_id,
                 "donor_gold": gold_d,
-                "donor_by_step": donor_by_step,  # CPU tensors
+                "donor_by_step": donor_by_step,
             })
 
         if len(donor_bank) == 0:
@@ -733,15 +594,13 @@ def main():
             "donor_require_baseline_correct": bool(args.donor_require_baseline_correct),
         }]
 
-        # -------------------------
-        # Run transfer patching on flip-set
-        # -------------------------
+
         print(f"[TransferPatch] running on flip-set size={len(flip_used)}")
 
         def pick_donor(i: int) -> Dict[str, Any]:
             if args.donor_pick == "cyclic":
                 return donor_bank[i % len(donor_bank)]
-            # random
+
             return donor_bank[int(rng.integers(0, len(donor_bank)))]
 
         for i, ex in enumerate(flip_used):
@@ -752,7 +611,7 @@ def main():
             base_d = baseline_cache[ex_id]
             ablt1_d = ablated1_cache[ex_id]
 
-            # Transfer donor
+
             donor_item = pick_donor(i)
             donor_by_step = donor_item["donor_by_step"]
 
@@ -777,7 +636,7 @@ def main():
                 "transfer_donor_gold": donor_item["donor_gold"],
             }
 
-            # Optional: self donor patch reference (same patch steps)
+
             if bool(args.run_self_patch_ref):
                 cap_self = base_mod.DecodeStepHiddenCaptureHook(capture_steps=patch_steps_final)
                 _ = base_mod.forced_choice_decode_aligned(
@@ -820,11 +679,9 @@ def main():
         for kname, sval in patch_summary.items():
             print(f"  {kname:>16s}: rescued={sval.get('rescued', 0)}/{sval.get('n', 0)} "
                   f"({sval.get('rescued_pct', float('nan')):.1f}%) "
-                  f"meanΔm(vs ablt)={sval.get('mean_delta_margin_vs_ablated', float('nan')):.3f}")
+                  f"mean_delta_margin(vs ablt)={sval.get('mean_delta_margin_vs_ablated', float('nan')):.3f}")
 
-    # -------------------------------------------------------------------------
-    # Write output
-    # -------------------------------------------------------------------------
+
     out = {
         "meta": {
             "model": args.model,
@@ -866,16 +723,16 @@ def main():
             },
         },
 
-        # lightweight: keep scan_rows (can be big but still manageable at n_eval~256)
+
         "scan_rows": scan_rows,
 
-        # Work 1
+
         "alpha_sweep_summary_on_flipset": alpha_summary,
         "alpha_sweep_rows_by_alpha": {
             str(a): rows for a, rows in alpha_rows_by_alpha.items()
         } if bool(args.run_alpha_sweep) else {},
 
-        # Work 2
+
         "donors_meta": donors_meta,
         "transfer_patching_summary_on_flipset": patch_summary,
         "transfer_patching_rows": patch_rows,

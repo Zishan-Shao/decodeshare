@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 decodeshare.sharedness
 
@@ -62,14 +61,12 @@ from tqdm import tqdm
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import (
+from decodeshare.subspace import (
     get_model_layers,
     compute_cross_task_subspace,
 )
 
-# -----------------------------
-# Stdout tee (save prints to txt)
-# -----------------------------
+
 class TeeStdout:
     def __init__(self, *streams):
         self.streams = streams
@@ -98,9 +95,6 @@ def _should_write_txt(path: Optional[str]) -> bool:
     return True
 
 
-# -----------------------------
-# Repro utils
-# -----------------------------
 def set_global_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -126,9 +120,6 @@ def to_py(obj: Any):
     return obj
 
 
-# -----------------------------
-# Prompt builders
-# -----------------------------
 def build_prompt_gsm8k(question: str) -> str:
     return (
         f"Question: {question}\n"
@@ -194,9 +185,6 @@ def build_prompt_piqa(goal: str, sol1: str, sol2: str) -> str:
     )
 
 
-# -----------------------------
-# Dataset helpers
-# -----------------------------
 def sample_hf_split(ds_split, n: int, seed: int):
     n = min(int(n), len(ds_split))
     if n <= 0:
@@ -205,7 +193,7 @@ def sample_hf_split(ds_split, n: int, seed: int):
 
 
 def _pick_split(ds) -> str:
-    # prefer train, else first available
+
     if isinstance(ds, dict) or hasattr(ds, "keys"):
         if "train" in ds:
             return "train"
@@ -226,35 +214,35 @@ def _try_load_dataset(path: str, name: Optional[str] = None):
 def load_calib_prompts(n_prompts: int, seed: int) -> Dict[str, List[str]]:
     prompts: Dict[str, List[str]] = {}
 
-    # gsm8k
+
     ds = _try_load_dataset("gsm8k", "main")
     if ds is not None:
         split = _pick_split(ds)
         rows = sample_hf_split(ds[split], n_prompts, seed + 1)
         prompts["gsm8k"] = [build_prompt_gsm8k(ex["question"]) for ex in rows]
 
-    # commonsenseqa
+
     ds = _try_load_dataset("commonsense_qa")
     if ds is not None:
         split = _pick_split(ds)
         rows = sample_hf_split(ds[split], n_prompts, seed + 11)
         prompts["commonsenseqa"] = [build_prompt_commonsenseqa(ex["question"], ex["choices"]) for ex in rows]
 
-    # strategyqa
+
     ds = _try_load_dataset("ChilleD/StrategyQA")
     if ds is not None:
         split = _pick_split(ds)
         rows = sample_hf_split(ds[split], n_prompts, seed + 21)
         prompts["strategyqa"] = [build_prompt_strategyqa(ex["question"]) for ex in rows]
 
-    # aqua
+
     ds = _try_load_dataset("aqua_rat")
     if ds is not None:
         split = _pick_split(ds)
         rows = sample_hf_split(ds[split], n_prompts, seed + 31)
         prompts["aqua"] = [build_prompt_aqua(ex["question"], ex["options"]) for ex in rows]
 
-    # ARC-Challenge
+
     ds = _try_load_dataset("ai2_arc", "ARC-Challenge")
     if ds is not None:
         split = _pick_split(ds)
@@ -271,7 +259,7 @@ def load_calib_prompts(n_prompts: int, seed: int) -> Dict[str, List[str]]:
         if len(arc_prompts) > 0:
             prompts["arc_challenge"] = arc_prompts
 
-    # OpenBookQA
+
     ds = _try_load_dataset("openbookqa", "main")
     if ds is not None:
         split = _pick_split(ds)
@@ -287,7 +275,7 @@ def load_calib_prompts(n_prompts: int, seed: int) -> Dict[str, List[str]]:
         if len(ob_prompts) > 0:
             prompts["openbookqa"] = ob_prompts
 
-    # QASC
+
     ds = _try_load_dataset("qasc")
     if ds is not None:
         split = _pick_split(ds)
@@ -303,7 +291,7 @@ def load_calib_prompts(n_prompts: int, seed: int) -> Dict[str, List[str]]:
         if len(qasc_prompts) > 0:
             prompts["qasc"] = qasc_prompts
 
-    # BoolQ
+
     ds = _try_load_dataset("boolq")
     if ds is not None:
         split = _pick_split(ds)
@@ -317,7 +305,7 @@ def load_calib_prompts(n_prompts: int, seed: int) -> Dict[str, List[str]]:
         if len(bq_prompts) > 0:
             prompts["boolq"] = bq_prompts
 
-    # PIQA
+
     ds = _try_load_dataset("piqa")
     if ds is not None:
         split = _pick_split(ds)
@@ -338,9 +326,6 @@ def load_calib_prompts(n_prompts: int, seed: int) -> Dict[str, List[str]]:
     return prompts
 
 
-# -----------------------------
-# Decode last-token activation collector
-# -----------------------------
 from collections import defaultdict
 from typing import DefaultDict
 
@@ -373,7 +358,7 @@ class DecodeLastTokenActivationCollector:
             if hs.shape[1] != 1:
                 return output
 
-            x = hs[:, -1, :]  # [B, D]
+            x = hs[:, -1, :]
             if self.active_mask is not None:
                 m = self.active_mask
                 if m.dtype != torch.bool:
@@ -394,9 +379,6 @@ class DecodeLastTokenActivationCollector:
         return np.concatenate(chunks, axis=0)
 
 
-# -----------------------------
-# Sampling filters
-# -----------------------------
 def top_p_filtering(logits: torch.Tensor, top_p: float) -> torch.Tensor:
     if top_p <= 0.0 or top_p >= 1.0:
         return logits
@@ -420,9 +402,6 @@ def top_k_filtering(logits: torch.Tensor, top_k: int) -> torch.Tensor:
     return torch.where(logits < min_values, torch.full_like(logits, float("-inf")), logits)
 
 
-# -----------------------------
-# Decode collection
-# -----------------------------
 @torch.no_grad()
 def collect_decode_last_token_states(
     model,
@@ -463,13 +442,13 @@ def collect_decode_last_token_states(
 
         unfinished = torch.ones(B, dtype=torch.bool, device=device)
 
-        # Prefill (no capture)
+
         collector.set_capture(False, None)
         out = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True)
         logits = out.logits[:, -1, :]
         past = out.past_key_values
 
-        # Decode loop (capture)
+
         for _step in range(int(calib_max_new_tokens)):
             if decoding == "greedy":
                 next_token = torch.argmax(logits, dim=-1, keepdim=True)
@@ -480,7 +459,7 @@ def collect_decode_last_token_states(
                 probs = torch.softmax(lt, dim=-1)
                 next_token = torch.multinomial(probs, num_samples=1)
 
-            # force eos for finished seqs (so shapes stay consistent)
+
             next_token = torch.where(
                 unfinished.unsqueeze(-1),
                 next_token,
@@ -498,7 +477,7 @@ def collect_decode_last_token_states(
                 dim=1,
             )
 
-            # capture only unfinished sequences
+
             collector.set_capture(True, unfinished)
 
             out = model(
@@ -513,9 +492,6 @@ def collect_decode_last_token_states(
         collector.set_capture(False, None)
 
 
-# -----------------------------
-# Sharedness computation
-# -----------------------------
 def center_and_balance(
     X_by_task: Dict[str, np.ndarray],
     *,
@@ -530,7 +506,7 @@ def center_and_balance(
     """
     rng = np.random.default_rng(seed)
 
-    # cap
+
     capped: Dict[str, np.ndarray] = {}
     for t, X in X_by_task.items():
         if X.shape[0] > per_task_max_states:
@@ -538,7 +514,7 @@ def center_and_balance(
             X = X[idx]
         capped[t] = X.astype(np.float32, copy=False)
 
-    # balance
+
     if balance_to == "min":
         n0 = min(X.shape[0] for X in capped.values())
     else:
@@ -550,7 +526,7 @@ def center_and_balance(
         if X.shape[0] > n0:
             idx = rng.choice(X.shape[0], size=n0, replace=False)
             X = X[idx]
-        # task-wise centering
+
         X = X - X.mean(axis=0, keepdims=True)
         balanced[t] = X.astype(np.float32, copy=False)
 
@@ -564,9 +540,9 @@ def compute_shared_indices_from_relvar(
     m_shared: int,
 ) -> List[int]:
     tasks = list(relvar_by_task.keys())
-    rel = np.stack([relvar_by_task[t] for t in tasks], axis=0)  # [T, k]
-    ok = (rel >= float(tau)).astype(np.int32)                   # [T, k]
-    cnt = ok.sum(axis=0)                                        # [k]
+    rel = np.stack([relvar_by_task[t] for t in tasks], axis=0)
+    ok = (rel >= float(tau)).astype(np.int32)
+    cnt = ok.sum(axis=0)
     idx = np.where(cnt >= int(m_shared))[0]
     return idx.tolist()
 
@@ -576,13 +552,13 @@ def compute_relvar_in_basis(X: np.ndarray, Q: np.ndarray) -> np.ndarray:
     X: [n, D], Q: [D, k] (assumed approximately orthonormal; in practice PCA basis)
     returns relvar: [k] where relvar[i] = Var(XQ[:,i]) / sum_j Var(XQ[:,j])
     """
-    Z = X @ Q  # [n, k]
+    Z = X @ Q
     v = np.var(Z, axis=0)
     s = float(v.sum()) + 1e-12
     return (v / s).astype(np.float32, copy=False)
 
 def subspace_overlap_fro(Qref: np.ndarray, Q: np.ndarray) -> Dict[str, float]:
-    # Both D×k, columns assumed orthonormal
+
     k = min(Qref.shape[1], Q.shape[1])
     A = Qref[:, :k]
     B = Q[:, :k]
@@ -591,15 +567,13 @@ def subspace_overlap_fro(Qref: np.ndarray, Q: np.ndarray) -> Dict[str, float]:
     s = np.clip(s, 0.0, 1.0)
     return {
         "k_overlap": int(k),
-        "overlap_fro": float(np.mean(s ** 2)),               # = ||A^T B||_F^2 / k
+        "overlap_fro": float(np.mean(s ** 2)),
         "min_cos": float(s.min()),
         "mean_cos": float(s.mean()),
         "max_angle_deg": float(np.degrees(np.arccos(s.min()))),
     }
 
-# -----------------------------
-# Nulls
-# -----------------------------
+
 def null_perm_sharedcount(
     relvar_by_task: Dict[str, np.ndarray],
     *,
@@ -640,9 +614,6 @@ def scramble_features_orthogonal(X: np.ndarray, rng: np.random.Generator) -> np.
     return Xs.astype(np.float32, copy=False)
 
 
-# -----------------------------
-# Model loader
-# -----------------------------
 def load_model_and_tokenizer(model_name: str, device: str, model_dtype: str):
     if model_dtype == "fp32":
         dtype = torch.float32
@@ -667,17 +638,14 @@ def load_model_and_tokenizer(model_name: str, device: str, model_dtype: str):
     return model, tok
 
 
-
 def infer_hidden_dim(model) -> Optional[int]:
     cfg = getattr(model, "config", None)
 
-    # 1) 常见字段（大多数纯文本LM）
     for k in ("hidden_size", "n_embd", "dim", "d_model", "model_dim", "embed_dim"):
         v = getattr(cfg, k, None)
         if isinstance(v, int) and v > 0:
             return v
 
-    # 2) Gemma3 / 多模态：hidden_size 在 text_config 里
     text_cfg = getattr(cfg, "text_config", None)
     if text_cfg is not None:
         for k in ("hidden_size", "n_embd", "dim", "d_model", "model_dim", "embed_dim"):
@@ -685,7 +653,6 @@ def infer_hidden_dim(model) -> Optional[int]:
             if isinstance(v, int) and v > 0:
                 return v
 
-    # 3) 最终兜底：直接从 input embedding 的 weight 维度读
     try:
         emb = model.get_input_embeddings()
         if emb is not None and hasattr(emb, "weight") and isinstance(emb.weight, torch.Tensor) and emb.weight.ndim == 2:
@@ -698,9 +665,6 @@ def infer_hidden_dim(model) -> Optional[int]:
     return None
 
 
-# -----------------------------
-# Main
-# -----------------------------
 def main(default_output_dir: Optional[str] = None):
     output_dir = default_output_dir or os.getcwd()
     default_out_json = os.path.join(output_dir, "sharedness_existence.json")
@@ -726,21 +690,21 @@ def main(default_output_dir: Optional[str] = None):
     ap.add_argument("--min_dim", type=int, default=1)
     ap.add_argument("--max_dim", type=int, default=4096)
 
-    ap.add_argument("--tau", type=float, default=0.001)  # 0.1% rel var threshold
-    ap.add_argument("--m_shared", type=str, default="all")  # "all" or an int
+    ap.add_argument("--tau", type=float, default=0.001)
+    ap.add_argument("--m_shared", type=str, default="all")
 
     ap.add_argument("--per_task_max_states", type=int, default=20000)
-    ap.add_argument("--balance_to", type=str, default="min")  # "min" or an int
+    ap.add_argument("--balance_to", type=str, default="min")
 
     ap.add_argument("--null_perm_trials", type=int, default=2000)
-    ap.add_argument("--null_scramble_trials", type=int, default=0)  # strong but slow
-    
+    ap.add_argument("--null_scramble_trials", type=int, default=0)
+
     ap.add_argument("--tasks", type=str, default="all",
                 help="Comma-separated task names to use, or 'all'. Example: gsm8k,boolq,piqa")
     ap.add_argument("--save_joint_basis", type=str, default="",
-                    help="Optional .npy path to save pooled PCA basis Q (D×k).")
+                    help="Optional .npy path to save pooled PCA basis Q (Dxk).")
     ap.add_argument("--ref_joint_basis", type=str, default="",
-                    help="Optional .npy path of reference basis Q_ref (D×k). If provided, compute overlap.")
+                    help="Optional .npy path of reference basis Q_ref (Dxk). If provided, compute overlap.")
 
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--out_json", type=str, default=default_out_json)
@@ -749,7 +713,7 @@ def main(default_output_dir: Optional[str] = None):
 
     args = ap.parse_args()
 
-    # setup tee stdout early
+
     orig_stdout = sys.stdout
     txt_f = None
     if _should_write_txt(args.out_txt):
@@ -774,18 +738,14 @@ def main(default_output_dir: Optional[str] = None):
         if args.layer >= len(layers):
             raise RuntimeError(f"layer={args.layer} out of range, num_layers={len(layers)}")
 
-        # hidden_dim = getattr(model.config, "hidden_size", None) or getattr(model.config, "n_embd", None)
-        # if hidden_dim is None:
-        #     raise RuntimeError("Cannot infer hidden_dim")
-        # print(f"[Env] hidden_dim={hidden_dim}")
-        
+
         hidden_dim = infer_hidden_dim(model)
         if hidden_dim is None:
             print(f"[Warn] Could not infer hidden_dim (config_class={type(model.config)}). Continue anyway.")
         else:
             print(f"[Env] hidden_dim={hidden_dim}")
 
-        # Load calibration prompts
+
         prompts_by_task = load_calib_prompts(args.n_prompts, args.seed)
         if args.tasks != "all":
             want = [x.strip() for x in args.tasks.split(",") if x.strip()]
@@ -800,13 +760,13 @@ def main(default_output_dir: Optional[str] = None):
         for t in tasks:
             print(f"[Data] task={t} loaded_prompts={len(prompts_by_task[t])}")
 
-        # Collector + hooks
+
         collector = DecodeLastTokenActivationCollector(layer_indices)
         handles = []
         for li in layer_indices:
             handles.append(layers[li].register_forward_hook(collector.make_hook(li)))
 
-        # Collect decode states
+
         try:
             with torch.inference_mode():
                 for task in tasks:
@@ -833,7 +793,7 @@ def main(default_output_dir: Optional[str] = None):
                     pass
             collector.set_capture(False, None)
 
-        # Build X_by_task (single layer)
+
         X_raw: Dict[str, np.ndarray] = {}
         for task in tasks:
             X = collector.get(task, args.layer)
@@ -842,7 +802,7 @@ def main(default_output_dir: Optional[str] = None):
             X_raw[task] = X
             print(f"[Collect] task={task} states={X.shape[0]} x {X.shape[1]}")
 
-        # Fair preprocessing: cap, balance, task-center
+
         X_by_task, n0 = center_and_balance(
             X_raw,
             per_task_max_states=int(args.per_task_max_states),
@@ -851,10 +811,10 @@ def main(default_output_dir: Optional[str] = None):
         )
         print(f"[Fair] balanced states per task = {n0}")
 
-        # Build dict expected by compute_cross_task_subspace
+
         task_acts: Dict[str, Dict[int, np.ndarray]] = {t: {args.layer: X_by_task[t]} for t in tasks}
 
-        # Pooled PCA
+
         joint_subspace, cross_dim, contributions, full_pca_info = compute_cross_task_subspace(
             task_acts,
             variance_threshold=float(args.pca_var),
@@ -865,11 +825,11 @@ def main(default_output_dir: Optional[str] = None):
         if joint_subspace is None or int(cross_dim) <= 0:
             raise RuntimeError("compute_cross_task_subspace failed")
 
-        Q = joint_subspace.astype(np.float32, copy=False)  # [D, k]
+        Q = joint_subspace.astype(np.float32, copy=False)
         k = int(cross_dim)
         print(f"[PCA] cross_dim={k} / {hidden_dim}  (pca_var={args.pca_var})")
-        
-        # Optionally save joint basis
+
+
         if str(args.save_joint_basis).strip():
             os.makedirs(os.path.dirname(os.path.abspath(args.save_joint_basis)), exist_ok=True)
             np.save(args.save_joint_basis, Q)
@@ -882,12 +842,11 @@ def main(default_output_dir: Optional[str] = None):
                 f"max_angle_deg={overlap_stats['max_angle_deg']:.2f} k={overlap_stats['k_overlap']}")
 
 
-        # Compute per-task relative variance in this basis
         relvar_by_task: Dict[str, np.ndarray] = {}
         for t in tasks:
             relvar_by_task[t] = compute_relvar_in_basis(X_by_task[t], Q)
 
-        # Sharedness threshold
+
         if args.m_shared == "all":
             m_shared = len(tasks)
         else:
@@ -896,7 +855,7 @@ def main(default_output_dir: Optional[str] = None):
         shared_idx = compute_shared_indices_from_relvar(relvar_by_task, tau=float(args.tau), m_shared=m_shared)
         obs_shared_count = int(len(shared_idx))
 
-        # Diagnostics
+
         avg_rel = np.mean(np.stack([relvar_by_task[t] for t in tasks], axis=0), axis=0)
         top10 = np.argsort(-avg_rel)[:10].tolist()
 
@@ -909,7 +868,7 @@ def main(default_output_dir: Optional[str] = None):
         print("Top-10 components by avg relvar:", top10)
         print("Top-10 avg relvar:", [float(avg_rel[i]) for i in top10])
 
-        # Null-1
+
         null1_counts, _ = null_perm_sharedcount(
             relvar_by_task,
             tau=float(args.tau),
@@ -926,7 +885,7 @@ def main(default_output_dir: Optional[str] = None):
               f"p95={float(np.percentile(null1_counts, 95)):.2f} max={int(null1_counts.max())}")
         print(f"p-value (null>=obs) = {p1:.4g}")
 
-        # Null-2
+
         null2_counts = []
         if int(args.null_scramble_trials) > 0:
             print("\n" + "=" * 80)
@@ -967,11 +926,11 @@ def main(default_output_dir: Optional[str] = None):
         else:
             p2 = None
 
-        # Save JSON
+
         out_json_dir = os.path.dirname(os.path.abspath(args.out_json))
         if out_json_dir:
             os.makedirs(out_json_dir, exist_ok=True)
-        
+
         out = {
             "config": {
                 "model": args.model,
@@ -1021,7 +980,7 @@ def main(default_output_dir: Optional[str] = None):
         print("=" * 80)
 
     finally:
-        # restore stdout / close log file
+
         try:
             sys.stdout.flush()
         except Exception:

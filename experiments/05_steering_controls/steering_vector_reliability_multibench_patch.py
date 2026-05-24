@@ -1,6 +1,3 @@
-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 steering_vector_reliability_multibench_patch.py
 
@@ -57,9 +54,6 @@ from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# -----------------------------
-# Reproducibility
-# -----------------------------
 def seed_everything(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -67,9 +61,6 @@ def seed_everything(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
 
 
-# -----------------------------
-# Model helpers
-# -----------------------------
 def get_block(model, layer_idx: int):
     if hasattr(model, "model") and hasattr(model.model, "layers"):
         return model.model.layers[layer_idx]
@@ -116,9 +107,6 @@ def load_model_and_tokenizer(model_name: str, dtype_str: str, device: str, devic
     return model, tokenizer
 
 
-# -----------------------------
-# Hooks
-# -----------------------------
 class CollectLastTokenHook:
     def __init__(self, decode_only: bool):
         self.decode_only = decode_only
@@ -169,9 +157,6 @@ class AddVectorHook:
         return (h2, *rest)
 
 
-# -----------------------------
-# Neutral prompts for basis estimation
-# -----------------------------
 NEUTRAL_BASE_QUESTIONS = [
     "Explain how a refrigerator works.",
     "What are practical ways to improve sleep quality?",
@@ -230,14 +215,11 @@ def build_neutral_prompts(n: int, seed: int) -> List[str]:
     return prompts[:n]
 
 
-# -----------------------------
-# Candidate pairs + calibration
-# -----------------------------
 @dataclass
 class CandidatePair:
     name: str
-    pos: str  # label=True
-    neg: str  # label=False
+    pos: str
+    neg: str
 
 
 def default_candidate_pool(task_name: str) -> List[CandidatePair]:
@@ -258,10 +240,6 @@ def default_candidate_pool(task_name: str) -> List[CandidatePair]:
     return base
 
 
-# -----------------------------
-# Task specs
-# Templates include {POS}/{NEG} and end with trailing space
-# -----------------------------
 @dataclass
 class TaskSpec:
     name: str
@@ -292,7 +270,7 @@ def make_boolq_task() -> TaskSpec:
 def make_glue_rte_task() -> TaskSpec:
     templates = [
         "Premise:\n{premise}\n\nHypothesis:\n{hypothesis}\n\nDoes the premise entail the hypothesis?\nAnswer ({POS}/{NEG}): ",
-        # Fixed RTE template:
+
         "Reply with only '{POS}' or '{NEG}'.\nReturn '{POS}' if the premise entails the hypothesis; otherwise return '{NEG}'.\n\nPremise: {premise}\nHypothesis: {hypothesis}\nAnswer ({POS}/{NEG}): ",
         "One-token answer: '{POS}' or '{NEG}'.\n\nPremise: {premise}\nHypothesis: {hypothesis}\nEntailment ({POS}/{NEG}): ",
     ]
@@ -385,14 +363,11 @@ TASK_BUILDERS: Dict[str, Callable[[], TaskSpec]] = {
     "boolq": make_boolq_task,
     "rte": make_glue_rte_task,
     "sst2": make_glue_sst2_task,
-    "qnli": make_glue_qnli_task,  # optional
-    "imdb": make_imdb_task,       # optional
+    "qnli": make_glue_qnli_task,
+    "imdb": make_imdb_task,
 }
 
 
-# -----------------------------
-# Balanced sampling
-# -----------------------------
 def load_balanced_examples(task: TaskSpec, *, n_per_class: int, seed: int, split: str) -> List[Dict]:
     ds = load_dataset(task.ds_path, task.ds_config, split=split)
     pos_idx, neg_idx = [], []
@@ -430,9 +405,6 @@ def format_prompt(task: TaskSpec, ex: Dict, template_id: int, cand: CandidatePai
     return task.templates[template_id].format(**ex["fields"], POS=cand.pos, NEG=cand.neg)
 
 
-# -----------------------------
-# Candidate ids + margin
-# -----------------------------
 @torch.no_grad()
 def get_candidate_token_ids(tokenizer, cand: CandidatePair) -> Tuple[List[int], List[int]]:
     pos_ids = tokenizer(cand.pos, add_special_tokens=False, return_tensors="pt")["input_ids"][0].tolist()
@@ -573,7 +545,7 @@ def choose_best_candidate_pair(
         })
 
     if len(scored) == 0:
-        # fallback: allow multi-token
+
         for cand in pool:
             pos_ids, neg_ids = get_candidate_token_ids(tokenizer, cand)
             acc = baseline_forced_choice_acc(
@@ -606,9 +578,6 @@ def choose_best_candidate_pair(
     return best_cand, info
 
 
-# -----------------------------
-# Prefill vs decode state collection + vector estimation
-# -----------------------------
 @torch.no_grad()
 def collect_last_token_state_prefill(
     model,
@@ -712,9 +681,6 @@ def estimate_mean_diff_vector(
     return v, stats
 
 
-# -----------------------------
-# Shared basis estimation (decode-only)
-# -----------------------------
 @torch.no_grad()
 def collect_decode_states_for_prompts(
     model,
@@ -797,9 +763,6 @@ def estimate_shared_basis_decode(
     return pca_basis(X, k=k)
 
 
-# -----------------------------
-# Vector utilities
-# -----------------------------
 def project_partial(B: torch.Tensor, v: torch.Tensor, beta: float) -> torch.Tensor:
     return v - float(beta) * (B @ (B.T @ v))
 
@@ -820,9 +783,6 @@ def fmt_beta(beta: float) -> str:
     return f"{beta:.2f}".rstrip("0").rstrip(".")
 
 
-# -----------------------------
-# Sign calibration
-# -----------------------------
 @torch.no_grad()
 def mean_correct_shift_on_subset(
     model,
@@ -891,9 +851,6 @@ def calibrate_sign_and_match_energy(
     return (-v2) if (ms < 0) else v2
 
 
-# -----------------------------
-# Evaluation
-# -----------------------------
 @torch.no_grad()
 def eval_lambda_sweep(
     model,
@@ -966,7 +923,7 @@ def eval_lambda_sweep(
         "methods": {},
     }
 
-    # Non-random methods
+
     for name, v in [(k, vecs[k]) for k in vecs.keys() if not k.startswith("rand")]:
         pts = []
         per_template_last = []
@@ -982,7 +939,7 @@ def eval_lambda_sweep(
         slope = float(np.cov(xs, ys, bias=True)[0, 1] / (xs.var() + 1e-12))
         results["methods"][name] = {"slope": slope, "per_template_last": per_template_last, "robust_last": robust_from_template_stats(per_template_last)}
 
-    # Random control averaged over draws
+
     if "rand_ref" in vecs and n_rand > 0:
         v_ref = vecs["rand_ref"].to(get_model_device(model)).float()
         target_norm = float(v_ref.norm().item())
@@ -1041,7 +998,7 @@ def print_task_report(task: TaskSpec, report: Dict, *, show_per_template: bool =
     hdr = (
         "Method".ljust(26)
         + " | " + "slope".rjust(12)
-        + " | " + "robust(mean±std,worst)".ljust(30)
+        + " | " + "robust(mean+/-std,worst)".ljust(30)
         + " | " + "anti(mean,worst)".ljust(18)
     )
     print(hdr)
@@ -1049,11 +1006,11 @@ def print_task_report(task: TaskSpec, report: Dict, *, show_per_template: bool =
 
     for mname, mrep in report["methods"].items():
         if mname == "rand_matched":
-            slope_str = f"{mrep['slope_mean']:+0.4f}±{mrep['slope_std']:0.4f}"
+            slope_str = f"{mrep['slope_mean']:+0.4f}+/-{mrep['slope_std']:0.4f}"
         else:
             slope_str = f"{mrep['slope']:+0.4f}"
         rb = mrep["robust_last"]
-        robust_str = f"{rb['mean_of_means']:+0.3f}±{rb['std_across_templates']:0.3f},{rb['worst_case_mean']:+0.3f}"
+        robust_str = f"{rb['mean_of_means']:+0.3f}+/-{rb['std_across_templates']:0.3f},{rb['worst_case_mean']:+0.3f}"
         anti_str = f"{rb['anti_mean']:.3f},{rb['anti_worst']:.3f}"
         print(mname.ljust(26) + " | " + slope_str.rjust(12) + " | " + robust_str.ljust(30) + " | " + anti_str.ljust(18))
 
@@ -1068,14 +1025,11 @@ def print_task_report(task: TaskSpec, report: Dict, *, show_per_template: bool =
                     aa = tstat["anti"]
                     ms_sd = tstat.get("mean_std_across_draws", 0.0)
                     aa_sd = tstat.get("anti_std_across_draws", 0.0)
-                    print(f"      T{tid}: {ms:+0.3f}±{ms_sd:0.3f}, {ss:0.3f}, {aa:0.3f}±{aa_sd:0.3f}")
+                    print(f"      T{tid}: {ms:+0.3f}+/-{ms_sd:0.3f}, {ss:0.3f}, {aa:0.3f}+/-{aa_sd:0.3f}")
                 else:
                     print(f"      T{tid}: {tstat['mean']:+0.3f}, {tstat['std']:0.3f}, {tstat['anti']:.3f}")
 
 
-# -----------------------------
-# Run one task
-# -----------------------------
 @torch.inference_mode()
 def run_one_task(
     model,
@@ -1108,7 +1062,7 @@ def run_one_task(
 
     print(f"\n[{task.name}] calib={len(calib)} (balanced), eval={len(evalset)} (balanced)")
 
-    # Candidate calibration
+
     chosen_cand, cand_info = choose_best_candidate_pair(
         model, tokenizer, task, calib,
         max_prompt_tokens=max_prompt_tokens,
@@ -1122,7 +1076,7 @@ def run_one_task(
     for i, c in enumerate(cand_info["candidates_tested"][: min(3, len(cand_info["candidates_tested"]))]):
         print(f"    top{i+1}: {c['name']} ({c['pos']}/{c['neg']}) acc={c['acc']:.3f} single={c['single_token']} ids={c['pos_ids']}/{c['neg_ids']}")
 
-    # Basis
+
     B = estimate_shared_basis_decode(
         model, tokenizer, task, calib, chosen_cand,
         layer=layer, max_prompt_tokens=max_prompt_tokens, k=basis_k,
@@ -1132,10 +1086,10 @@ def run_one_task(
     device = get_model_device(model)
     B = B.to(device=device, dtype=torch.float32)
 
-    # v estimation templates
+
     v_tids = [0] if v_est_templates == "0" else list(range(len(task.templates)))
 
-    # decode v
+
     v_dec_raw, st_dec = estimate_mean_diff_vector(
         model, tokenizer, task, calib, chosen_cand,
         layer=layer, template_ids=v_tids, max_prompt_tokens=max_prompt_tokens,
@@ -1237,9 +1191,6 @@ def run_one_task(
     return {"diag": diag, "report": report}
 
 
-# -----------------------------
-# Main
-# -----------------------------
 def parse_floats_csv(s: str) -> List[float]:
     out = []
     for x in s.split(","):
@@ -1350,7 +1301,7 @@ def main():
             print(f"\n[Skip] task={tname} failed: {type(e).__name__}: {e}")
             continue
 
-    # Aggregate summary
+
     if out_dir is not None and len(all_outputs) > 0:
         agg_rows = []
         for out in all_outputs:

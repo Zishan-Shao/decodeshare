@@ -15,10 +15,11 @@ Canonical scripts in this folder:
 - `flipset_alpha_sweep_and_transfer.py`: AQuA alpha sweep and transfer-donor patching.
 - `summarize_patching_jsons.py`: JSON-to-summary aggregation.
 - Task loading uses `decodeshare.benchmark_dataloaders`.
-- `disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py`: local LOTO/helper dependency used by the patchback scripts.
+- `patchback_loto.py`: local LOTO/helper dependency used by the patchback scripts.
+- Shared decode-stage LOTO utilities live in `decodeshare/decode_loto.py`.
 
-The complete historical bundle remains in `downstream/patchback_legacy/`; this folder
-keeps only the paper-facing entry points.
+The complete historical bundle remains in `downstream/patchback_provenance/`;
+this folder keeps only the paper-facing entry points.
 
 Smoke check:
 

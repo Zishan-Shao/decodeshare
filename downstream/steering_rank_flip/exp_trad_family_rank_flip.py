@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """
 exp_trad_family_rank_flip.py
@@ -194,7 +193,7 @@ def evaluate_with_steering_nocache(
     batch_size: int,
     max_prompt_len: int,
     steering: Optional[rf.SteeringVector],
-    phase_mode: str,  # "prefill" | "both" | "none"
+    phase_mode: str,
     sample_seed: Optional[int] = None,
     tqdm_inner: bool = True,
 ) -> Dict[str, Any]:
@@ -372,7 +371,7 @@ def main() -> None:
     out_dir = os.path.dirname(out_path) or "."
     os.makedirs(out_dir, exist_ok=True)
 
-    # Load existing outputs if resuming, else optionally seed from base_json.
+
     results: Dict[str, Any]
     existing = rf._load_json_if_exists(out_path) if bool(args.resume) else None
     if existing is not None:
@@ -423,10 +422,10 @@ def main() -> None:
         start_idx = n_total
     vecs = vecs_all[start_idx:end_idx]
 
-    # Load model
+
     model, tokenizer = rf.load_model_and_tokenizer(str(args.model), str(args.device), str(args.model_dtype))
 
-    # Load evaluation sets
+
     if rf.load_selected_tasks is None:
         raise RuntimeError(f"benchmark_dataloaders.load_selected_tasks missing: {rf._IMPORT_ERR}")
 
@@ -449,7 +448,7 @@ def main() -> None:
     print(f"[Data] Loading REAL eval sets (template_seeds={real_seeds}) ...")
     eval_real_by_seed: Dict[int, Dict[str, List[Any]]] = {s: load_eval(s) for s in real_seeds}
 
-    # Baselines (reuse if present)
+
     base_rank_cached_by_seed = _coerce_seed_keyed(results.get("baseline_rank_by_seed"))
     base_real_cached_by_seed = _coerce_seed_keyed(results.get("baseline_real_by_seed"))
     base_rank_nocache_by_seed = _coerce_seed_keyed(results.get("baseline_rank_nocache_by_seed"))
@@ -559,7 +558,7 @@ def main() -> None:
     results["baseline_rank_nocache_by_seed"] = base_rank_nocache_by_seed
     results.setdefault("vectors", {})
 
-    # Save a baseline-only checkpoint early.
+
     rf._atomic_json_dump(results, out_path)
     last_save_t = time.time()
 
@@ -654,11 +653,11 @@ def main() -> None:
         if not isinstance(rec, dict):
             rec = {}
 
-        # Alias old TRAD-A name if present.
+
         if "score_rank_trad" in rec and "score_rank_trad_prefill" not in rec:
             rec["score_rank_trad_prefill"] = rec["score_rank_trad"]
 
-        # TRAD-A (prefill-only, cached) a.k.a. the original TRAD in exp_rank_flip.py
+
         if "score_rank_trad" not in rec:
             per_task_by_seed, per_task_mean, summ = _eval_rank_cached(phase_mode="prefill")
             rec["delta_rank_trad_by_seed"] = per_task_by_seed
@@ -667,7 +666,7 @@ def main() -> None:
             rec["score_rank_trad_summary"] = summ
             rec["score_rank_trad_prefill"] = float(summ["mean"])
 
-        # DECODE (decode-only, cached) on ranking templates
+
         if "score_rank_decode" not in rec:
             per_task_by_seed, per_task_mean, summ = _eval_rank_cached(phase_mode=str(args.decode_mode))
             rec["delta_rank_decode_by_seed"] = per_task_by_seed
@@ -675,7 +674,7 @@ def main() -> None:
             rec["score_rank_decode"] = float(summ["mean"])
             rec["score_rank_decode_summary"] = summ
 
-        # REAL (held-out templates, decode-only, cached)
+
         if "score_real" not in rec:
             per_task_by_seed, per_task_mean, summ = _eval_real_cached()
             rec["delta_real_decode_by_seed"] = per_task_by_seed
@@ -683,7 +682,7 @@ def main() -> None:
             rec["score_real"] = float(summ["mean"])
             rec["score_real_summary"] = summ
 
-        # Compute TRAD-B (always-on, cached)
+
         if bool(int(args.do_trad_both)) and "score_rank_trad_both" not in rec:
             per_task_by_seed, per_task_mean, summ = _eval_rank_cached(phase_mode="both")
             rec["delta_rank_trad_both_by_seed"] = per_task_by_seed
@@ -691,7 +690,7 @@ def main() -> None:
             rec["score_rank_trad_both"] = float(summ["mean"])
             rec["score_rank_trad_both_summary"] = summ
 
-        # Compute TRAD-C (no-cache full recomputation)
+
         if bool(int(args.do_trad_nocache)) and "score_rank_trad_nocache" not in rec:
             per_task_by_seed: Dict[int, Dict[str, float]] = {}
             score_by_seed: Dict[int, float] = {}
@@ -726,7 +725,7 @@ def main() -> None:
             rec["score_rank_trad_nocache"] = float(summ["mean"])
             rec["score_rank_trad_nocache_summary"] = summ
 
-        # Store back
+
         rec.setdefault("concept", sv.concept)
         rec.setdefault("layer", int(sv.layer))
         rec.setdefault("alpha", float(sv.alpha))
@@ -742,12 +741,12 @@ def main() -> None:
             n_since_save = 0
             last_save_t = now_t
 
-    # Summaries / correlations across all available vectors in the output
+
     vecs_out = results.get("vectors", {})
     if not isinstance(vecs_out, dict) or not vecs_out:
         raise RuntimeError("No vectors in results; nothing to summarize.")
 
-    # Ensure TRAD-A alias exists for correlation/decision code (works for base_json-only runs too).
+
     for n, r in list(vecs_out.items()):
         if isinstance(r, dict) and "score_rank_trad" in r and "score_rank_trad_prefill" not in r:
             r["score_rank_trad_prefill"] = float(r["score_rank_trad"])
@@ -780,7 +779,7 @@ def main() -> None:
         results["correlations_trad_family"]["trad_nocache_vs_decode"] = _pair_spearman("score_rank_trad_nocache", "score_rank_decode")
 
     k_list = _parse_csv_ints(args.k_list) or [1, 5, 10, 20]
-    # Decision summary computed on vectors that have REAL and the ranking key.
+
     rank_keys = ["score_rank_trad_prefill"]
     if bool(int(args.do_trad_both)):
         rank_keys.append("score_rank_trad_both")

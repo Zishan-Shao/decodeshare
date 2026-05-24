@@ -1,84 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
-"""
-summarize_energy_kmatch_outputs.py
-
-Summarize JSON outputs produced by disturb_energy_matched_sharedness_kmatch.py.
-
-Input JSON schema (expected):
-{
-  "config": {...},
-  "sanity": {
-     "overlap_shared_ctrl_struct": float,
-     "overlap_shared_ctrl_energy": float,
-     "energy_shared": {"mean_ratio":..., "mean_energy":...},
-     "energy_ctrl_struct": {...},
-     "energy_ctrl_energy": {...},
-     "alpha_match": {"alpha_shared":..., "alpha_ctrl":..., ...}
-  },
-  "by_task": {
-     "<task>": {
-        "n": int,
-        "runs": {
-           "<condition>": {
-              "accuracy": float, "ci_low": float, "ci_high": float,
-              "alpha": float, "hookstats": {layer: {...}}  # optional
-           }, ...
-        },
-        "paired": {
-           "<comparison_key>": {"mean_diff": float, "ci_low": float, "ci_high": float, "p_value": float, ...}
-        }
-     }, ...
-  }
-}
-
-Outputs:
-- Markdown summary file (default)
-- Optionally CSVs:
-    - <prefix>_runs.csv (one row per JSON)
-    - <prefix>_tasks.csv (one row per task per JSON)
-
-Example:
-  python analysis/summarize_energy_kmatch_outputs.py \
-    --results_dir ./results/energy_kmatch \
-    --pattern "*.json" \
-    --output ./results/energy_kmatch/SUMMARY.md \
-    --write_csv 1 \
-    --csv_prefix ./results/energy_kmatch/summary
-    
-1) 最常用：汇总一个目录下所有 out_json
-python analysis/summarize_energy_kmatch_outputs.py \
-  --results_dir ../../outputs/02_decode_ablation/energy_kmatch_alpha_sweep \
-  --pattern "*.json" \
-  --output ../../outputs/02_decode_ablation/energy_kmatch_alpha_sweep/SUMMARY.md
-  
-2) 同时输出 CSV（方便你画图）
-python analysis/summarize_energy_kmatch_outputs.py \
-  --results_dir ./results/energy_kmatch \
-  --pattern "*.json" \
-  --output ./results/energy_kmatch/SUMMARY.md \
-  --write_csv 1 \
-  --csv_prefix ./results/energy_kmatch/summary
-
-3) 只看某几个任务
-python analysis/summarize_energy_kmatch_outputs.py \
-  --results_dir ./results/energy_kmatch \
-  --tasks commonsenseqa,strategyqa,aqua \
-  --output ./results/energy_kmatch/SUMMARY_small.md
-
-输出里你能快速读到什么
-
-Emean(ctrl_energy)/Emean(shared)：能量匹配到底匹没匹上（≈1 越好）
-
-Mean Δ(shared-ctrlE)：如果 shared_full 比 ctrl_energy 更差很多，说明“共享子空间”更关键；
-如果差不多，说明可能只是“去掉能量”导致的一般性损伤。
-
-sig/neg_sig(shared-ctrlE)：按 task 统计显著性（p<0.05），可以直接当 reviewer-friendly 证据。    
-    
-
-
-"""
+"""Summarize energy-matched decode-ablation control outputs."""
 
 import argparse
 import json
@@ -86,9 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
 
-# -----------------------------
-# Basic helpers
-# -----------------------------
+
 def load_json(path: Path) -> Optional[Dict[str, Any]]:
     try:
         with path.open("r", encoding="utf-8") as f:
@@ -180,9 +100,7 @@ def mean(xs: List[float]) -> Optional[float]:
         return None
     return sum(xs) / len(xs)
 
-# -----------------------------
-# Extract & summarize one JSON
-# -----------------------------
+
 DEFAULT_CONDS = ["baseline", "shared_alpha", "ctrl_alpha", "shared_full", "ctrl_struct", "ctrl_energy"]
 DEFAULT_PAIRED_KEYS = [
     "shared_alpha_vs_base",
@@ -230,20 +148,19 @@ def summarize_one_run(
     EcE_E = safe_get(sanity, "energy_ctrl_energy", "mean_energy", default=None)
     energy_match_ratio = (EcE_E / Es_E) if (Es_E is not None and abs(Es_E) > 1e-12 and EcE_E is not None) else None
 
-    # Per task rows
+
     task_rows: List[Dict[str, Any]] = []
     tasks = sorted(by_task.keys())
     if tasks_filter:
         tasks = [t for t in tasks if t in set(tasks_filter)]
 
-    # aggregate accuracies for run-level means
-    accs = {c: [] for c in DEFAULT_CONDS if c != "baseline"}  # include baseline separately
+
+    accs = {c: [] for c in DEFAULT_CONDS if c != "baseline"}
     accs["baseline"] = []
 
-    # significance counters (task-level)
-    # Example: shared_vs_ctrl_energy: how many tasks where shared differs from ctrl_energy significantly
+
     sig_counts = {k: 0 for k in DEFAULT_PAIRED_KEYS}
-    neg_sig_counts = {k: 0 for k in DEFAULT_PAIRED_KEYS}  # mean_diff < 0 and sig
+    neg_sig_counts = {k: 0 for k in DEFAULT_PAIRED_KEYS}
     pos_sig_counts = {k: 0 for k in DEFAULT_PAIRED_KEYS}
 
     for task in tasks:
@@ -259,7 +176,7 @@ def summarize_one_run(
             "n": n,
         }
 
-        # accuracies
+
         for c in DEFAULT_CONDS:
             a = cond_acc(blk, c)
             lo, hi = cond_ci(blk, c)
@@ -269,7 +186,7 @@ def summarize_one_run(
             if a is not None:
                 accs[c].append(float(a))
 
-        # paired stats
+
         for key in DEFAULT_PAIRED_KEYS:
             st = paired_stat(blk, key)
             if st:
@@ -287,7 +204,7 @@ def summarize_one_run(
 
         task_rows.append(row)
 
-    # run-level mean accuracies
+
     mean_baseline = mean(accs["baseline"])
     mean_shared_full = mean(accs.get("shared_full", []))
     mean_ctrl_struct = mean(accs.get("ctrl_struct", []))
@@ -295,7 +212,7 @@ def summarize_one_run(
     mean_shared_alpha = mean(accs.get("shared_alpha", []))
     mean_ctrl_alpha = mean(accs.get("ctrl_alpha", []))
 
-    # run-level mean diffs (unweighted across tasks)
+
     def mean_diff_key(key: str) -> Optional[float]:
         vals = []
         for r in task_rows:
@@ -329,14 +246,14 @@ def summarize_one_run(
         "mean_acc_ctrl_energy": mean_ctrl_energy,
         "mean_acc_shared_alpha": mean_shared_alpha,
         "mean_acc_ctrl_alpha": mean_ctrl_alpha,
-        # mean diffs for key comparisons
+
         "mean_diff_shared_vs_ctrl_energy": mean_diff_key("shared_vs_ctrl_energy"),
         "mean_diff_shared_vs_ctrl_struct": mean_diff_key("shared_vs_ctrl_struct"),
         "mean_diff_shared_vs_base": mean_diff_key("shared_vs_base"),
         "mean_diff_ctrl_energy_vs_base": mean_diff_key("ctrl_energy_vs_base"),
         "mean_diff_ctrl_struct_vs_base": mean_diff_key("ctrl_struct_vs_base"),
         "mean_diff_shared_alpha_vs_ctrl_alpha": mean_diff_key("shared_alpha_vs_ctrl_alpha"),
-        # significance counts
+
         **{f"sig_{k}": sig_counts[k] for k in sig_counts},
         **{f"neg_sig_{k}": neg_sig_counts[k] for k in neg_sig_counts},
         **{f"pos_sig_{k}": pos_sig_counts[k] for k in pos_sig_counts},
@@ -444,9 +361,7 @@ def summarize_alpha_sweep_run(
 
     return run_rows, task_rows
 
-# -----------------------------
-# Markdown report
-# -----------------------------
+
 def build_markdown(
     run_rows: List[Dict[str, Any]],
     task_rows: List[Dict[str, Any]],
@@ -458,14 +373,14 @@ def build_markdown(
     md.append(f"- Total runs: **{len(run_rows)}**\n")
     md.append(f"- p-value threshold for `sig_*`: **{p_th}**\n\n")
 
-    # Overview table (one row per run)
+
     header = [
         "Model", "Layer", "Tasks",
         "k_shared", "k_c",
         "Emean(ctrlE)/Emean(shared)",
-        "α_shared", "α_ctrl",
+        "alpha_shared", "alpha_ctrl",
         "MeanAcc Base", "MeanAcc Shared(full)", "MeanAcc Ctrl(struct)", "MeanAcc Ctrl(energy)",
-        "Δ(shared-ctrlE) mean",
+        "Delta(shared-ctrlE) mean",
         "sig(shared-ctrlE)", "neg_sig(shared-ctrlE)",
     ]
     rows = []
@@ -491,12 +406,12 @@ def build_markdown(
     md.append(render_md_table(header, rows))
     md.append("\n")
 
-    # Group by model for detailed sections
+
     by_model: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for r in run_rows:
         by_model[str(r.get("model", "unknown"))].append(r)
 
-    # Index task rows by file
+
     tasks_by_file: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for tr in task_rows:
         tasks_by_file[tr["file"]].append(tr)
@@ -507,7 +422,7 @@ def build_markdown(
             file = rr["file"]
             md.append(f"## Run: `{file}`\n\n")
 
-            # Sanity / config block
+
             md.append("### Config & sanity\n\n")
             md.append(
                 "- "
@@ -532,7 +447,7 @@ def build_markdown(
                 f"alpha_shared={f4(rr.get('alpha_shared'))} alpha_ctrl(alpha-match)={f4(rr.get('alpha_ctrl'))}\n\n"
             )
 
-            # Per-task accuracy table
+
             md.append("### Per-task accuracies\n\n")
             trows = tasks_by_file.get(file, [])
             trows = sorted(trows, key=lambda x: x["task"])
@@ -541,7 +456,7 @@ def build_markdown(
                 "Task", "n",
                 "Base", "Shared(full)", "Ctrl(struct)", "Ctrl(energy)",
                 "Shared(alpha)", "Ctrl(alpha)",
-                "Δ(shared-ctrlE)", "p",
+                "Delta(shared-ctrlE)", "p",
             ]
             acc_rows = []
             for tr in trows:
@@ -564,14 +479,14 @@ def build_markdown(
             md.append(render_md_table(acc_header, acc_rows))
             md.append("\n")
 
-            # Paired stats table (key comparisons)
+
             md.append("### Paired stats (mean diff in pp)\n\n")
             paired_header = [
                 "Task",
-                "Δ(shared-base)", "p",
-                "Δ(ctrlE-base)", "p",
-                "Δ(shared-ctrlE)", "p",
-                "Δ(sharedα-ctrlα)", "p",
+                "Delta(shared-base)", "p",
+                "Delta(ctrlE-base)", "p",
+                "Delta(shared-ctrlE)", "p",
+                "Delta(shared_alpha-ctrl_alpha)", "p",
             ]
             paired_rows = []
             for tr in trows:
@@ -590,7 +505,7 @@ def build_markdown(
             md.append(render_md_table(paired_header, paired_rows))
             md.append("\n")
 
-            # Run-level quick read
+
             md.append("### Run-level quick read\n\n")
             md.append(
                 f"- MeanAcc: base={pct(rr.get('mean_acc_baseline'))}, "
@@ -599,20 +514,18 @@ def build_markdown(
                 f"ctrl_energy={pct(rr.get('mean_acc_ctrl_energy'))}\n"
             )
             md.append(
-                f"- Mean Δ(shared-ctrlE)={pp(rr.get('mean_diff_shared_vs_ctrl_energy'))}  "
+                f"- Mean Delta(shared-ctrlE)={pp(rr.get('mean_diff_shared_vs_ctrl_energy'))}  "
                 f"(sig tasks={rr.get('sig_shared_vs_ctrl_energy',0)}, neg_sig tasks={rr.get('neg_sig_shared_vs_ctrl_energy',0)})\n"
             )
             md.append("\n---\n\n")
 
     return "".join(md)
 
-# -----------------------------
-# CSV writing (optional)
-# -----------------------------
+
 def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
     if not rows:
         return
-    # stable field order
+
     keys = sorted({k for r in rows for k in r.keys()})
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -621,16 +534,14 @@ def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
             vals = []
             for k in keys:
                 v = r.get(k, "")
-                # basic CSV escaping
+
                 s = "" if v is None else str(v)
                 if any(ch in s for ch in [",", '"', "\n"]):
                     s = '"' + s.replace('"', '""') + '"'
                 vals.append(s)
             f.write(",".join(vals) + "\n")
 
-# -----------------------------
-# Main
-# -----------------------------
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--results_dir", type=str, required=True, help="Directory containing out_json files")

@@ -21,6 +21,15 @@ Historical top-level directories such as `Hype1/`, `patch_back/`,
 part of the public root layout. Their current camera-ready homes are
 `experiments/`, `downstream/`, `paper_artifacts/`, and `decodeshare/`.
 
+## DecodeShare Package Format
+
+The public package namespace is intentionally flat. Shared helpers should live
+directly under `decodeshare/` as focused modules such as `subspace.py`,
+`sharedness.py`, `benchmark_dataloaders.py`, `eval_perf.py`, and
+`decode_loto.py`. Historical compatibility shims may stay at the package root
+when needed, but exploratory subpackages should not be first-class public
+structure.
+
 ## Experiment Folder Format
 
 Each `experiments/NN_name/` folder should contain:

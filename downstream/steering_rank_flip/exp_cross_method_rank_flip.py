@@ -1,5 +1,3 @@
-
-# -*- coding: utf-8 -*-
 """
 exp_cross_method_rank_flip.py
 
@@ -8,7 +6,7 @@ A1: Cross-method candidate pools + ranking-flip under TRAD vs DECODE vs REAL.
 Goal
 ----
 Show that DecodeShare-style *decode-aligned* evaluation/ranking predicts REAL KV-cached decode
-performance better than a prefill/TRAD proxy — and that this holds across *different sources of
+performance better than a prefill/TRAD proxy - and that this holds across *different sources of
 candidate steering vectors*:
 
   (1) CAA (Contrastive Activation Addition) candidate pool
@@ -88,9 +86,6 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# -----------------------------
-# Project imports (required)
-# -----------------------------
 try:
     from decodeshare.benchmark_dataloaders import (
         Example,
@@ -109,9 +104,6 @@ except Exception as e:  # pragma: no cover
 stable_int_seed = stable_int_seed_project
 
 
-# -----------------------------
-# Repro utils
-# -----------------------------
 def set_global_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -130,9 +122,6 @@ def json_dump(obj: Any, path: str) -> None:
         json.dump(obj, f, ensure_ascii=False, indent=2, default=str)
 
 
-# -----------------------------
-# Model utils
-# -----------------------------
 def infer_hidden_dim(model) -> Optional[int]:
     cfg = getattr(model, "config", None)
     for k in ("hidden_size", "n_embd", "dim", "d_model", "model_dim", "embed_dim"):
@@ -149,19 +138,19 @@ def infer_hidden_dim(model) -> Optional[int]:
 
 
 def get_model_layers(model) -> List[torch.nn.Module]:
-    # LLaMA / Qwen / Gemma / Mistral / etc.
+
     if hasattr(model, "model") and hasattr(model.model, "layers"):
         return list(model.model.layers)
-    # GPT-NeoX
+
     if hasattr(model, "gpt_neox") and hasattr(model.gpt_neox, "layers"):
         return list(model.gpt_neox.layers)
-    # GPT-2 / GPT-J style
+
     if hasattr(model, "transformer") and hasattr(model.transformer, "h"):
         return list(model.transformer.h)
-    # Falcon
+
     if hasattr(model, "transformer") and hasattr(model.transformer, "blocks"):
         return list(model.transformer.blocks)
-    # MPT
+
     if hasattr(model, "transformer") and hasattr(model.transformer, "blocks"):
         return list(model.transformer.blocks)
     raise RuntimeError(f"Cannot locate transformer layers for model class: {type(model)}")
@@ -195,7 +184,7 @@ def render_chat(
 ) -> str:
     tmpl = getattr(tokenizer, "chat_template", None)
     if not tmpl:
-        # Plain text fallback
+
         if assistant_content is None:
             return user_content
         return user_content + "\n" + assistant_content
@@ -206,21 +195,18 @@ def render_chat(
     messages.append({"role": "user", "content": user_content})
     if assistant_content is not None:
         messages.append({"role": "assistant", "content": assistant_content})
-        add_generation_prompt = False  # assistant message already present
+        add_generation_prompt = False
 
     try:
         return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=add_generation_prompt)
     except Exception:
-        # Some templates don't support system role
+
         messages = [{"role": "user", "content": user_content}]
         if assistant_content is not None:
             messages.append({"role": "assistant", "content": assistant_content})
         return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=(assistant_content is None))
 
 
-# -----------------------------
-# Activation extraction (mean / matrix)
-# -----------------------------
 @torch.no_grad()
 def mean_last_token_activation(
     model,
@@ -253,7 +239,7 @@ def mean_last_token_activation(
         hs = output[0] if isinstance(output, tuple) else output
         if not isinstance(hs, torch.Tensor) or hs.ndim != 3:
             return output
-        last = hs[:, -1, :].detach().float()  # [B, D]
+        last = hs[:, -1, :].detach().float()
         acc += last.sum(dim=0)
         count += last.shape[0]
         return output
@@ -317,7 +303,7 @@ def collect_last_token_activations_matrix(
         if not isinstance(hs, torch.Tensor) or hs.ndim != 3:
             return output
         last = hs[:, -1, :].detach()
-        # store to CPU float16
+
         last = last.to(dtype=torch.float16 if dtype == "fp16" else torch.float32).cpu()
         out_chunks.append(last)
         return output
@@ -329,7 +315,7 @@ def collect_last_token_activations_matrix(
             if remaining <= 0:
                 break
             batch = texts[i:i+batch_size]
-            # if we only need a few samples, truncate batch
+
             if len(batch) > remaining:
                 batch = batch[:remaining]
             remaining -= len(batch)
@@ -345,7 +331,7 @@ def collect_last_token_activations_matrix(
             _ = model(**enc, use_cache=False)
         if not out_chunks:
             raise RuntimeError("No activations collected for SAE training.")
-        X = torch.cat(out_chunks, dim=0)  # [N, D]
+        X = torch.cat(out_chunks, dim=0)
         return X
     finally:
         try:
@@ -354,9 +340,6 @@ def collect_last_token_activations_matrix(
             pass
 
 
-# -----------------------------
-# Candidate pools
-# -----------------------------
 CHOICE_SETS: Dict[str, List[str]] = {
     "commonsenseqa": list("ABCDE"),
     "arc_challenge": list("ABCD"),
@@ -371,7 +354,7 @@ def sample_wrong_label(dataset: str, gold: str, rng: random.Random) -> str:
     cs = CHOICE_SETS.get(dataset, list("ABCD"))
     cs = [c for c in cs if c != gold]
     if not cs:
-        # fallback (should not happen)
+
         cs = [c for c in list("ABCD") if c != gold] or ["B"]
     return rng.choice(cs)
 
@@ -398,13 +381,13 @@ def load_corpus_examples(
     """
     Returns a flat list of Examples from the "subspace" split (preferred) across tasks.
     """
-    # Handle signature drift robustly.
+
     import inspect
     sig = inspect.signature(load_selected_tasks)
     kwargs = dict(
         tasks=tasks,
         n_subspace=int(n_subspace),
-        n_eval=1,  # minimal; we only need subspace prompts
+        n_eval=1,
         seed=int(seed),
         template_seed=int(template_seed),
         template_randomization=bool(template_randomization),
@@ -498,7 +481,7 @@ def build_pool_caa(
 
 
 INSTRUCTION_TEMPLATES: List[str] = [
-    # keep these short to avoid dominating prompt content
+
     "Follow the instruction carefully. Your final output MUST be exactly one option letter (A/B/C/D/...).",
     "You must answer with exactly one multiple-choice letter. Do not add any other text.",
     "Important: output only a single letter choice. No explanation.",
@@ -549,8 +532,8 @@ def build_pool_instruction(
             for ex in subset:
                 user_base = str(ex.prompt)
                 user_with = instr + "\n\n" + user_base
-                # For extraction, mimic the actual generation conditioning:
-                # include generation prompt so the last token corresponds to "assistant start" in chat templates.
+
+
                 with_texts.append(render_chat(tokenizer, user_with, assistant_content=None, add_generation_prompt=True))
                 without_texts.append(render_chat(tokenizer, user_base, assistant_content=None, add_generation_prompt=True))
 
@@ -582,16 +565,13 @@ def build_pool_instruction(
     print(f"[INSTR] Wrote manifest: {out_manifest_path} (n_vec={n_vec})")
 
 
-# -----------------------------
-# SAE training + feature vectors
-# -----------------------------
 class SparseAutoencoder(torch.nn.Module):
     def __init__(self, d_in: int, d_latent: int):
         super().__init__()
         self.encoder = torch.nn.Linear(d_in, d_latent, bias=True)
         self.decoder = torch.nn.Linear(d_latent, d_in, bias=True)
 
-        # Small init helps stability
+
         torch.nn.init.normal_(self.encoder.weight, mean=0.0, std=0.01)
         torch.nn.init.zeros_(self.encoder.bias)
         torch.nn.init.normal_(self.decoder.weight, mean=0.0, std=0.01)
@@ -621,18 +601,18 @@ def train_sae(
     X_cpu: [N, D] on CPU (float16/float32).
     """
     set_global_seed(seed)
-    X = X_cpu  # keep on CPU; move batches to GPU
+    X = X_cpu
     N, D = int(X.shape[0]), int(X.shape[1])
 
     sae = SparseAutoencoder(D, d_latent).to(device)
     opt = torch.optim.AdamW(sae.parameters(), lr=lr)
 
-    # Shuffle indices once per epoch-ish
+
     rng = np.random.default_rng(seed)
     idx = rng.permutation(N)
 
     def get_batch(step: int) -> torch.Tensor:
-        # simple cycling
+
         start = (step * batch_size) % N
         end = start + batch_size
         if end <= N:
@@ -701,14 +681,14 @@ def build_pool_sae_features(
         print(f"[SAE] Manifest exists, skipping build: {out_manifest_path}")
         return
 
-    # 1) collect activations
+
     if os.path.exists(cache_acts_path):
         print(f"[SAE] Loading cached activations: {cache_acts_path}")
         X_cpu = torch.load(cache_acts_path, map_location="cpu")
         assert isinstance(X_cpu, torch.Tensor)
     else:
         rng = random.Random(seed + 2025)
-        # Use plain conditioning prompts (with generation prompt), similar to instruction extraction
+
         texts = []
         for _ in range(sae_train_samples):
             ex = corpus[rng.randrange(len(corpus))]
@@ -723,7 +703,7 @@ def build_pool_sae_features(
 
     N, D = int(X_cpu.shape[0]), int(X_cpu.shape[1])
 
-    # 2) train SAE (or load)
+
     if os.path.exists(cache_sae_path):
         print(f"[SAE] Loading cached SAE weights: {cache_sae_path}")
         obj = torch.load(cache_sae_path, map_location="cpu")
@@ -732,8 +712,8 @@ def build_pool_sae_features(
         sae = sae.to(device)
         sae.eval()
     else:
-        # Important: SAE training needs gradients. Keep this explicitly enabled even if callers
-        # wrap higher-level routines in `torch.no_grad()`.
+
+
         with torch.enable_grad():
             sae = train_sae(
                 X_cpu,
@@ -748,25 +728,24 @@ def build_pool_sae_features(
         torch.save({"state_dict": sae.state_dict(), "d_in": D, "d_latent": sae_latent_dim}, cache_sae_path)
         print(f"[SAE] Saved SAE weights: {cache_sae_path}")
 
-    # 3) feature selection
-    # Compute activation freq on a small subset for speed
+
     subN = min(N, 8192)
     with torch.no_grad():
         Xsub = X_cpu[:subN].to(device=device, dtype=torch.float32)
         _, Z = sae(Xsub)
-        freq = (Z > 0).float().mean(dim=0).detach().cpu().numpy()  # [M]
-        dec_w = sae.decoder.weight.detach().cpu().numpy()          # [D, M]
-    col_norm = np.linalg.norm(dec_w, axis=0)                   # [M]
+        freq = (Z > 0).float().mean(dim=0).detach().cpu().numpy()
+        dec_w = sae.decoder.weight.detach().cpu().numpy()
+    col_norm = np.linalg.norm(dec_w, axis=0)
 
-    # Keep features that are neither dead nor always-on.
+
     good = np.where((freq > 0.001) & (freq < 0.5) & np.isfinite(col_norm) & (col_norm > 1e-6))[0]
     if good.size < n_vec:
-        # fallback: relax
+
         good = np.where((freq > 0.0) & np.isfinite(col_norm) & (col_norm > 1e-8))[0]
     if good.size == 0:
         raise RuntimeError("SAE produced no usable features (all dead?). Try higher sae_steps or lower sae_l1.")
 
-    # Rank by decoder norm (simple, stable)
+
     order = good[np.argsort(-col_norm[good])]
     pick = order[:n_vec]
 
@@ -797,9 +776,6 @@ def build_pool_sae_features(
     print(f"[SAE] Wrote manifest: {out_manifest_path} (n_vec={n_vec})")
 
 
-# -----------------------------
-# Rank-flip evaluation (multi-seed)
-# -----------------------------
 @dataclass
 class SteeringVector:
     name: str
@@ -929,7 +905,7 @@ class LastTokenSteeringHook:
                 return (hs2,) + output[1:]
             return hs2
 
-        # non-staged (or prefill)
+
         x = hs[:, -1, :].float()
         v = self._v(hs.device)
         hs2 = hs.clone()
@@ -1038,7 +1014,7 @@ def generate_continuations(
 
     for i in tqdm(range(0, len(prompts), batch_size), desc=f"Generate({decoding})"):
         batch_raw = prompts[i:i+batch_size]
-        # Re-wrap as chat prompt w/ generation prompt (this matches evaluation)
+
         batch = [render_chat(tokenizer, p, assistant_content=None, add_generation_prompt=True) for p in batch_raw]
 
         use_template = bool(getattr(tokenizer, "chat_template", None))
@@ -1131,7 +1107,7 @@ def evaluate_with_steering(
     batch_size: int,
     max_prompt_len: int,
     steering_vec: Optional[SteeringVector],
-    phase_mode: str,   # "prefill" | "decode" | "both" | "none"
+    phase_mode: str,
     staged: bool,
     sample_seed: Optional[int],
 ) -> Dict[str, Any]:
@@ -1309,7 +1285,7 @@ def run_rankflip_for_pool(
             if v.vec.shape[0] != hid_dim:
                 raise ValueError(f"[{pool_name}] dim mismatch for {v.name}: {v.vec.shape[0]} != {hid_dim}")
 
-    # Pre-load eval sets and baselines per seed
+
     def baseline_for_seed(eval_by_task: Dict[str, List[Any]]) -> Dict[str, float]:
         base = {}
         for t in tasks:
@@ -1347,7 +1323,7 @@ def run_rankflip_for_pool(
         eval_real[s] = eval_by
         base_real[s] = baseline_for_seed(eval_by)
 
-    # Evaluate each vector
+
     per_vec: Dict[str, Any] = {}
     scores_trad = []
     scores_decode = []
@@ -1355,12 +1331,12 @@ def run_rankflip_for_pool(
     names = []
 
     for sv in vecs:
-        # Per seed scalar score (aggregated across tasks)
+
         trad_seed_scores = []
         decode_seed_scores = []
         real_seed_scores = []
 
-        # TRAD rank seeds
+
         for s in template_seeds_rank:
             per_task = {}
             for t in tasks:
@@ -1376,7 +1352,7 @@ def run_rankflip_for_pool(
                 per_task[t] = float(res["accuracy"] - base_rank[s][t])
             trad_seed_scores.append(agg_task_scores(per_task, agg))
 
-        # DECODE rank seeds
+
         for s in template_seeds_rank:
             per_task = {}
             for t in tasks:
@@ -1392,7 +1368,7 @@ def run_rankflip_for_pool(
                 per_task[t] = float(res["accuracy"] - base_rank[s][t])
             decode_seed_scores.append(agg_task_scores(per_task, agg))
 
-        # REAL held-out seeds (decode-only always)
+
         for s in template_seeds_real:
             per_task = {}
             for t in tasks:
@@ -1438,7 +1414,7 @@ def run_rankflip_for_pool(
     rho_trad_real   = spearmanr(scores_trad, scores_real)
     rho_decode_real = spearmanr(scores_decode, scores_real)
 
-    # selection metrics
+
     best_real = float(np.max(scores_real))
     idx_trad = int(np.argmax(scores_trad))
     idx_dec  = int(np.argmax(scores_decode))
@@ -1492,7 +1468,7 @@ def run_rankflip_for_pool(
     json_dump(result, out_json_path)
     print(f"[{pool_name}] Saved rankflip JSON: {out_json_path}")
 
-    # quick print
+
     print(f"\n[{pool_name}] Spearman(trad, real)={rho_trad_real:.3f}  Spearman(decode, real)={rho_decode_real:.3f}  (n={len(names)})")
     print(f"[{pool_name}] regret@1 TRAD={regret_trad:+.4f}  DECODE={regret_dec:+.4f}  top10_overlap TRAD={overlap_trad_real}  DECODE={overlap_dec_real}")
 
@@ -1505,7 +1481,7 @@ def write_summary_md(all_results: List[Dict[str, Any]], out_path: str) -> None:
     lines.append("This table summarizes protocol-level ranking generalization under KV-cached decode.\n")
     lines.append("Metrics are computed per pool using mean scores across template seeds.\n")
 
-    lines.append("| Pool | #Vec | Spearman(TRAD,REAL) | Spearman(DECODE,REAL) | Spearman(TRAD,DECODE) | regret@1 TRAD | regret@1 DECODE | top10 overlap TRAD∩REAL | top10 overlap DECODE∩REAL |")
+    lines.append("| Pool | #Vec | Spearman(TRAD,REAL) | Spearman(DECODE,REAL) | Spearman(TRAD,DECODE) | regret@1 TRAD | regret@1 DECODE | top10 overlap TRAD&REAL | top10 overlap DECODE&REAL |")
     lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|")
 
     for r in all_results:
@@ -1523,9 +1499,6 @@ def write_summary_md(all_results: List[Dict[str, Any]], out_path: str) -> None:
     print(f"[Summary] Wrote: {out_path}")
 
 
-# -----------------------------
-# Main
-# -----------------------------
 def parse_int_list(s: str) -> List[int]:
     s = s.strip()
     if not s:
@@ -1552,7 +1525,7 @@ def main():
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
     ap.add_argument("--add_answer_prefix", type=int, default=1, choices=[0, 1])
 
-    # Decoding protocol
+
     ap.add_argument("--decoding", type=str, default="greedy", choices=["greedy", "sample"])
     ap.add_argument("--max_new_tokens", type=int, default=256)
     ap.add_argument("--reasoning_tokens", type=int, default=128)
@@ -1568,7 +1541,7 @@ def main():
     ap.add_argument("--decode_mode", type=str, default="decode", choices=["decode", "both"])
     ap.add_argument("--agg", type=str, default="mean", choices=["mean", "min", "median"])
 
-    # Pool sizes
+
     ap.add_argument("--n_vec", type=int, default=64, help="Vectors per method/pool")
     ap.add_argument("--n_vec_caa", type=int, default=0, help="CAA vectors (0 = use --n_vec)")
     ap.add_argument("--n_vec_instr", type=int, default=0, help="Instruction vectors (0 = use --n_vec)")
@@ -1576,7 +1549,7 @@ def main():
     ap.add_argument("--subset_size", type=int, default=96, help="Bootstrap subset size per vector (CAA / INSTR extraction).")
     ap.add_argument("--n_corpus", type=int, default=512, help="Corpus examples per task for vector extraction.")
 
-    # SAE params
+
     ap.add_argument("--sae_train_samples", type=int, default=20000)
     ap.add_argument("--sae_latent_dim", type=int, default=8192)
     ap.add_argument("--sae_steps", type=int, default=3000)
@@ -1605,12 +1578,12 @@ def main():
     if not rank_seeds or not real_seeds:
         raise ValueError("template_seeds_rank and template_seeds_real must be non-empty comma-separated lists.")
 
-    # Load model once
+
     model, tokenizer = load_model_and_tokenizer(args.model, args.device, args.model_dtype)
     hid_dim = infer_hidden_dim(model)
     print(f"[Model] {args.model}  hidden_dim={hid_dim}  layer={args.layer}  dtype={args.model_dtype}")
 
-    # Build corpus (from subspace prompts)
+
     corpus = load_corpus_examples(
         tasks=tasks,
         n_subspace=args.n_corpus,
@@ -1621,11 +1594,9 @@ def main():
         add_answer_prefix=bool(args.add_answer_prefix),
         answer_prefix=args.answer_prefix,
     )
-    print(f"[Corpus] loaded {len(corpus)} examples (tasks={tasks}, per_task≈{args.n_corpus})")
+    print(f"[Corpus] loaded {len(corpus)} examples (tasks={tasks}, per_task~{args.n_corpus})")
 
-    # ---------------------------------------
-    # Build three pools
-    # ---------------------------------------
+
     skip = bool(args.skip_if_exists)
     layer = int(args.layer)
     alpha = float(args.alpha)
@@ -1634,7 +1605,7 @@ def main():
     n_vec_sae = int(args.n_vec_sae) if int(args.n_vec_sae) > 0 else int(args.n_vec)
     print(f"[Pools] n_vec: CAA={n_vec_caa} INSTR={n_vec_instr} SAE={n_vec_sae}")
 
-    # (1) CAA
+
     caa_vec_dir = ensure_dir(os.path.join(vec_root, "caa"))
     caa_manifest = os.path.join(man_root, "caa.jsonl")
     build_pool_caa(
@@ -1645,7 +1616,7 @@ def main():
         seed=args.seed, skip_if_exists=skip
     )
 
-    # (2) Instruction activation steering
+
     instr_vec_dir = ensure_dir(os.path.join(vec_root, "instr"))
     instr_manifest = os.path.join(man_root, "instr.jsonl")
     build_pool_instruction(
@@ -1656,7 +1627,7 @@ def main():
         seed=args.seed, skip_if_exists=skip
     )
 
-    # (3) SAE-based
+
     sae_vec_dir = ensure_dir(os.path.join(vec_root, "sae"))
     sae_manifest = os.path.join(man_root, "sae.jsonl")
     cache_acts = os.path.join(out_dir, "cache", f"acts_l{layer}_n{args.sae_train_samples}.pt")
@@ -1671,9 +1642,7 @@ def main():
         cache_acts_path=cache_acts, cache_sae_path=cache_sae,
     )
 
-    # ---------------------------------------
-    # Run rank-flip for each pool
-    # ---------------------------------------
+
     all_results: List[Dict[str, Any]] = []
     staged = bool(args.staged)
 
@@ -1711,7 +1680,7 @@ def main():
         )
         all_results.append(res)
 
-    # Write summary
+
     summary_md = os.path.join(out_dir, "summary.md")
     write_summary_md(all_results, summary_md)
 

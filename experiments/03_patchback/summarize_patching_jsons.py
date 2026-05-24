@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import os
 import json
@@ -8,30 +7,14 @@ import argparse
 from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
 
-'''
-1) 只总结某个目录（不递归）
-python summarize_patching_jsons.py \
-  --dir results/subspace_patching_transfer/runs_layer10_seed123 \
-  --pattern "*.json"
+"""Summarize patchback JSON outputs.
 
-2) 总结整个 results（递归扫所有 json：subspace + openanswer + flipset）
-python summarize_patching_jsons.py \
-  --dir results \
-  --pattern "**/*.json" \
-  --recursive
+Examples:
+  python summarize_patching_jsons.py --dir results/subspace_patching_transfer/runs_layer10_seed123 --pattern "*.json"
+  python summarize_patching_jsons.py --dir results --pattern "**/*.json" --recursive
+  python summarize_patching_jsons.py --dir results --pattern "**/*.json" --recursive --no_dedupe
+"""
 
-3) 不 dedupe（保留同一个 task 的多个不同 donor/seed/run）
-python summarize_patching_jsons.py \
-  --dir results \
-  --pattern "**/*.json" \
-  --recursive \
-  --no_dedupe
-
-'''
-
-# -----------------------------
-# Helpers
-# -----------------------------
 
 def safe_get(d: Any, path: str, default=None):
     cur: Any = d
@@ -83,25 +66,25 @@ def detect_kind(obj: Dict[str, Any]) -> str:
     """
     Detect which script produced this JSON.
     """
-    # flipset script signatures
+
     if isinstance(obj.get("transfer_patching_rows"), list) or isinstance(obj.get("alpha_sweep_summary_on_flipset"), dict):
         return "flipset"
     if isinstance(obj.get("transfer_patching_summary_on_flipset"), dict):
         return "flipset"
 
-    # openanswer script signatures
+
     evm = safe_get(obj, "meta.eval_mode", None)
     if evm is not None:
         return "openanswer"
 
-    # default: subspace_patching_transfer (MC)
+
     return "subspace_mc"
 
 def extract_task(obj: Dict[str, Any]) -> str:
     t = safe_get(obj, "meta.task", "") or ""
     if t:
         return str(t)
-    # fallback filename stem
+
     fn = obj.get("_file_name", "unknown.json")
     return os.path.splitext(fn)[0]
 
@@ -137,13 +120,13 @@ def extract_patch_desc(obj: Dict[str, Any], kind: str) -> str:
         steps = safe_get(obj, "meta.transfer_patching.patch_steps_final", None)
         if isinstance(steps, list):
             return "steps=" + ",".join(str(int(x)) for x in steps)
-        # older outputs: maybe only requested
+
         steps2 = safe_get(obj, "meta.transfer_patching.patch_steps_requested", None)
         if isinstance(steps2, list):
             return "steps=" + ",".join(str(int(x)) for x in steps2)
         return ""
-    # subspace_mc
-    # we typically care about patched_0 vs patched_full; keep blank
+
+
     return ""
 
 def _pick_ablated_dict(row: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str]:
@@ -269,7 +252,7 @@ def summarize_rescue_from_rows(
         if not isinstance(m, dict):
             continue
 
-        # pick ablated dict
+
         ablt = None
         for ak in ablated_key_candidates:
             if isinstance(r.get(ak), dict):
@@ -277,7 +260,7 @@ def summarize_rescue_from_rows(
                 break
 
         if ablt is None:
-            # cannot compute rescue reliably
+
             continue
 
         mc = m.get("correct", None)
@@ -287,7 +270,7 @@ def summarize_rescue_from_rows(
         n += 1
         rescued += int(mc)
 
-        # delta margin if available
+
         if have_margin:
             try:
                 dm = float(m.get("margin")) - float(ablt.get("margin"))
@@ -319,7 +302,7 @@ def extract_method_summary(
       - flipset: transfer_patching_summary_on_flipset[method]
       - fallback: compute from flip_rows / transfer_patching_rows
     """
-    # 1) summary dict from subspace/openanswer
+
     s = safe_get(obj, f"summary_on_flips.{method}", None)
     if isinstance(s, dict):
         rp = s.get("rescued_pct", None)
@@ -330,7 +313,7 @@ def extract_method_summary(
         mdm = _mean_key_from_summary(s)
         return (rp, mdm, rescued if isinstance(rescued, int) else None, n if isinstance(n, int) else None)
 
-    # 2) flipset transfer summary
+
     s2 = safe_get(obj, f"transfer_patching_summary_on_flipset.{method}", None)
     if isinstance(s2, dict):
         rp = s2.get("rescued_pct", None)
@@ -341,7 +324,7 @@ def extract_method_summary(
         mdm = _mean_key_from_summary(s2)
         return (rp, mdm, rescued if isinstance(rescued, int) else None, n if isinstance(n, int) else None)
 
-    # 3) fallback from rows
+
     if kind == "flipset":
         rows = obj.get("transfer_patching_rows", [])
         c = summarize_rescue_from_rows(rows, method, ablated_key_candidates=("ablated_1", "ablated", "ablated1"))
@@ -401,10 +384,6 @@ def dedupe_key(obj: Dict[str, Any], kind: str) -> Tuple[str, str, str, str, str,
     return (kind, task, eval_mode, layer, seed, extra)
 
 
-# -----------------------------
-# Main
-# -----------------------------
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", type=str, default=".", help="Directory containing result json files")
@@ -427,14 +406,14 @@ def main():
 
     args = ap.parse_args()
 
-    # Resolve files
+
     glob_path = os.path.join(args.dir, args.pattern) if not os.path.isabs(args.pattern) else args.pattern
     recursive = bool(args.recursive) or ("**" in glob_path)
     all_files = sorted(glob.glob(glob_path, recursive=recursive))
     if not all_files:
         raise SystemExit(f"No json files found with pattern: {glob_path} (recursive={recursive})")
 
-    # Filter computeQ
+
     filtered_files: List[str] = []
     skipped_computeq: List[str] = []
     for fp in all_files:
@@ -447,7 +426,7 @@ def main():
     if not filtered_files:
         raise SystemExit("After filtering computeQ files, no json files remain. Use --keep_computeq to include them.")
 
-    # Load jsons
+
     loaded: List[Dict[str, Any]] = []
     load_errors: List[Tuple[str, str]] = []
 
@@ -465,7 +444,7 @@ def main():
     if not loaded:
         raise SystemExit("No json could be loaded successfully.")
 
-    # Dedupe
+
     kept: List[Dict[str, Any]] = []
     deduped_out: List[Dict[str, Any]] = []
 
@@ -493,20 +472,20 @@ def main():
             str(o.get("_file_name", "")),
         ))
 
-    # Unified method list across 3 scripts
+
     methods = [
-        # subspace_mc
+
         "patched_0",
         "patched_01",
         "patched_full",
 
-        # openanswer
+
         "patched_self",
 
-        # flipset
+
         "patched_transfer",
 
-        # controls
+
         "control_time_shuffled",
         "control_shared_mismatch",
         "control_shared_perm",
@@ -516,7 +495,7 @@ def main():
         "control_patch_nonshared",
     ]
 
-    # Build rows
+
     rows: List[Dict[str, Any]] = []
     alpha_rows: List[Dict[str, Any]] = []
 
@@ -537,7 +516,7 @@ def main():
         if kind == "openanswer":
             hf_id, hf_split = extract_hf_meta(obj)
 
-        # flipset donor meta
+
         donor_source = safe_get(obj, "donors_meta.0.donor_source", "")
         donor_tasks = safe_get(obj, "donors_meta.0.donor_tasks", [])
         donor_pick = safe_get(obj, "donors_meta.0.donor_pick", "")
@@ -547,7 +526,7 @@ def main():
         else:
             donor_tasks = str(donor_tasks) if donor_tasks else ""
 
-        # scan stats
+
         scan_rows = obj.get("scan_rows", [])
         scan_stats = summarize_scan_rows(scan_rows) if isinstance(scan_rows, list) else {}
 
@@ -572,7 +551,7 @@ def main():
         }
         r.update(scan_stats)
 
-        # method stats
+
         for m in methods:
             rescued_pct, mean_dmargin, rescued, n = extract_method_summary(obj, kind, m)
             r[f"{m}_rescued"] = rescued
@@ -580,7 +559,7 @@ def main():
             r[f"{m}_rescued_pct"] = rescued_pct
             r[f"{m}_mean_dmargin"] = mean_dmargin
 
-        # primary patch method + diffs
+
         primary = pick_primary_patch_method(r)
         r["patched_primary_method"] = primary
         r["patched_primary_rescued_pct"] = r.get(f"{primary}_rescued_pct") if primary else None
@@ -595,7 +574,7 @@ def main():
 
         rows.append(r)
 
-        # alpha sweep rows (flipset only)
+
         if kind == "flipset":
             alpha_sum = obj.get("alpha_sweep_summary_on_flipset", {})
             if isinstance(alpha_sum, dict) and alpha_sum:
@@ -605,7 +584,7 @@ def main():
                     try:
                         a_val = float(a_str)
                     except Exception:
-                        # keep raw
+
                         a_val = None
                     alpha_rows.append({
                         "file": obj.get("_file_name", ""),
@@ -621,13 +600,11 @@ def main():
                         "mean_delta_margin_vs_baseline": s.get("mean_delta_margin_vs_baseline", None),
                     })
 
-    # Sort rows
+
     rows.sort(key=lambda x: (str(x.get("kind", "")), str(x.get("task", "")), str(x.get("eval_mode", "")), str(x.get("file", ""))))
     alpha_rows.sort(key=lambda x: (str(x.get("task", "")), str(x.get("file", "")), float(x["alpha"]) if isinstance(x.get("alpha"), (int, float)) else 1e9))
 
-    # -----------------------------
-    # Write summary.csv
-    # -----------------------------
+
     import csv
 
     base_cols = [
@@ -660,9 +637,7 @@ def main():
         for rr in rows:
             w.writerow({c: rr.get(c, "") for c in cols})
 
-    # -----------------------------
-    # Write summary.md (compact)
-    # -----------------------------
+
     md_cols = [
         "kind", "task", "eval_mode", "file",
         "base_acc_scan", "ablt_acc_scan",
@@ -694,9 +669,7 @@ def main():
     with open(args.out_md, "w", encoding="utf-8") as f:
         f.write("\n".join(md_lines) + "\n")
 
-    # -----------------------------
-    # Write paper_table.md
-    # -----------------------------
+
     key_methods = [
         ("patched_0", "Patched@0"),
         ("patched_full", "Patched@full"),
@@ -713,7 +686,7 @@ def main():
 
     paper_cols = ["kind", "task", "eval_mode", "base_acc_scan", "ablt_acc_scan", "flips_scan"]
     for _, name in key_methods:
-        paper_cols.append(f"{name} (rescue%, Δm)")
+        paper_cols.append(f"{name} (rescue%, delta_m)")
 
     paper_lines = []
     paper_lines.append("| " + " | ".join(paper_cols) + " |")
@@ -741,9 +714,7 @@ def main():
     with open(args.out_paper_md, "w", encoding="utf-8") as f:
         f.write("\n".join(paper_lines) + "\n")
 
-    # -----------------------------
-    # Alpha sweep outputs (flipset only)
-    # -----------------------------
+
     if alpha_rows:
         alpha_cols = [
             "file", "task", "layer", "seed", "alpha",
@@ -756,7 +727,7 @@ def main():
             for ar in alpha_rows:
                 w.writerow({c: ar.get(c, "") for c in alpha_cols})
 
-        # md
+
         md_a_cols = ["task", "file", "alpha", "n", "flip_rate", "ablated_acc", "mean_delta_margin_vs_baseline"]
         lines = []
         lines.append("| " + " | ".join(md_a_cols) + " |")
@@ -773,16 +744,14 @@ def main():
                 str(ar.get("file", "")),
                 str(ar.get("alpha", "")),
                 str(ar.get("n", "")),
-                _cell(ar.get("flip_rate"), pct_flag=True),  # show as %
+                _cell(ar.get("flip_rate"), pct_flag=True),
                 _cell(ar.get("ablated_acc"), pct_flag=True),
                 _cell(ar.get("mean_delta_margin_vs_baseline"), pct_flag=False),
             ]) + " |")
         with open(args.out_alpha_md, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
-    # -----------------------------
-    # Terminal print
-    # -----------------------------
+
     print(f"[OK] Found {len(all_files)} json files from {glob_path} (recursive={recursive})")
     if skipped_computeq and (not args.keep_computeq):
         print(f"[OK] Skipped {len(skipped_computeq)} computeQ json(s)")
@@ -801,7 +770,7 @@ def main():
         print(f"[OK] Wrote: {args.out_alpha_md}")
     print()
 
-    # quick stdout view (compact)
+
     header = [
         "kind", "task", "eval_mode", "file",
         "base_acc_scan", "ablt_acc_scan",

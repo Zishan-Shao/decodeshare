@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 """
 exp_diagnostic_rank_flip.py
@@ -29,7 +28,7 @@ import numpy as np
 
 
 def _infer_dim_from_reference(repo_root: Path) -> Optional[int]:
-    # Prefer a known layer-28 Llama-2 vector if present.
+
     candidates = [
         repo_root / "brittleness" / "results" / "sharedspace_solid_llama2_7b_chat" / "v_pirate_decode_layer28.npy",
         repo_root / "brittleness" / "results" / "mvp_pirate_v5_story_clean" / "v_pirate_decode_layer28.npy",
@@ -197,7 +196,7 @@ def main() -> None:
     print("  " + " ".join(shlex.quote(c) for c in cmd))
     sys.stdout.flush()
 
-    # Important: run from repo root so relative imports in the experiment script work.
+
     subprocess.run(cmd, cwd=str(repo_root), check=True)
 
     print(f"[Done] Saved: {out_json}")

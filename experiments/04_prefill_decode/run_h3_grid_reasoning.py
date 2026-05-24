@@ -1,44 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-run_h3_grid_reasoning.py
-
-在 v2 基础上补全 H3 的 2x2 grid：
-  估计分布：decode-est vs prefill-est
-  介入时机：decode-intervene vs prefill-intervene
-
-四个格子：
- (i)  Dec-est / Dec-int     (原来已有)
- (ii) Pre-est / Dec-int     (原来已有)
- (iii)Dec-est / Pre-int     (新增)
- (iv) Pre-est / Pre-int     (新增)
-
-并为 decode-int 和 prefill-int 分别提供 random 控制（k-matched）。
-
-关键实现：
-- decode-intervene：沿用你 v2 的 boundary 技巧（prefill T-1 + decode 1 token）
-- prefill-intervene：cache 初始化改成整段 prompt 一次性 prefill（seq_len=T>1）
-- hook 只对“当前 forward 的最后一个 token”做子空间去除：
-    * decode forward 时 seq_len=1 => 等价于对该 decode token 去除
-    * prefill forward 时 seq_len>1 => 只对 prompt 最后 token 去除（更匹配你的 prefill last-token basis）
-
-注意：
-- 仍然保持 forced-choice 在 answer slot 评分（teacher-forced warmup + answer_prefix）
-- warmup 必须 teacher-forced（维持 v2 逻辑）
-
-CUDA_VISIBLE_DEVICES=1 python run_h3_grid_reasoning.py \
-  --model meta-llama/Llama-2-7b-chat-hf \
-  --device cuda --model_dtype fp32 \
-  --tasks gsm8k,commonsenseqa,strategyqa,piqa,arc_challenge,openbookqa,qasc,logiqa,boolq \
-  --layer 10 --n_subspace 128 --n_eval 2048 \
-  --calib_decode_max_new_tokens 512 --per_task_max_states 20000 \
-  --answer_prefix $'\nFinal answer:' \
-  --warmup_tokens 0 \
-  --template_randomization 1 --shuffle_choices 1 
-
-如果你只想跑 decode-intervene（旧行为）： --run_prefill_intervene 0
-如果你只想跑 prefill-intervene：--run_decode_intervene 0
-
-"""
+"""H3 prefill/decode estimator and intervention grid experiment."""
 
 from __future__ import annotations
 
@@ -52,7 +12,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-# ---- Import your existing pipeline bits ----
+
 from h3_decode_subspace_helpers import (
     load_model_and_tokenizer,
     compute_shared_subspace_decode_aligned,
@@ -60,19 +20,16 @@ from h3_decode_subspace_helpers import (
     orthonormalize_np,
 )
 
-# ---- Import task loading from benchmark_dataloaders ----
+
 from decodeshare.benchmark_dataloaders import (
     Example,
     load_selected_tasks,
     is_correct,
 )
 
-from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import get_model_layers
+from decodeshare.subspace import get_model_layers
 
 
-# -----------------------------
-# Candidate sets for forced-choice
-# -----------------------------
 CHOICE_LABELS: Dict[str, List[str]] = {
     "commonsenseqa": list("ABCDE"),
     "aqua": list("ABCDE"),
@@ -83,7 +40,7 @@ CHOICE_LABELS: Dict[str, List[str]] = {
     "piqa": list("AB"),
     "strategyqa": ["YES", "NO"],
     "boolq": ["YES", "NO"],
-    # gsm8k is free-form; skip forced-choice
+
 }
 
 
@@ -121,15 +78,12 @@ def principal_angles_deg(Qa: np.ndarray, Qb: np.ndarray) -> Dict[str, float]:
     }
 
 
-# -----------------------------
-# Prefill last-token state collection for basis estimation
-# -----------------------------
 class PrefillLastTokenCollector:
     def __init__(self):
         self.states: List[torch.Tensor] = []
 
     def __call__(self, module: torch.nn.Module, inputs: Tuple[torch.Tensor, ...], output):
-        # output may be Tensor or tuple; we only care about hidden states tensor [B,T,d]
+
         h = _extract_hidden_tensor(output)
         if h is None or (not torch.is_tensor(h)) or h.ndim != 3:
             return
@@ -223,7 +177,7 @@ def pooled_shared_basis_from_task_mats(
         Xs.append(Xc)
     X_pool = np.concatenate(Xs, axis=0).astype(np.float32, copy=False)
 
-    # PCA via SVD on pooled matrix (CPU)
+
     X_t = torch.from_numpy(X_pool).float()
     _, S, Vh = torch.linalg.svd(X_t, full_matrices=False)
     s2 = (S ** 2).cpu().numpy()
@@ -233,7 +187,7 @@ def pooled_shared_basis_from_task_mats(
     k_pca = int(np.searchsorted(cumsum, pca_var) + 1)
     k_pca = max(k_pca, int(min_dim))
     k_pca = min(k_pca, int(max_dim), Vh.shape[0])
-    Q = Vh[:k_pca, :].T.contiguous().cpu().numpy()  # [d, k_pca]
+    Q = Vh[:k_pca, :].T.contiguous().cpu().numpy()
 
     r_by_task: Dict[str, np.ndarray] = {}
     for t in tasks:
@@ -274,9 +228,6 @@ def pooled_shared_basis_from_task_mats(
     return Qs, extra
 
 
-# -----------------------------
-# Hooking: subspace removal with locus gating
-# -----------------------------
 def _extract_hidden_tensor(output) -> Optional[torch.Tensor]:
     """
     Robustly extract hidden states tensor [B,T,d] from module output.
@@ -318,7 +269,7 @@ class LastTokenSubspaceRemover:
         assert locus in ("decode", "prefill")
         self.alpha = float(alpha)
         self.locus = locus
-        self.Q_cpu = torch.from_numpy(Q_np).float().contiguous()  # keep a cpu copy
+        self.Q_cpu = torch.from_numpy(Q_np).float().contiguous()
         self.Q_by_device: Dict[str, torch.Tensor] = {}
 
     def _get_Q(self, device: torch.device) -> torch.Tensor:
@@ -336,23 +287,23 @@ class LastTokenSubspaceRemover:
         if self.locus == "decode":
             if T != 1:
                 return output
-        else:  # prefill
+        else:
             if T <= 1:
                 return output
 
-        Q = self._get_Q(h.device)  # [d,k] float32 on device
+        Q = self._get_Q(h.device)
 
-        # work on last token only: v = [B,d]
+
         dtype = h.dtype
         v = h[:, -1, :]
         v32 = v.float()
 
-        # proj = (v Q) Q^T
-        vQ = torch.matmul(v32, Q)          # [B,k]
-        proj = torch.matmul(vQ, Q.t())     # [B,d]
+
+        vQ = torch.matmul(v32, Q)
+        proj = torch.matmul(vQ, Q.t())
         v_new = v32 - self.alpha * proj
 
-        # write back
+
         h_new = h.clone()
         h_new[:, -1, :] = v_new.to(dtype=dtype)
 
@@ -386,9 +337,6 @@ def remove_handles(handles: List[Any]) -> None:
             pass
 
 
-# -----------------------------
-# Forced-choice scoring with selectable cache-init mode
-# -----------------------------
 @torch.no_grad()
 def score_multitok_candidate(
     model: torch.nn.Module,
@@ -400,7 +348,7 @@ def score_multitok_candidate(
     max_prompt_len: int,
     answer_prefix: str,
     warmup_ids: List[int],
-    cache_init: str,  # 'decode_boundary' or 'prefill_full'
+    cache_init: str,
 ) -> float:
     """
     Safe but slower multi-token candidate scoring: recompute base cache then roll candidate tokens.
@@ -477,22 +425,13 @@ def forced_choice_one(
     max_prompt_len: int,
     answer_prefix: str,
     warmup_ids: List[int],
-    cache_init: str,  # 'decode_boundary' or 'prefill_full'
+    cache_init: str,
 ) -> List[float]:
-    """
-    Score candidates at the answer slot with selectable cache initialization.
-
-    cache_init='decode_boundary':
-        prompt[:-1] prefill -> prompt[-1] decode (seq_len=1)  [用于 decode-intervene 定义清晰]
-    cache_init='prefill_full':
-        full prompt prefill in one call (seq_len=T>1)         [用于 prefill-intervene 定义清晰]
-
-    Then teacher-force warmup + answer_prefix, and score candidates immediately.
-    """
+    """Internal helper for this experiment."""
     model.eval()
 
     enc = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_prompt_len).to(device)
-    input_ids = enc["input_ids"]  # [1, T]
+    input_ids = enc["input_ids"]
     attn_mask = enc.get("attention_mask", None)
     if attn_mask is None:
         attn_mask = torch.ones_like(input_ids)
@@ -523,7 +462,7 @@ def forced_choice_one(
     else:
         raise ValueError(f"Unknown cache_init={cache_init}")
 
-    # teacher-forced warmup (decode regime)
+
     for tid in warmup_ids:
         tid_t = torch.tensor([[tid]], device=device, dtype=torch.long)
         cur_attn = torch.cat([cur_attn, torch.ones((1, 1), device=device, dtype=cur_attn.dtype)], dim=1)
@@ -531,7 +470,7 @@ def forced_choice_one(
         logits = outw.logits[:, -1, :]
         past = outw.past_key_values
 
-    # teacher-force answer_prefix to create a clean answer slot
+
     if answer_prefix:
         ap_ids = tokenizer(answer_prefix, add_special_tokens=False).input_ids
         for tid in ap_ids:
@@ -541,9 +480,9 @@ def forced_choice_one(
             logits = outa.logits[:, -1, :]
             past = outa.past_key_values
 
-    # score candidates
+
     scores: List[float] = []
-    logp = torch.log_softmax(logits.float(), dim=-1)[0]  # [V]
+    logp = torch.log_softmax(logits.float(), dim=-1)[0]
     for cand in cand_texts:
         cand_ids = tokenizer(cand, add_special_tokens=False).input_ids
         if len(cand_ids) == 1:
@@ -614,7 +553,7 @@ def main():
     ap.add_argument("--max_prompt_len", type=int, default=1024)
     ap.add_argument("--batch_size", type=int, default=8)
 
-    # H3 params
+
     ap.add_argument("--pca_var", type=float, default=0.95)
     ap.add_argument("--min_dim", type=int, default=16)
     ap.add_argument("--max_dim", type=int, default=4096)
@@ -629,11 +568,11 @@ def main():
     ap.add_argument("--shuffle_choices", type=int, default=1)
     ap.add_argument("--seed", type=int, default=0)
 
-    # controls
+
     ap.add_argument("--alpha_remove", type=float, default=1.0)
 
-    # run grid switches
-    ap.add_argument("--run_prefill_intervene", type=int, default=1)  # 1=run full 2x2
+
+    ap.add_argument("--run_prefill_intervene", type=int, default=1)
     ap.add_argument("--run_decode_intervene", type=int, default=1)
     ap.add_argument("--out_json", type=str, default="", help="Output JSON path. Defaults to the historical filename in the current directory.")
 
@@ -647,10 +586,10 @@ def main():
 
     tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
 
-    # 1) Load model/tokenizer
+
     model, tok = load_model_and_tokenizer(args.model, device=args.device, model_dtype=args.model_dtype)
 
-    # 2) Load data (do NOT append answer_prefix here)
+
     sub_by, eval_by, _meta = load_selected_tasks(
         tasks=tasks,
         n_subspace=args.n_subspace,
@@ -663,7 +602,7 @@ def main():
         answer_prefix=args.answer_prefix,
     )
 
-    # 3) Build warmup token ids (teacher-forced, fixed)
+
     warmup_ids: List[int] = []
     if args.warmup_tokens > 0:
         base_ids = tok(args.warmup_phrase, add_special_tokens=False).input_ids
@@ -673,7 +612,7 @@ def main():
         warmup_ids = (base_ids * rep)[: args.warmup_tokens]
     print(f"[Warmup] teacher_forced_fixed W={len(warmup_ids)} tokens, phrase='{args.warmup_phrase.strip()}'")
 
-    # 4) Compute decode-estimated shared basis
+
     prompts_by_task = {k: [ex.prompt for ex in sub_by[k]] for k in sub_by.keys()}
     joint_dec, shared_dec_idx, extra_dec, _ = compute_shared_subspace_decode_aligned(
         model=model,
@@ -698,7 +637,7 @@ def main():
     Q_dec_full = orthonormalize_np(joint_dec[:, shared_dec_idx])
     print(f"[Shared-Decode] k_shared={Q_dec_full.shape[1]} (tau={args.tau}, m_shared={args.m_shared})")
 
-    # 5) Compute prefill-estimated shared basis
+
     mats_pre: Dict[str, np.ndarray] = {}
     for t in tasks:
         prompts = [ex.prompt for ex in sub_by[t]]
@@ -724,7 +663,7 @@ def main():
     )
     print(f"[Shared-Prefill] k_shared={Q_pre_full.shape[1]} (tau={args.tau}, m_shared={args.m_shared})")
 
-    # 6) Match dimension
+
     k = min(Q_dec_full.shape[1], Q_pre_full.shape[1])
     if k <= 0:
         raise RuntimeError("Matched k is 0; cannot run H3 grid.")
@@ -735,23 +674,23 @@ def main():
 
     ang = principal_angles_deg(Q_dec, Q_pre)
     print(f"[Match] k = {k}")
-    print(f"[Angles] mean={ang['mean']:.2f}° p50={ang['p50']:.2f}° p95={ang['p95']:.2f}°")
+    print(f"[Angles] mean={ang['mean']:.2f} deg p50={ang['p50']:.2f} deg p95={ang['p95']:.2f} deg")
 
-    # 7) Candidate tokenization sanity
+
     for t in ["commonsenseqa", "arc_challenge", "piqa", "boolq"]:
         if t in CHOICE_LABELS:
             _lbl, cand = candidate_texts_for_task(t)
             lens = [len(tok(c, add_special_tokens=False).input_ids) for c in cand]
             print(f"[CandTok] {t}: {list(zip(cand, lens))}")
 
-    # 8) Evaluate
+
     def run_cond(
         examples: List[Example],
         Q: Optional[np.ndarray],
         *,
         name: str,
-        intervene_locus: Optional[str],  # None | 'decode' | 'prefill'
-        cache_init: str,                 # 'decode_boundary' | 'prefill_full'
+        intervene_locus: Optional[str],
+        cache_init: str,
     ) -> Dict[str, Any]:
         handles: List[Any] = []
         try:
@@ -798,7 +737,7 @@ def main():
         print(f"[H3-Grid v3 | 2x2 + controls] {t} (n={len(exs)}, W={len(warmup_ids)})")
         print("=" * 100)
 
-        # Baselines for both cache protocols (should match; good sanity)
+
         r_base_decproto = run_cond(
             exs, None,
             name="baseline(dec-proto)",
@@ -815,7 +754,7 @@ def main():
         print(f"  {r_base_decproto['name']:<26}: {pct(r_base_decproto['acc']):5.1f} [{pct(r_base_decproto['ci_low']):.1f},{pct(r_base_decproto['ci_high']):.1f}]")
         print(f"  {r_base_preproto['name']:<26}: {pct(r_base_preproto['acc']):5.1f} [{pct(r_base_preproto['ci_low']):.1f},{pct(r_base_preproto['ci_high']):.1f}]")
 
-        # ---- Decode-intervene arm (cache_init=decode_boundary; hook locus=decode) ----
+
         decode_arm: Dict[str, Any] = {}
         if args.run_decode_intervene:
             r_dec_dec = run_cond(
@@ -848,7 +787,7 @@ def main():
                 "rand_ctl_dec_int": r_ctl_dec,
             }
 
-        # ---- Prefill-intervene arm (cache_init=prefill_full; hook locus=prefill) ----
+
         prefill_arm: Dict[str, Any] = {}
         if args.run_prefill_intervene:
             r_dec_pre = run_cond(

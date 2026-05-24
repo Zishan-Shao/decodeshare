@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """Build and optionally upload the DecodeShare Gradio demo to Hugging Face Spaces."""
 
 from __future__ import annotations

@@ -19,8 +19,8 @@ Canonical scripts in this folder:
 - `summarize_multibench_full.py`: paper-ready repair tables.
 - `mvp_projection_patch_pirate.py`: pirate/template sanity check.
 
-The complete historical bundle remains in `downstream/brittleness/`; this
-folder keeps only the paper-facing entry points.
+The organized downstream provenance bundle remains in `downstream/brittleness/`;
+this folder keeps only the paper-facing entry points.
 
 Smoke check:
 

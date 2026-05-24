@@ -298,3 +298,7 @@ decodeshare/
   curated.
 - The public tree is organized for reproduction first; historical exploratory
   files were removed or moved out of the main workflow.
+
+## License
+
+This repository is released under the MIT License. See [LICENSE](LICENSE).

@@ -1,20 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-analyze_task_count_convergence.py
-
-计算“task 数量增加时，joint subspace 与 full-task subspace 的相似度”曲线。
-
-输入：collect_activations.py 输出的 acts_dir
-输出：CSV + PNG
-
-示例：
-  python analysis/analyze_task_count_convergence.py \
-    --acts_dir results/acts/<MODEL_TAG>/layer10_... \
-    --pca_var 0.95 --min_dim 1 --max_dim 4096 \
-    --repeats 20 --seed 123 \
-    --out_csv results/exp2/llama_conv.csv \
-    --out_png results/exp2/llama_conv.png
-"""
+"""Analyze shared-subspace convergence as the number of tasks increases."""
 
 import os
 import json
@@ -43,7 +27,6 @@ def load_acts(acts_dir: str) -> Tuple[Dict[str, np.ndarray], Dict]:
     return X_by_task, meta
 
 def _orthonormalize(Q: np.ndarray) -> np.ndarray:
-    # QR: Q = QR, 取 Q 的正交列
     Q = Q.astype(np.float64, copy=False)
     Q, _ = np.linalg.qr(Q)
     return Q.astype(np.float32, copy=False)
@@ -61,24 +44,15 @@ def compute_basis(X_by_task: Dict[str, np.ndarray], layer: int, tasks: List[str]
     if joint_subspace is None or int(cross_dim) <= 0:
         return None, 0
     Q = joint_subspace.astype(np.float32, copy=False)
-    Q = _orthonormalize(Q) # 正交归一化
+    Q = _orthonormalize(Q)
     return Q, int(cross_dim)
 
-# def subspace_overlap(Qa: np.ndarray, Qb: np.ndarray) -> float:
-#     """
-#     overlap = ||Qa^T Qb||_F^2 / min(ka, kb)  in [0,1] (假设列正交归一；PCA basis 通常满足)
-#     """
-#     if Qa is None or Qb is None:
-#         return 0.0
-#     Ma = Qa.T @ Qb
-#     fro2 = float(np.linalg.norm(Ma, ord="fro") ** 2)
-#     denom = float(min(Qa.shape[1], Qb.shape[1])) if (Qa.ndim == 2 and Qb.ndim == 2) else 1.0
-#     return fro2 / max(denom, 1.0)
+
 def subspace_overlap(Qa: np.ndarray, Qb: np.ndarray) -> float:
     if Qa is None or Qb is None:
         return 0.0
     M = Qa.T @ Qb
-    s = np.linalg.svd(M, compute_uv=False)  # singular values = cos(theta_i)（当 Qa,Qb 正交归一）
+    s = np.linalg.svd(M, compute_uv=False)
     k = min(Qa.shape[1], Qb.shape[1])
     return float((s[:k] ** 2).sum() / max(k, 1))
 
@@ -107,7 +81,7 @@ def main():
     print(f"[Cfg] layer={layer} pca_var={args.pca_var} repeats={args.repeats} seed={args.seed}")
     print(f"[Tasks] T={T} tasks={tasks_all}")
 
-    # full basis
+
     Q_full, k_full = compute_basis(X_by_task, layer, tasks_all, args.pca_var, args.min_dim, args.max_dim)
     if Q_full is None:
         raise RuntimeError("Failed to compute full-task basis.")
@@ -134,10 +108,10 @@ def main():
             "cross_dim_std": float(np.std(ks, ddof=0)),
         }
         rows.append(row)
-        print(f"[n={n}] overlap={row['overlap_mean']:.4f}±{row['overlap_std']:.4f} "
-              f"k={row['cross_dim_mean']:.1f}±{row['cross_dim_std']:.1f}")
+        print(f"[n={n}] overlap={row['overlap_mean']:.4f}+/-{row['overlap_std']:.4f} "
+              f"k={row['cross_dim_mean']:.1f}+/-{row['cross_dim_std']:.1f}")
 
-    # save CSV
+
     with open(args.out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
@@ -145,7 +119,7 @@ def main():
             w.writerow(r)
     print(f"[Save] {args.out_csv}")
 
-    # plot
+
     xs = [r["n_tasks"] for r in rows]
     ys = [r["overlap_mean"] for r in rows]
     yerr = [r["overlap_std"] for r in rows]

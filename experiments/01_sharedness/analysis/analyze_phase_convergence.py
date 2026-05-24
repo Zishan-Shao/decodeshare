@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 analyze_phase_convergence.py
 
@@ -60,9 +59,6 @@ from tqdm import tqdm
 from decodeshare import sharedness as base
 
 
-# -------------------------
-# Prompt loader selection
-# -------------------------
 def load_prompts(loader: str, n_prompts: int, seed: int) -> Dict[str, List[str]]:
     loader = (loader or "fair").strip().lower()
     if loader == "fair":
@@ -83,9 +79,6 @@ def load_prompts(loader: str, n_prompts: int, seed: int) -> Dict[str, List[str]]
     raise ValueError(f"Unknown --loader {loader}. Use fair|full.")
 
 
-# -------------------------
-# Collectors
-# -------------------------
 from collections import defaultdict
 from typing import DefaultDict
 
@@ -116,7 +109,7 @@ class PrefillLastTokenCollector:
             if hs.shape[1] <= 1:
                 return output
 
-            x = hs[:, -1, :]  # [B, D]
+            x = hs[:, -1, :]
             if x.numel() == 0:
                 return output
             self.storage[self._cur_task][layer_idx].append(x.detach().float().cpu().numpy())
@@ -167,7 +160,7 @@ class DecodeStepTCollector:
             if hs.shape[1] != 1:
                 return output
 
-            x = hs[:, -1, :]  # [B, D]
+            x = hs[:, -1, :]
             if self.active_mask is not None:
                 m = self.active_mask
                 if m.dtype != torch.bool:
@@ -188,9 +181,6 @@ class DecodeStepTCollector:
         return np.concatenate(chunks, axis=0)
 
 
-# -------------------------
-# Collection routines
-# -------------------------
 @torch.no_grad()
 def collect_prefill_last_token_states(
     model,
@@ -264,7 +254,7 @@ def collect_decode_step_t_states(
 
         unfinished = torch.ones(B, dtype=torch.bool, device=device)
 
-        # Prefill (no capture)
+
         collector.set_capture(False, None)
         out = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True)
         logits = out.logits[:, -1, :]
@@ -309,9 +299,6 @@ def collect_decode_step_t_states(
         collector.set_capture(False, None)
 
 
-# -------------------------
-# Subspace / sharedness utils
-# -------------------------
 def _orthonormalize(Q: np.ndarray) -> np.ndarray:
     Q = Q.astype(np.float64, copy=False)
     Q, _ = np.linalg.qr(Q)
@@ -360,7 +347,7 @@ def all_task_sharedness(
     Returns: (shared_count, shared_ratio=shared_count/cross_dim)
     """
     relvar_by_task = {t: base.compute_relvar_in_basis(X_by_task[t], Q) for t in tasks_all}
-    m_shared = len(tasks_all)  # ALL tasks
+    m_shared = len(tasks_all)
     shared_idx = base.compute_shared_indices_from_relvar(relvar_by_task, tau=float(tau), m_shared=int(m_shared))
     sc = int(len(shared_idx))
     k = int(Q.shape[1])
@@ -382,9 +369,6 @@ def fair_preprocess(
     return X_bal
 
 
-# -------------------------
-# Run one mode
-# -------------------------
 @dataclass
 class ModeLongRow:
     mode: str
@@ -522,7 +506,7 @@ def collect_acts_for_mode(
 
 
 def summarize_long_rows(rows: List[ModeLongRow]) -> List[dict]:
-    # group by (mode, n_tasks)
+
     groups: Dict[Tuple[str, int], List[ModeLongRow]] = {}
     for r in rows:
         groups.setdefault((r.mode, r.n_tasks), []).append(r)
@@ -614,7 +598,7 @@ def main():
 
     modes = ["decode-last", "prefill-last", "decode-step-t"]
 
-    # collect once per mode (expensive); then run many PCA + metrics (cheap)
+
     X_mode: Dict[str, Dict[str, np.ndarray]] = {}
     for mode in modes:
         print("\n" + "=" * 80)
@@ -640,7 +624,7 @@ def main():
             decode_step_t=int(args.decode_step_t),
         )
         X_mode[mode] = X_by_task
-        # quick stats
+
         n0 = min(v.shape[0] for v in X_by_task.values())
         d = next(iter(X_by_task.values())).shape[1]
         print(f"[{mode}] balanced_states_per_task={n0}, dim={d}")
@@ -655,14 +639,14 @@ def main():
         X_by_task = X_mode[mode]
         rng = np.random.default_rng(int(args.seed) + (hash(mode) % 10000))
 
-        # full basis (all tasks)
+
         Q_full, k_full = compute_basis(X_by_task, int(args.layer), tasks_all, args.pca_var, args.min_dim, args.max_dim)
         if Q_full is None or k_full <= 0:
             raise RuntimeError(f"[{mode}] Failed to compute full basis.")
         sc_full, sr_full = all_task_sharedness(X_by_task, Q_full, tasks_all, tau=float(args.tau))
         print(f"[{mode}] FULL: cross_dim={k_full}, shared_count_all={sc_full}, shared_ratio_all={sr_full:.6f}")
 
-        # subsets
+
         for n in range(2, T + 1):
             for rep in range(int(args.repeats)):
                 subset = rng.choice(tasks_all, size=n, replace=False).tolist()
@@ -674,7 +658,7 @@ def main():
                     sr = 0.0
                 else:
                     ov = subspace_overlap(Qn, Q_full)
-                    # IMPORTANT: evaluate sharedness across ALL tasks, not just subset
+
                     sc, sr = all_task_sharedness(X_by_task, Qn, tasks_all, tau=float(args.tau))
 
                 long_rows.append(ModeLongRow(
@@ -685,13 +669,13 @@ def main():
                     shared_ratio_all=float(sr),
                 ))
 
-            # quick print per n
+
             rs = [r for r in long_rows if r.mode == mode and r.n_tasks == n]
             srm = float(np.mean([r.shared_ratio_all for r in rs]))
             ovm = float(np.mean([r.overlap for r in rs]))
             print(f"[{mode}] n={n}: overlap_mean={ovm:.4f}, shared_ratio_all_mean={srm:.6f}")
 
-    # write long CSV
+
     out_csv_long = args.out_csv
     with open(out_csv_long, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -700,7 +684,7 @@ def main():
             w.writerow([r.mode, r.n_tasks, r.rep, r.overlap, r.cross_dim, r.shared_count_all, r.shared_ratio_all])
     print(f"[Save] long CSV: {out_csv_long}")
 
-    # write summary CSV
+
     summary = summarize_long_rows(long_rows)
     out_csv_summary = out_csv_long.replace(".csv", ".summary.csv")
     with open(out_csv_summary, "w", newline="", encoding="utf-8") as f:
@@ -710,7 +694,7 @@ def main():
             w.writerow(row)
     print(f"[Save] summary CSV: {out_csv_summary}")
 
-    # plot (2 panels)
+
     def _get_series(mode: str, key_mean: str, key_std: str):
         rs = [r for r in summary if r["mode"] == mode]
         xs = [r["n_tasks"] for r in rs]
@@ -720,7 +704,7 @@ def main():
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
-    # left: overlap
+
     ax = axes[0]
     for mode in modes:
         xs, ys, yerr = _get_series(mode, "overlap_mean", "overlap_std")
@@ -732,7 +716,7 @@ def main():
     ax.grid(True)
     ax.legend()
 
-    # right: all-task shared ratio
+
     ax = axes[1]
     for mode in modes:
         xs, ys, yerr = _get_series(mode, "shared_ratio_all_mean", "shared_ratio_all_std")
@@ -747,7 +731,7 @@ def main():
     plt.savefig(args.out_png, dpi=200)
     print(f"[Save] figure: {args.out_png}")
 
-    # optional single plots
+
     if args.out_png_overlap:
         plt.figure()
         for mode in modes:

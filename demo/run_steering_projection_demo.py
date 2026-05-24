@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """Small DecodeShare demo: project a steering vector away from a decode-shared basis.
 
 The full paper experiments are large. This script is deliberately compact:
@@ -471,9 +472,8 @@ def build_demo_vector(basis, caa_vector, args: argparse.Namespace) -> Tuple[Any,
         demo_vector = caa_vector.float()
         description = "raw CAA-style contrastive mean-difference vector"
     else:
-        # For a short public demo, make the shared-channel term visible. This
-        # keeps the direction grounded in the CAA-style vector while amplifying
-        # the component DecodeShare will remove.
+
+
         demo_vector = caa_projection["residual"] + float(args.shared_component_scale) * caa_projection["shared"]
         description = (
             "CAA-style vector with its shared component amplified "

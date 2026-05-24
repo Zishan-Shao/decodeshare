@@ -1,31 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
-"""
-exp_rank_flip_full.py
-
-Convenience runner for a "full" Ranking-Flip run (30–100 vectors), plus
-layer/model sweeps with decision-utility summaries.
-
-What it does:
-  - (Optionally) auto-build a vectors manifest by scanning existing vector files in this repo.
-  - Calls `exp_rank_flip.py` with recommended multi-template args.
-  - Writes outputs under a single output directory.
-
-Examples:
-  # Auto-discover vectors (from known Llama-2-7B steering-vector dirs) and run:
-  python downstream/steering_rank_flip/exp_rank_flip_full.py
-
-  # Use your own manifest (recommended if you have >=50 layer-28 vectors):
-  python downstream/steering_rank_flip/exp_rank_flip_full.py --vectors_manifest /path/to/your_vectors.jsonl
-
-  # Layer sweep with a fixed candidate pool (random directions), sharded across 4 GPUs:
-  python downstream/steering_rank_flip/exp_rank_flip_full.py \\
-    --candidate_pool random \\
-    --layers 16,20,24,28,31 \\
-    --n_vectors 100 --vector_seed 0 \\
-    --shards 4 --cuda_devices 0,1,2,3
-"""
+"""Full ranking-flip runner with manifest discovery and layer sweeps."""
 
 from __future__ import annotations
 
@@ -109,7 +84,7 @@ def _infer_concept(vec_path: Path) -> str:
 
 
 def _iter_candidate_vector_paths(repo_root: Path) -> Iterable[Path]:
-    # Keep this list conservative: only dirs we expect to contain Llama-2-7B (D=4096) steering vectors.
+
     dirs = [
         repo_root / "brittleness" / "old" / "steer_repair_multibench",
         repo_root / "brittleness" / "old" / "steer_repair_multibench_v2",
@@ -129,7 +104,7 @@ def _is_vector_npy(path: Path) -> bool:
         arr = np.load(str(path), mmap_mode="r")
     except Exception:
         return False
-    # Require 1D vectors; the experiment script will do the final dim check vs the model.
+
     return getattr(arr, "ndim", None) == 1 and int(arr.shape[0]) >= 16
 
 
@@ -199,13 +174,13 @@ def _parse_csv_strs(s: str) -> List[str]:
 
 
 def _model_tag(model_name: str) -> str:
-    # Stable filesystem-safe tag.
+
     s = model_name.replace("/", "__")
     return _sanitize_name(s)
 
 
 def _infer_dim_from_reference(repo_root: Path) -> Optional[int]:
-    # Prefer a known Llama-2 vector if present.
+
     candidates = [
         repo_root / "brittleness" / "results" / "sharedspace_solid_llama2_7b_chat" / "v_pirate_decode_layer28.npy",
         repo_root / "brittleness" / "results" / "mvp_pirate_v5_story_clean" / "v_pirate_decode_layer28.npy",
@@ -233,7 +208,7 @@ def _write_jsonl_manifest(path: Path, lines: List[dict]) -> None:
 def _maybe_generate_random_vectors(*, vectors_dir: Path, n_vectors: int, dim: int, vector_seed: int) -> List[Path]:
     vectors_dir.mkdir(parents=True, exist_ok=True)
     paths: List[Path] = []
-    # If files already exist, reuse (resume-friendly).
+
     existing = sorted(vectors_dir.glob("rand_*.npy"))
     if len(existing) >= n_vectors:
         return existing[:n_vectors]
@@ -243,7 +218,7 @@ def _maybe_generate_random_vectors(*, vectors_dir: Path, n_vectors: int, dim: in
         if fpath.exists():
             paths.append(fpath)
             continue
-        # Per-index RNG ensures deterministic, resume-friendly generation.
+
         rng_i = np.random.default_rng(int(vector_seed) + int(i))
         v = rng_i.standard_normal(size=(dim,), dtype=np.float32)
         v /= float(np.linalg.norm(v) + 1e-12)
@@ -287,7 +262,7 @@ def _log_choose(n: int, k: int) -> float:
 
 
 def _hypergeom_p_geq(*, n_pop: int, n_pos: int, n_draw: int, k_geq: int) -> float:
-    # P[X >= k_geq] where X ~ Hypergeom(n_pop, n_pos, n_draw)
+
     if k_geq <= 0:
         return 1.0
     if n_pos <= 0:
@@ -361,7 +336,7 @@ def _compute_decision_summary(results: Dict[str, Any], *, k_list: List[int]) -> 
             "p_geq_npos_decode": _hypergeom_p_geq(n_pop=n_pop, n_pos=n_pos_total, n_draw=k, k_geq=npos_de),
         }
 
-    # Quick overlap sanity
+
     def _topk_names(idx: np.ndarray, k: int) -> List[str]:
         return [names[i] for i in idx[:k]]
 
@@ -392,7 +367,7 @@ def _merge_shards(shard_paths: List[Path], *, merged_out: Path) -> Dict[str, Any
         if merged is None:
             merged = obj
         else:
-            # Minimal consistency check: model + tasks + seeds must match.
+
             a = (merged.get("config") or {})
             b = (obj.get("config") or {})
             for key in ["model", "tasks", "n_eval", "template_seeds_rank", "template_seeds_real", "decoding"]:
@@ -412,7 +387,7 @@ def _merge_shards(shard_paths: List[Path], *, merged_out: Path) -> Dict[str, Any
     merged["vectors"] = merged_vectors
     merged["merged_from"] = merged_from
 
-    # Update config to reflect merged output.
+
     cfg = merged.get("config", {})
     if isinstance(cfg, dict):
         cfg = dict(cfg)
@@ -422,7 +397,7 @@ def _merge_shards(shard_paths: List[Path], *, merged_out: Path) -> Dict[str, Any
         cfg["resume"] = 0
         merged["config"] = cfg
 
-    # Recompute correlations across full merged vectors.
+
     names = sorted(merged_vectors.keys())
     trad = np.array([float(merged_vectors[n]["score_rank_trad"]) for n in names], dtype=np.float64)
     dec = np.array([float(merged_vectors[n]["score_rank_decode"]) for n in names], dtype=np.float64)
@@ -545,7 +520,7 @@ def main() -> None:
     models = _parse_csv_strs(args.models) or [args.model]
     k_list = _parse_csv_ints(args.k_list) or [1, 5, 10, 20]
 
-    # Sweep mode: requires explicit --layers.
+
     if layers:
         out_root = Path(args.out_dir) if args.out_dir else (repo_root / "outputs" / "steering_rank_flip" / f"sweep_{run_id}")
         out_root.mkdir(parents=True, exist_ok=True)
@@ -661,7 +636,7 @@ def main() -> None:
                         cmd += ["--filter_regex", args.filter_regex]
                     shard_cmds.append(cmd)
 
-                # Save commands for reproducibility.
+
                 (run_dir / "commands_shards.sh").write_text(
                     "# Auto-generated\n" + "\n".join(" ".join(shlex.quote(c) for c in cmd) for cmd in shard_cmds) + "\n",
                     encoding="utf-8",
@@ -767,15 +742,13 @@ def main() -> None:
                 )
                 _write_sweep_summary(out_root, summary_rows)
 
-        # Global summary outputs.
+
         _write_sweep_summary(out_root, summary_rows)
 
         print(f"[Done] Wrote sweep summary under: {out_root}")
         return
 
-    # -------------------------
-    # Single-run mode (legacy)
-    # -------------------------
+
     out_dir = Path(args.out_dir) if args.out_dir else (repo_root / "outputs" / "steering_rank_flip" / f"full_{run_id}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -796,7 +769,7 @@ def main() -> None:
         if n_vecs is not None and n_vecs < 30:
             raise RuntimeError(
                 f"Auto-manifest only found {n_vecs} vectors (<30). "
-                "Pass --vectors_manifest to use your own JSONL with 30–100 vectors."
+                "Pass --vectors_manifest to use your own JSONL with 30-100 vectors."
             )
 
     out_json = Path(args.out_json) if args.out_json else (out_dir / "ranking_flip_full.json")

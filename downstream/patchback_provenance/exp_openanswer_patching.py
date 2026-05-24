@@ -1,79 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-openanswer_subspace_patching.py
-
-Extend subspace-only, narrow-window patchback to OPEN-ANSWER benchmarks (math, coding)
-to address "MC-only is too narrow" concerns.
-
-Key additions in this version:
-1) Add CLI args --hf_id / --hf_split for HF fallback loader (Humaneval etc.)
-2) Make GSM8K gen_math baseline more stable/"OK":
-   - If eval_mode==gen_math and answer_prefix is default "\nFinal answer:",
-     auto-upgrade it to: "\nLet's think step by step.\nFinal answer (number only):"
-   - If eval_mode==gen_math and max_new_tokens < 64, auto-bump to 64
-
-Evaluation modes:
-- pair_logprob: gold vs distractor continuation logprob (cleanest open-answer "decision" probe)
-- gen_math: greedy decode-aligned generation + numeric answer extraction + EM
-- gen_code_compile: greedy generation + safe syntax compile check (no execution)
-
-Controls (same spirit as your MC patching):
-- subspace-only patchback in narrow decode window
-- energy-matched random subspace
-- energy-matched random vector in SAME shared subspace
-- patch into nonshared complement
-- time-shuffled donor (cross-example donor)
-
-A) GSM8K pair_logprob（主证据）
-python openanswer_subspace_patching.py \
-  --base_script_path subspace_patching_transfer.py \
-  --model meta-llama/Llama-2-7b-chat-hf --device cuda --dtype fp32 \
-  --layer 10 --seed 123 \
-  --task gsm8k --n_eval 256 --max_flips 64 \
-  --eval_mode pair_logprob \
-  --Qs_path Q_shared_layer10.npy \
-  --patch_n_steps 4 \
-  --out_json results/openanswer/gsm8k_pairlogprob.json
-
-B) GSM8K gen_math（附录证据，尽量稳）
-python openanswer_subspace_patching.py \
-  --base_script_path subspace_patching_transfer.py \
-  --model meta-llama/Llama-2-7b-chat-hf --device cuda --dtype fp32 \
-  --layer 10 --seed 123 \
-  --task gsm8k --n_eval 256 --max_flips 64 \
-  --eval_mode gen_math \
-  --Qs_path Q_shared_layer10.npy \
-  --patch_n_steps 4 --max_new_tokens 64 \
-  --out_json results/openanswer/gsm8k_genmath.json
-
-C) HumanEval pair_logprob（主证据）
-
-注意：你最新脚本参数是 --hf_split（不是 --split）。
-
-python openanswer_subspace_patching.py \
-  --base_script_path subspace_patching_transfer.py \
-  --model meta-llama/Llama-2-7b-chat-hf --device cuda --dtype fp32 \
-  --layer 10 --seed 123 \
-  --task humaneval --use_benchmark_loader 0 --hf_id openai_humaneval --hf_split test \
-  --eval_mode pair_logprob \
-  --Qs_path Q_shared_layer10.npy \
-  --gold_max_tokens 128 \
-  --patch_n_steps 4 \
-  --out_json results/openanswer/humaneval_pairlogprob.json
-
-D) HumanEval gen_code_compile（附录证据）
-python openanswer_subspace_patching.py \
-  --base_script_path subspace_patching_transfer.py \
-  --model meta-llama/Llama-2-7b-chat-hf --device cuda --dtype fp32 \
-  --layer 10 --seed 123 \
-  --task humaneval --use_benchmark_loader 0 --hf_id openai_humaneval --hf_split test \
-  --eval_mode gen_code_compile \
-  --Qs_path Q_shared_layer10.npy \
-  --patch_n_steps 4 --max_new_tokens 256 \
-  --out_json results/openanswer/humaneval_gencode_compile.json
-
-
-"""
+"""Open-answer patchback provenance experiment for math and code-style tasks."""
 
 from __future__ import annotations
 
@@ -90,16 +15,13 @@ import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# Optional HF datasets loader
+
 try:
     from datasets import load_dataset  # type: ignore
 except Exception:
     load_dataset = None
 
 
-# =============================================================================
-# Dynamic import base script
-# =============================================================================
 def import_module_from_path(module_name: str, file_path: str):
     file_path = os.path.abspath(file_path)
     spec = importlib.util.spec_from_file_location(module_name, file_path)
@@ -116,9 +38,6 @@ def import_module_from_path(module_name: str, file_path: str):
     return mod
 
 
-# =============================================================================
-# Small utilities
-# =============================================================================
 def seed_everything(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -180,7 +99,7 @@ def energy_matched_random_vector_in_subspace(Q_sub: np.ndarray, target_norms: to
 
 def shuffle_coeffs_in_subspace(p_cpu: torch.Tensor, Q_sub: np.ndarray, seed: int, mode: str = "permute") -> torch.Tensor:
     Q = torch.tensor(Q_sub, dtype=torch.float32, device="cpu")
-    c = p_cpu @ Q  # [B,k]
+    c = p_cpu @ Q
     k = int(c.shape[1])
     rng = np.random.default_rng(seed)
     if mode == "permute":
@@ -194,9 +113,6 @@ def shuffle_coeffs_in_subspace(p_cpu: torch.Tensor, Q_sub: np.ndarray, seed: int
     return c2 @ Q.T
 
 
-# =============================================================================
-# Example container
-# =============================================================================
 @dataclass
 class OAExample:
     ex_id: str
@@ -205,15 +121,12 @@ class OAExample:
     meta: Dict[str, Any]
 
 
-# =============================================================================
-# Math normalization / extraction
-# =============================================================================
 _NUM_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
 
 
 def _strip_final_answer_prefix(s: str) -> str:
     s = (s or "").strip()
-    # Use the LAST occurrence so prompt-included tags don't break extraction
+
     for tag in ["Final answer (number only):", "Final answer:", "Final Answer:", "Answer:", "answer:", "FINAL ANSWER:"]:
         if tag in s:
             s = s.split(tag)[-1].strip()
@@ -276,9 +189,6 @@ def answers_match(gold: str, pred: str) -> bool:
     return g == p
 
 
-# =============================================================================
-# Decode-aligned teacher-forcing logprob for a continuation
-# =============================================================================
 @dataclass
 class LogprobResult:
     total_logprob: float
@@ -385,9 +295,6 @@ def decode_aligned_logprob(
                 pass
 
 
-# =============================================================================
-# Pairwise decision: gold vs distractor
-# =============================================================================
 @dataclass
 class PairResult:
     pred: str
@@ -429,7 +336,7 @@ def pairwise_logprob_decision(
         layer_module=layer_module,
         removal_hook=removal_hook,
         patch_hook=patch_hook,
-        capture_hook=None,  # keep capture on gold path only
+        capture_hook=None,
         add_special_tokens_prompt=add_special_tokens_prompt,
         max_cont_tokens=max_answer_tokens,
     )
@@ -448,9 +355,6 @@ def pairwise_logprob_decision(
     )
 
 
-# =============================================================================
-# Decode-aligned greedy generation (custom loop)
-# =============================================================================
 @torch.no_grad()
 def greedy_generate_decode_aligned(
     model: AutoModelForCausalLM,
@@ -554,9 +458,6 @@ def eval_gen_code_compile(gen_text: str) -> Tuple[str, bool]:
         return code, False
 
 
-# =============================================================================
-# Summaries
-# =============================================================================
 def summarize_rescue_pair(flip_rows: List[Dict[str, Any]], key: str) -> Dict[str, Any]:
     n = len(flip_rows)
     if n == 0:
@@ -587,9 +488,6 @@ def summarize_rescue_gen(flip_rows: List[Dict[str, Any]], key: str, field: str) 
     }
 
 
-# =============================================================================
-# Loading eval examples
-# =============================================================================
 def load_examples_from_benchmark(
     base_mod: Any,
     dl: Any,
@@ -665,14 +563,11 @@ def load_examples_from_hf(
     return out, meta_out
 
 
-# =============================================================================
-# Main
-# =============================================================================
 def main():
     ap = argparse.ArgumentParser()
 
     ap.add_argument("--base_script_path", type=str, required=True,
-                    help="Path to your existing subspace_patching_transfer.py")
+                    help="Path to your existing exp_subspace_patching_transfer.py")
 
     ap.add_argument("--model", type=str, required=True)
     ap.add_argument("--device", type=str, default="cuda")
@@ -680,7 +575,7 @@ def main():
     ap.add_argument("--layer", type=int, required=True)
     ap.add_argument("--seed", type=int, default=123)
 
-    # Q_shared
+
     ap.add_argument("--Qs_path", type=str, default="")
     ap.add_argument("--compute_Qs", type=int, default=0)
     ap.add_argument("--Qs_out", type=str, default="Q_shared_openanswer.npy")
@@ -696,7 +591,7 @@ def main():
     ap.add_argument("--tau", type=float, default=0.001)
     ap.add_argument("--m_shared", type=str, default="all")
 
-    # data loading
+
     ap.add_argument("--task", type=str, required=True)
     ap.add_argument("--n_eval", type=int, default=256)
     ap.add_argument("--max_flips", type=int, default=64)
@@ -705,28 +600,28 @@ def main():
     ap.add_argument("--hf_id", type=str, default="", help="HF dataset id (used when --use_benchmark_loader=0)")
     ap.add_argument("--hf_split", type=str, default="test", help="HF dataset split (used when --use_benchmark_loader=0)")
 
-    ap.add_argument("--loto8_path", type=str, default="disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py")
+    ap.add_argument("--loto8_path", type=str, default="exp_patchback_loto.py")
     ap.add_argument("--dataloaders_path", type=str, default="")
 
-    # IMPORTANT: keep default as before for compatibility.
+
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
     ap.add_argument("--template_randomization", type=int, default=1)
     ap.add_argument("--shuffle_choices", type=int, default=1)
 
-    # eval modes
+
     ap.add_argument("--eval_mode", type=str, required=True,
                     choices=["pair_logprob", "gen_math", "gen_code_compile"])
 
-    # pair_logprob options
+
     ap.add_argument("--gold_text_prefix", type=str, default=" ")
     ap.add_argument("--dist_text_prefix", type=str, default=" ")
     ap.add_argument("--gold_max_tokens", type=int, default=0)
     ap.add_argument("--distractor_mode", type=str, default="next_gold", choices=["next_gold", "random_gold"])
 
-    # patch window
+
     ap.add_argument("--patch_n_steps", type=int, default=1)
 
-    # generation options
+
     ap.add_argument("--max_new_tokens", type=int, default=64)
 
     ap.add_argument("--run_coeff_controls", type=int, default=0)
@@ -737,12 +632,12 @@ def main():
     args = ap.parse_args()
     seed_everything(args.seed)
 
-    # Auto-upgrade prompt formatting for gen_math baseline stability
+
     answer_prefix_effective = args.answer_prefix
     max_new_tokens_effective = int(args.max_new_tokens)
 
     if args.eval_mode == "gen_math":
-        # Only auto-upgrade if user left answer_prefix at the old default
+
         if args.answer_prefix.strip() == "Final answer:" or args.answer_prefix.strip() == "\nFinal answer:".strip():
             answer_prefix_effective = "\nLet's think step by step.\nFinal answer (number only):"
             print(f"[Info] gen_math: auto-upgrade answer_prefix -> {answer_prefix_effective!r}")
@@ -750,11 +645,11 @@ def main():
             print(f"[Info] gen_math: max_new_tokens {max_new_tokens_effective} too small; bumping to 64 for stability.")
             max_new_tokens_effective = 64
 
-    # Import base script + aux modules
+
     base_mod = import_module_from_path("base_subspace_patching_transfer_for_openanswer", args.base_script_path)
     loto8, dl = base_mod.load_aux_modules(args.loto8_path, args.dataloaders_path)
 
-    # Load model
+
     dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
     torch_dtype = dtype_map[args.dtype]
     try:
@@ -775,14 +670,14 @@ def main():
     if tok.pad_token_id is None and tok.eos_token_id is not None:
         tok.pad_token = tok.eos_token
 
-    # Find layer module
+
     layers, path_used = base_mod.get_transformer_layers(model)
     if args.layer < 0 or args.layer >= len(layers):
         raise ValueError(f"--layer {args.layer} out of range for layers at {path_used} (n={len(layers)})")
     layer_module = layers[args.layer]
     print(f"[Info] Hooking layer={args.layer} at path {path_used}")
 
-    # Load / compute Q_shared
+
     if args.Qs_path:
         Qs = base_mod.orthonormalize_np(np.load(args.Qs_path).astype(np.float32)) if hasattr(base_mod, "orthonormalize_np") \
              else orthonormalize_np_fallback(np.load(args.Qs_path).astype(np.float32))
@@ -818,7 +713,7 @@ def main():
 
     d, k = Qs.shape
 
-    # Load eval examples
+
     if bool(args.use_benchmark_loader):
         examples, eval_meta = load_examples_from_benchmark(
             base_mod, dl,
@@ -846,14 +741,14 @@ def main():
     if len(examples) == 0:
         raise RuntimeError("No eval examples loaded.")
 
-    # Narrow patch steps
+
     patch_steps: Set[int] = set(range(int(max(1, args.patch_n_steps))))
     print(f"[Info] patch_steps={sorted(list(patch_steps))}  (narrow-window)")
 
-    # Controls
+
     Q_nonshared = sample_random_orthonormal_complement(Qs, k=k, seed=args.seed + 2024)
 
-    # Prepare distractors for pair_logprob
+
     rng = np.random.default_rng(args.seed + 999)
     gold_texts_norm = [normalize_gold_answer_text(ex.gold) for ex in examples]
     dist_map: Dict[str, str] = {}
@@ -868,9 +763,7 @@ def main():
                     j = (j + 1) % len(gold_texts_norm)
                 dist_map[ex.ex_id] = gold_texts_norm[j]
 
-    # -----------------------------------------------------------------------------
-    # Scan ALL examples for flips: baseline correct & ablated wrong
-    # -----------------------------------------------------------------------------
+
     scan_rows: List[Dict[str, Any]] = []
     flip_examples: List[OAExample] = []
 
@@ -941,7 +834,7 @@ def main():
             if ok_base and (not ok_ablt):
                 flip_examples.append(ex)
 
-        else:  # gen_code_compile
+        else:
             gen_ids, gen_text, _ = greedy_generate_decode_aligned(
                 model, tok, prompt,
                 layer_module=layer_module,
@@ -1011,9 +904,7 @@ def main():
         print(f"[Done] Wrote {args.out_json}")
         return
 
-    # -----------------------------------------------------------------------------
-    # Precompute donor vectors (self donor per flip example) for time-shuffled control
-    # -----------------------------------------------------------------------------
+
     donor_bank: List[Dict[int, torch.Tensor]] = []
 
     for ex in flip_used:
@@ -1045,9 +936,7 @@ def main():
             donor_shared[int(t)] = base_mod.project_cpu(h, Qs)
         donor_bank.append(donor_shared)
 
-    # -----------------------------------------------------------------------------
-    # Patching on flips_used
-    # -----------------------------------------------------------------------------
+
     flip_rows: List[Dict[str, Any]] = []
 
     for i, ex in enumerate(flip_used):
@@ -1057,7 +946,7 @@ def main():
         donor_self = donor_bank[i]
         donor_other = donor_bank[(i + 1) % len(donor_bank)]
 
-        # step0 norm for energy budget
+
         donor0 = donor_self.get(0, None)
         if donor0 is None:
             donor0 = donor_self[sorted(list(donor_self.keys()))[0]]
@@ -1290,7 +1179,7 @@ def main():
             })
             print(f"[Flip {i+1}/{len(flip_used)}] {ex_id} patched_ok={ok_patch} time_ok={ok_time} sharedrand_ok={ok_rand}")
 
-        else:  # gen_code_compile
+        else:
             _, gen_text, _ = greedy_generate_decode_aligned(
                 model, tok, prompt,
                 layer_module=layer_module,
@@ -1382,9 +1271,7 @@ def main():
             })
             print(f"[Flip {i+1}/{len(flip_used)}] {ex_id} patched_ok={ok_patch} time_ok={ok_time} sharedrand_ok={ok_rand}")
 
-    # -----------------------------------------------------------------------------
-    # Summary
-    # -----------------------------------------------------------------------------
+
     if args.eval_mode == "pair_logprob":
         summary = {
             "patched_self": summarize_rescue_pair(flip_rows, "patched_self"),

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """Precompute the Gradio demo basis/vector cache."""
 
 from __future__ import annotations

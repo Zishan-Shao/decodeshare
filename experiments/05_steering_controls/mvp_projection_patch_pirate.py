@@ -1,56 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-mvp_projection_patch_pirate.py
 
-Pirate steering projection sanity check with fail-fast debugging:
-
-Debug / Fail-fast:
-  1) chat template 下 tokenize 修复：chat 模式不重复 add_special_tokens（常见“全0命中”原因）
-  2) AddVectorHook 增加计数器：n_seen_seq1 / n_applied，确认 hook 真的生效
-  3) probe_injection：算完 v 后立刻做 next-token logits 探针（十几秒内判断 steering 是否推动 pirate token）
-  4) --fail_fast：探针显示 hook 不生效 / Δlogits 太小 / pirate token 不上升 -> 直接退出（省掉长时间 eval）
-
-更快的调参 / 早停：
-  5) --eval_n_base / --eval_n_templates / --max_eval_prompts：只跑子集快速验
-  6) 评估时边生成边写 results.csv（--flush_every），支持 tail -f 实时看
-  7) --early_abort_after + --early_abort_if_all_zero：某个 method/decoding 跑了一段仍全 0 -> 自动 SystemExit 早停
-  8) --stop_on_first_success：出现一次成功（pirate_hits>=threshold）就退出（用于快速确认“能不能出故事”）
-
-可选改进（建议开）：
-  9) v_mode=decode 时默认用 prompt-boundary + 前 N 个 decode steps 的 hidden state 均值来估计 v
-     参数：--v_decode_steps（默认 16）
-     （如果你想保留旧行为，设 --v_decode_steps 0）
-
-输出保持兼容：
-  - results.csv（增量写入）
-  - summary.md/json
-  - v / B npy
-
-# 只跑 v + probe（几十秒内知道 hook/v 有没有推动 pirate token）
-CUDA_VISIBLE_DEVICES=0 python mvp_projection_patch_pirate.py \
-  --layer 28 --dtype fp32 \
-  --v_mode decode --v_decode_steps 16 --v_n 8 \
-  --probe_alpha 12 --fail_fast 1 --debug_only 1 \
-  --out_dir results/mvp_pirate_debug_probe
-  
-
-# 小子集快速 eval（1~2 分钟内确认能不能出 hits）
-CUDA_VISIBLE_DEVICES=0 python mvp_projection_patch_pirate.py \
-  --layer 28 --dtype bf16 \
-  --v_mode decode --v_decode_steps 16 --v_n 8 \
-  --alphas 6,10,14 --inject_first_n 64 \
-  --pirate_threshold 1 \
-  --do_greedy 1 --do_sample 0 \
-  --eval_n_base 2 --eval_n_templates 2 --max_eval_prompts 6 \
-  --basis_n_prompts 4 --calib_max_new_tokens 16 \
-  --max_new_tokens 64 \
-  --early_abort_after 30 --early_abort_if_all_zero 1 \
-  --out_dir results/mvp_pirate_debug_small
- 
-  
-
-"""
+"""Pirate-style steering projection sanity check with fail-fast diagnostics."""
 
 import argparse
 import csv
@@ -67,9 +17,6 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# -----------------------------
-# Defaults: prompts/templates
-# -----------------------------
 BASE_PROMPTS = [
     "Explain why the sky looks blue during the day.",
     "Give practical tips to improve sleep quality.",
@@ -127,9 +74,6 @@ TEMPLATES = [
 ]
 
 
-# -----------------------------
-# Pirate metric (expanded lexicon)
-# -----------------------------
 _PIRATE_PATTERNS = [
     r"\bahoy\b",
     r"\bmatey\b",
@@ -143,11 +87,11 @@ _PIRATE_PATTERNS = [
     r"\bprivateer\b",
     r"\bseadog\b",
     r"\baye\b",
-    r"\bcap['’]?n\b",
+    r"\bcap[']?n\b",
     r"\bshiver\s+me\s+timbers\b",
     r"\bscurvy\b",
-    r"\bar{2,}\b",     # arrr
-    r"\byar{1,}\b",    # yar
+    r"\bar{2,}\b",
+    r"\byar{1,}\b",
     r"\bme\s+heart(?:y|ies)\b",
     r"\bdead\s+men\s+tell\s+no\s+tales\b",
     r"\bwalk\s+the\s+plank\b",
@@ -164,9 +108,6 @@ def pirate_hits(text: str) -> int:
     return hits
 
 
-# -----------------------------
-# Utils: seeding, blocks, chat formatting
-# -----------------------------
 def seed_everything(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -175,10 +116,10 @@ def seed_everything(seed: int) -> None:
 
 
 def get_block(model, layer_idx: int):
-    # LLaMA-like HF: model.model.layers[i]
+
     if hasattr(model, "model") and hasattr(model.model, "layers"):
         return model.model.layers[layer_idx]
-    # GPT-2-like: model.transformer.h[i]
+
     if hasattr(model, "transformer") and hasattr(model.transformer, "h"):
         return model.transformer.h[layer_idx]
     raise ValueError("Cannot locate transformer blocks; adapt get_block() for your model.")
@@ -206,7 +147,7 @@ def should_use_chat_template(model_name: str, tokenizer, flag: str) -> bool:
         return False
     if flag == "on":
         return supports_chat_template(tokenizer)
-    # auto
+
     if not supports_chat_template(tokenizer):
         return False
     low = model_name.lower()
@@ -222,10 +163,7 @@ def format_chat(tokenizer, user_text: str, system_text: str = "You are a helpful
 
 
 def tok(tokenizer, text: str, max_len: int, use_chat: bool):
-    """
-    关键修复：chat template 的字符串通常已经包含 special tokens，
-    tokenize 时不要再 add_special_tokens=True，避免边界 token 乱掉导致“全0命中”。
-    """
+    """Tokenize a prompt with chat-template handling."""
     return tokenizer(
         text,
         return_tensors="pt",
@@ -235,9 +173,6 @@ def tok(tokenizer, text: str, max_len: int, use_chat: bool):
     )
 
 
-# -----------------------------
-# Hooks for collect / add
-# -----------------------------
 class CollectLastTokenHook:
     """
     Records last-token hidden states. If decode_only=True, records only when seq_len==1.
@@ -315,9 +250,6 @@ class AddVectorHook:
         return (h2, *rest)
 
 
-# -----------------------------
-# Prompt construction
-# -----------------------------
 def make_eval_prompts(base_prompts: List[str], templates: List[str]) -> List[Tuple[int, str]]:
     out = []
     for tid, tpl in enumerate(templates):
@@ -339,9 +271,6 @@ def make_v_est_pair(text: str, *, anchor: str) -> Tuple[str, str]:
     return pirate, normal
 
 
-# -----------------------------
-# v estimation: prefill / decode
-# -----------------------------
 @torch.inference_mode()
 def collect_last_token_state_prefill(model, tokenizer, prompt_text: str, layer: int, max_prompt_tokens: int, use_chat: bool) -> torch.Tensor:
     device = get_model_device(model)
@@ -387,11 +316,7 @@ def collect_mean_decode_state_over_steps(
     *, layer: int, max_prompt_tokens: int, use_chat: bool,
     decode_steps: int,
 ) -> torch.Tensor:
-    """
-    v_mode=decode 的改进：不是只看 prompt 最后一个 token 的 hidden，
-    而是平均 prompt-boundary(seq_len=1) + 前 N 个 decode steps 的 hidden state。
-    这样更对齐“风格词(ahoy/matey/arrr)”出现的阶段。
-    """
+    """Collect a mean decode-state vector over the prompt boundary and early decode steps."""
     device = get_model_device(model)
     block = get_block(model, layer)
 
@@ -407,12 +332,11 @@ def collect_mean_decode_state_over_steps(
             out_prefill = model(input_ids=input_ids[:, :-1], use_cache=True)
             past = out_prefill.past_key_values
 
-        # prompt-boundary (seq_len=1)
+
         out = model(input_ids=input_ids[:, -1:], past_key_values=past, use_cache=True)
         past = out.past_key_values
         logits = out.logits[:, -1, :]
 
-        # greedy decode a few steps (只用于估 v)
         for _ in range(int(decode_steps)):
             next_id = torch.argmax(logits, dim=-1, keepdim=True)
             if int(next_id.item()) == tokenizer.eos_token_id:
@@ -424,7 +348,7 @@ def collect_mean_decode_state_over_steps(
         if len(hook.records) < 1:
             raise RuntimeError("No decode-only record captured in collect_mean_decode_state_over_steps().")
 
-        H = torch.cat([r.float().cpu() for r in hook.records], dim=0)  # [n_steps, d]
+        H = torch.cat([r.float().cpu() for r in hook.records], dim=0)
         return H.mean(dim=0).float()
     finally:
         handle.remove()
@@ -488,9 +412,6 @@ def estimate_v_mean_diff(
     return v
 
 
-# -----------------------------
-# Basis estimation B: decode PCA from no-steer generation traces
-# -----------------------------
 @torch.inference_mode()
 def sample_next_token(logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:
     if temperature <= 0.0:
@@ -546,7 +467,7 @@ def generate_collect_decode_states(
                 out_prefill = model(input_ids=input_ids[:, :-1], use_cache=True)
                 past = out_prefill.past_key_values
 
-            # prompt-boundary
+
             out = model(input_ids=input_ids[:, -1:], past_key_values=past, use_cache=True)
             past = out.past_key_values
             logits = out.logits[:, -1, :]
@@ -600,9 +521,6 @@ def sharedness(B: torch.Tensor, v: torch.Tensor) -> float:
     return float((B.t() @ v32).norm().item() / (v32.norm().item() + 1e-12))
 
 
-# -----------------------------
-# Debug probe: logits delta on next token
-# -----------------------------
 @torch.inference_mode()
 def probe_injection(
     model, tokenizer, user_text: str,
@@ -623,11 +541,11 @@ def probe_injection(
         out_prefill = model(input_ids=input_ids[:, :-1], use_cache=True)
         past = out_prefill.past_key_values
 
-    # logits without hook
+
     out0 = model(input_ids=input_ids[:, -1:], past_key_values=past, use_cache=True)
     logits0 = out0.logits[0, -1, :].float().cpu()
 
-    # logits with hook
+
     hook = AddVectorHook(v, alpha=alpha, inject_first_n=inject_first_n)
     hook.reset()
     h = block.register_forward_hook(hook)
@@ -638,15 +556,14 @@ def probe_injection(
     d = logits1 - logits0
     delta_norm = float(d.norm().item())
 
-    print(f"[Probe] hook n_seen_seq1={hook.n_seen_seq1} n_applied={hook.n_applied} ||Δlogits||={delta_norm:.4f}")
+    print(f"[Probe] hook n_seen_seq1={hook.n_seen_seq1} n_applied={hook.n_applied} ||delta_logits||={delta_norm:.4f}")
 
     topv, topi = torch.topk(d, k=min(topk, d.numel()))
-    print("[Probe] Top Δlogits tokens:")
+    print("[Probe] Top delta-logit tokens:")
     for dv, tid in zip(topv.tolist(), topi.tolist()):
         s = tokenizer.decode([tid]).replace("\n", "\\n")
-        print(f"  Δ={dv:+.3f}  id={tid}  tok={repr(s)}")
+        print(f"  Delta={dv:+.3f}  id={tid}  tok={repr(s)}")
 
-    # pirate candidates (单 token 才能直接看)
     cands = [" ahoy", "Ahoy", " matey", "Matey", " arrr", "Arrr", " aye", "Aye", " cap'n", " Cap'n"]
     p0 = torch.softmax(logits0, dim=-1)
     p1 = torch.softmax(logits1, dim=-1)
@@ -659,7 +576,7 @@ def probe_injection(
             tid = ids[0]
             dl = float(d[tid].item())
             pirate_deltas.append(dl)
-            print(f"  {repr(s)} id={tid} Δlogit={dl:+.3f} p0={p0[tid].item():.2e} p1={p1[tid].item():.2e}")
+            print(f"  {repr(s)} id={tid} delta_logit={dl:+.3f} p0={p0[tid].item():.2e} p1={p1[tid].item():.2e}")
         else:
             print(f"  {repr(s)} -> ids={ids} (multi-token)")
 
@@ -671,9 +588,6 @@ def probe_injection(
     }
 
 
-# -----------------------------
-# Generation evaluation
-# -----------------------------
 @dataclass
 class EvalCfg:
     temperature: float = 0.7
@@ -688,7 +602,7 @@ def generate_one(
     *,
     max_prompt_tokens: int,
     max_new_tokens: int,
-    decoding: str,  # 'greedy'|'sample'
+    decoding: str,
     seed: Optional[int],
     hook: Optional[AddVectorHook],
     layer: int,
@@ -787,7 +701,7 @@ def main():
 
     ap.add_argument("--layer", type=int, default=10)
 
-    # v estimation
+
     ap.add_argument("--v_mode", type=str, default="decode", choices=["prefill", "decode"])
     ap.add_argument("--v_n", type=int, default=32)
     ap.add_argument("--v_max_prompt_tokens", type=int, default=512)
@@ -797,13 +711,13 @@ def main():
                     default="Start your answer with 'Ahoy matey!' and include: ahoy, matey, arrr, aye, cap'n.",
                     help="Anchor string used ONLY for v estimation to encourage lexical pirate tokens.")
 
-    # basis
+
     ap.add_argument("--basis_k", type=int, default=128)
     ap.add_argument("--basis_n_prompts", type=int, default=30)
     ap.add_argument("--calib_max_new_tokens", type=int, default=128)
     ap.add_argument("--basis_max_states", type=int, default=20000)
 
-    # eval generation
+
     ap.add_argument("--max_prompt_tokens", type=int, default=512)
     ap.add_argument("--max_new_tokens", type=int, default=256)
     ap.add_argument("--batch_size", type=int, default=4)
@@ -816,20 +730,20 @@ def main():
     ap.add_argument("--inject_first_n", type=int, default=0, help="Inject only first N decode steps; 0=all.")
     ap.add_argument("--n_rand", type=int, default=1)
 
-    # metric
+
     ap.add_argument("--pirate_threshold", type=int, default=2)
 
-    # chat template
+
     ap.add_argument("--chat_template", type=str, default="auto", choices=["auto", "on", "off"])
     ap.add_argument("--system_text", type=str, default="You are a helpful assistant.")
 
-    # debug / early stop
+
     ap.add_argument("--fail_fast", type=int, default=1, help="If probe shows injection ineffective, exit early.")
     ap.add_argument("--probe_alpha", type=float, default=12.0)
     ap.add_argument("--probe_text", type=str, default="Explain why the sky looks blue during the day.")
-    ap.add_argument("--probe_min_delta_norm", type=float, default=0.10, help="Fail-fast if ||Δlogits|| below this.")
+    ap.add_argument("--probe_min_delta_norm", type=float, default=0.10, help="Fail-fast if ||delta_logits|| below this.")
     ap.add_argument("--probe_require_pirate_uplift", type=int, default=0,
-                    help="If 1, require at least one pirate candidate token Δlogit>0 in probe.")
+                    help="If 1, require at least one pirate candidate token delta_logit>0 in probe.")
     ap.add_argument("--debug_only", type=int, default=0, help="If 1, only estimate v + probe, then exit.")
 
     ap.add_argument("--eval_n_base", type=int, default=0, help="0=all, else only first N base prompts")
@@ -849,7 +763,7 @@ def main():
     seed_everything(args.seed)
     ensure_dir(args.out_dir)
 
-    # dtype
+
     if args.dtype == "fp16":
         torch_dtype = torch.float16
     elif args.dtype == "bf16":
@@ -857,7 +771,7 @@ def main():
     else:
         torch_dtype = torch.float32
 
-    # load
+
     tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -877,10 +791,10 @@ def main():
     if use_chat:
         print("[Chat] using tokenizer.apply_chat_template for prompts (and tokenize with add_special_tokens=False).")
 
-    # choose alphas
+
     alphas = parse_float_list(args.alphas) if args.alphas.strip() else [float(args.alpha)]
 
-    # prepare prompts (possibly subset)
+
     base_prompts = BASE_PROMPTS[:args.eval_n_base] if args.eval_n_base > 0 else BASE_PROMPTS
     templates = TEMPLATES[:args.eval_n_templates] if args.eval_n_templates > 0 else TEMPLATES
     eval_prompts = make_eval_prompts(base_prompts, templates)
@@ -889,7 +803,7 @@ def main():
 
     print(f"[Data] base_prompts={len(base_prompts)} templates={len(templates)} eval_prompts={len(eval_prompts)}")
 
-    # v estimation texts
+
     v_texts = BASE_PROMPTS[: min(args.v_n, len(BASE_PROMPTS))]
     print(f"[v] estimating v with n={len(v_texts)} layer={args.layer} mode={args.v_mode}")
     v = estimate_v_mean_diff(
@@ -907,7 +821,7 @@ def main():
     np.save(v_path, v.detach().cpu().numpy())
     print(f"[v] saved {v_path} ||v||={float(v.norm().item()):.4f}")
 
-    # probe immediately (fail-fast)
+
     print("[Sanity] probing injection effect on next-token logits...")
     probe = probe_injection(
         model, tokenizer, args.probe_text,
@@ -926,18 +840,18 @@ def main():
             print("[FailFast] hook did not apply any injection (n_applied=0). Exiting.")
             raise SystemExit(2)
         if probe["delta_norm"] < args.probe_min_delta_norm:
-            print(f"[FailFast] ||Δlogits|| too small ({probe['delta_norm']:.4f} < {args.probe_min_delta_norm:.4f}). Exiting.")
+            print(f"[FailFast] ||delta_logits|| too small ({probe['delta_norm']:.4f} < {args.probe_min_delta_norm:.4f}). Exiting.")
             raise SystemExit(2)
         if args.probe_require_pirate_uplift:
             if not any(dl > 0.0 for dl in probe["pirate_deltas"]):
-                print("[FailFast] no pirate candidate token got positive Δlogit. Exiting.")
+                print("[FailFast] no pirate candidate token got positive delta_logit. Exiting.")
                 raise SystemExit(2)
 
     if args.debug_only:
         print("[DebugOnly] Done (v + probe). Exiting.")
         return
 
-    # basis estimation prompts
+
     calib_prompts = []
     for i in range(min(args.basis_n_prompts, len(BASE_PROMPTS))):
         tid = i % len(TEMPLATES)
@@ -971,7 +885,7 @@ def main():
     v_fixed = project_out(B, v)
     print(f"[Sharedness] ||B^T v_fixed||/||v_fixed|| = {sharedness(B, v_fixed):.4f}")
 
-    # random control(s)
+
     v_norm = float(v.float().norm().item())
     rand_vs = []
     for rid in range(max(args.n_rand, 0)):
@@ -979,7 +893,7 @@ def main():
         r = r / (r.norm() + 1e-12) * v_norm
         rand_vs.append(r.to(v.dtype))
 
-    # evaluation configs
+
     eval_cfg = EvalCfg()
     sample_seeds = parse_int_list(args.sample_seeds) if args.sample_seeds.strip() else [1, 2]
 
@@ -993,7 +907,7 @@ def main():
         for a in alphas:
             methods.append({"name": f"rand{rid}_a{a:g}", "v": rv, "alpha": a, "rand_id": rid})
 
-    # open CSV for incremental writing
+
     out_csv = os.path.join(args.out_dir, "results.csv")
     f_csv = open(out_csv, "w", newline="", encoding="utf-8")
     fieldnames = ["method","decoding","seed","template_id","pirate_hits","success","new_tokens","ended_by_eos","text","hook_n_seen_seq1","hook_n_applied"]
@@ -1067,7 +981,7 @@ def main():
 
             maybe_early_abort(method["name"], decoding)
 
-    # evaluate
+
     try:
         if args.do_greedy:
             for m in methods:
@@ -1085,7 +999,7 @@ def main():
         f_csv.close()
         print(f"[Save] wrote {out_csv} rows={len(rows)}")
 
-    # summarize across templates
+
     def summarize(decoding: str):
         summary = {}
         for m in methods:
@@ -1121,7 +1035,7 @@ def main():
         f.write(f"- sharedness(v): {sharedness(B, v):.6f}\n")
         f.write(f"- sharedness(v_fixed): {sharedness(B, v_fixed):.6f}\n\n")
 
-        f.write("| Method | Greedy mean ± std | Greedy worst | Sample mean ± std | Sample worst |\n")
+        f.write("| Method | Greedy mean +/- std | Greedy worst | Sample mean +/- std | Sample worst |\n")
         f.write("| --- | --- | --- | --- | --- |\n")
 
         all_method_names = [m["name"] for m in methods]
@@ -1140,9 +1054,9 @@ def main():
         for name in sorted(all_method_names, key=sort_key):
             g = summ_g.get(name, None)
             s = summ_s.get(name, None)
-            g_str = f"{g['mean']:.3f} ± {g['std']:.3f}" if g else ""
+            g_str = f"{g['mean']:.3f} +/- {g['std']:.3f}" if g else ""
             g_w = f"{g['worst']:.3f}" if g else ""
-            s_str = f"{s['mean']:.3f} ± {s['std']:.3f}" if s else ""
+            s_str = f"{s['mean']:.3f} +/- {s['std']:.3f}" if s else ""
             s_w = f"{s['worst']:.3f}" if s else ""
             f.write(f"| {name} | {g_str} | {g_w} | {s_str} | {s_w} |\n")
 

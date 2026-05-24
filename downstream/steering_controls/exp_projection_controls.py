@@ -1,5 +1,3 @@
-
-# -*- coding: utf-8 -*-
 """
 exp_projection_controls.py  (multi-layer capable)
 
@@ -62,9 +60,6 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# -----------------------------
-# Repro / stable seed
-# -----------------------------
 def stable_int_seed_fallback(*items: Any) -> int:
     s = "|".join(str(x) for x in items)
     h = hashlib.md5(s.encode("utf-8")).hexdigest()
@@ -133,9 +128,6 @@ def get_model_layers(model) -> List[torch.nn.Module]:
     raise RuntimeError(f"Cannot locate transformer layers for model class: {type(model)}")
 
 
-# -----------------------------
-# Prompt rendering
-# -----------------------------
 def render_prompt(tokenizer, user_prompt: str, *, add_generation_prompt: bool = True, system_prompt: Optional[str] = None) -> str:
     tmpl = getattr(tokenizer, "chat_template", None)
     if not tmpl:
@@ -151,9 +143,6 @@ def render_prompt(tokenizer, user_prompt: str, *, add_generation_prompt: bool = 
         return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=add_generation_prompt)
 
 
-# -----------------------------
-# Sampling utils
-# -----------------------------
 def top_p_filtering(logits: torch.Tensor, top_p: float) -> torch.Tensor:
     if top_p <= 0.0 or top_p >= 1.0:
         return logits
@@ -177,9 +166,6 @@ def top_k_filtering(logits: torch.Tensor, top_k: int) -> torch.Tensor:
     return torch.where(logits < min_values, torch.full_like(logits, float("-inf")), logits)
 
 
-# -----------------------------
-# Steering vector spec + loader
-# -----------------------------
 @dataclass
 class SteeringVector:
     name: str
@@ -243,9 +229,6 @@ def load_vectors_from_manifest(manifest_path: str, *, max_vectors: Optional[int]
     return vecs
 
 
-# -----------------------------
-# Linear algebra helpers
-# -----------------------------
 def orthonormalize_np(basis: np.ndarray) -> np.ndarray:
     q, _ = np.linalg.qr(basis.astype(np.float32, copy=False))
     return q.astype(np.float32, copy=False)
@@ -264,9 +247,6 @@ def rand_orthonormal(d: int, k: int, seed: int) -> np.ndarray:
     return orthonormalize_np(M)
 
 
-# -----------------------------
-# Decode-time activation collector (for Q_shared / Q_pca)
-# -----------------------------
 class DecodeLastTokenActivationCollector:
     """
     Collect last-token hidden states ONLY during decode forward passes (seq_len==1).
@@ -295,7 +275,7 @@ class DecodeLastTokenActivationCollector:
                 return output
             if hs.shape[1] != 1:
                 return output
-            x = hs[:, -1, :]  # [B, D]
+            x = hs[:, -1, :]
             if self.active_mask is not None:
                 m = self.active_mask.bool()
                 if m.numel() == x.shape[0]:
@@ -340,7 +320,7 @@ class PrefillLastTokenActivationCollector:
                 return output
             if hs.shape[1] <= 1:
                 return output
-            x = hs[:, -1, :]  # [B, D]
+            x = hs[:, -1, :]
             if x.numel() == 0:
                 return output
             self.storage[self._cur_task][layer_idx].append(x.detach().float().cpu().numpy())
@@ -426,7 +406,7 @@ def collect_decode_last_token_states(
         B, _T0 = input_ids.shape
         unfinished = torch.ones(B, dtype=torch.bool, device=device)
 
-        # Prefill (no capture)
+
         collector.set_capture(False, None)
         out = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True)
         logits = out.logits[:, -1, :]
@@ -517,13 +497,13 @@ def estimate_shared_and_pca_bases(
     top_p: float,
     top_k: int,
     seed: int,
-    # PCA
+
     pca_var: float,
     pca_max_dim: int,
     pca_max_rows: int,
-    # sharedness
+
     tau: float,
-    m_shared: str,   # "all" or int
+    m_shared: str,
 ) -> Dict[str, Any]:
     """
     Returns dict with:
@@ -563,7 +543,7 @@ def estimate_shared_and_pca_bases(
             pass
         collector.set_capture(False, None)
 
-    # Gather + subsample
+
     task_X: Dict[str, np.ndarray] = {}
     for task in prompts_by_task.keys():
         X = collector.get_task_activations(task, layer_idx)
@@ -575,14 +555,14 @@ def estimate_shared_and_pca_bases(
     if not task_X:
         raise RuntimeError(f"No decode states collected at layer {layer_idx} for basis estimation.")
 
-    # Pool across tasks, center
+
     X_all = np.concatenate(list(task_X.values()), axis=0)
     if pca_max_rows > 0 and X_all.shape[0] > pca_max_rows:
         X_all = _subsample_rows_np(X_all, pca_max_rows, seed=stable_int_seed(seed, layer_idx, "pca_pool"))
     mean = X_all.mean(axis=0, keepdims=True).astype(np.float32)
     Xc = (X_all - mean).astype(np.float32, copy=False)
 
-    # PCA via torch.pca_lowrank (CPU by default)
+
     Xc_t = torch.from_numpy(Xc)
     q = min(pca_max_dim, Xc_t.shape[1], Xc_t.shape[0] - 1)
     if q <= 0:
@@ -595,14 +575,14 @@ def estimate_shared_and_pca_bases(
     cross_dim = max(1, min(cross_dim, V.shape[1]))
     joint = V[:, :cross_dim].contiguous().cpu().numpy().astype(np.float32, copy=False)
 
-    # Per-task component variances (on centered task states)
+
     per_task_vars: Dict[str, np.ndarray] = {}
     for task, X in task_X.items():
         Xct = (X - mean).astype(np.float32, copy=False)
-        Z = Xct @ joint  # [n, cross_dim]
+        Z = Xct @ joint
         per_task_vars[task] = np.var(Z, axis=0)
 
-    # Sharedness selection
+
     tasks = list(per_task_vars.keys())
     if m_shared == "all":
         m_req = len(tasks)
@@ -623,7 +603,7 @@ def estimate_shared_and_pca_bases(
         if active >= m_req:
             shared_indices.append(j)
 
-    # Sort shared indices by pooled variance
+
     if shared_indices:
         pooled = np.mean(np.stack([per_task_vars[t] for t in tasks], axis=0), axis=0)
         shared_indices.sort(key=lambda j: float(pooled[j]), reverse=True)
@@ -638,9 +618,6 @@ def estimate_shared_and_pca_bases(
     }
 
 
-# -----------------------------
-# Prefill-PCA basis estimation (control for prefill/decode mismatch)
-# -----------------------------
 def estimate_prefill_pca_basis(
     *,
     model,
@@ -688,7 +665,7 @@ def estimate_prefill_pca_basis(
             pass
         collector.set_capture(False)
 
-    # Gather + subsample
+
     task_X: Dict[str, np.ndarray] = {}
     for task in prompts_by_task.keys():
         X = collector.get_task_activations(task, layer_idx)
@@ -700,14 +677,14 @@ def estimate_prefill_pca_basis(
     if not task_X:
         raise RuntimeError(f"No prefill states collected at layer {layer_idx} for PCA estimation.")
 
-    # Pool across tasks, center
+
     X_all = np.concatenate(list(task_X.values()), axis=0)
     if pca_max_rows > 0 and X_all.shape[0] > pca_max_rows:
         X_all = _subsample_rows_np(X_all, pca_max_rows, seed=stable_int_seed(seed, layer_idx, "prefill_pca_pool"))
     mean = X_all.mean(axis=0, keepdims=True).astype(np.float32)
     Xc = (X_all - mean).astype(np.float32, copy=False)
 
-    # PCA (top-k)
+
     Xc_t = torch.from_numpy(Xc)
     d = int(Xc_t.shape[1])
     k = int(k)
@@ -743,9 +720,6 @@ def _subspace_cos_singulars(Qa: np.ndarray, Qb: np.ndarray) -> Dict[str, float]:
     return {"mean": float(np.mean(s)), "min": float(np.min(s)), "max": float(np.max(s))}
 
 
-# -----------------------------
-# Steering hooks + generation (decode-only)
-# -----------------------------
 class GenerationState:
     def __init__(self, batch_size: int, device: torch.device, reasoning_threshold: int):
         self.batch_size = batch_size
@@ -805,7 +779,7 @@ class LastTokenSteeringHook:
             self.stats.decode_calls += 1
         else:
             self.stats.prefill_calls += 1
-            return output  # decode-only
+            return output
 
         if self.staged and self.state is not None:
             mask = self.state.current_reasoning_mask()
@@ -823,7 +797,7 @@ class LastTokenSteeringHook:
                 return (hs2,) + output[1:]
             return hs2
 
-        # non-staged
+
         x = hs[:, -1, :].float()
         v = self._v(hs.device)
         hs2 = hs.clone()
@@ -1016,7 +990,7 @@ def eval_decode_steering(
     batch_size: int,
     max_prompt_len: int,
     reasoning_token_threshold: int,
-    # steering:
+
     v_np: Optional[np.ndarray],
     alpha: float,
     layer_idx: int,
@@ -1053,9 +1027,6 @@ def eval_decode_steering(
         remove_hooks(handles)
 
 
-# -----------------------------
-# Experiment driver
-# -----------------------------
 def _format_layer_pattern(pat: str, layer: int) -> str:
     if "{layer}" in pat:
         return pat.format(layer=layer)
@@ -1073,14 +1044,14 @@ def main():
     ap.add_argument("--max_vectors", type=int, default=0)
     ap.add_argument("--filter_regex", type=str, default="")
 
-    # Tasks for evaluation + subspace estimation
+
     ap.add_argument("--tasks_eval", type=str, default="commonsenseqa,arc_challenge,openbookqa,qasc,logiqa")
     ap.add_argument("--n_eval", type=int, default=128)
 
     ap.add_argument("--tasks_subspace", type=str, default="gsm8k,commonsenseqa,strategyqa,aqua,arc_challenge,openbookqa,qasc,logiqa")
     ap.add_argument("--n_subspace", type=int, default=128)
 
-    # Templates for evaluation (variance)
+
     ap.add_argument("--template_randomization", type=int, default=1, choices=[0, 1])
     ap.add_argument("--shuffle_choices", type=int, default=1, choices=[0, 1])
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
@@ -1101,7 +1072,7 @@ def main():
         help="Whether to shuffle choices when building basis-estimation prompts (-1 follows --shuffle_choices).",
     )
 
-    # Decoding
+
     ap.add_argument("--decoding", type=str, default="greedy", choices=["greedy", "sample"])
     ap.add_argument("--max_new_tokens", type=int, default=256)
     ap.add_argument("--reasoning_tokens", type=int, default=128)
@@ -1113,16 +1084,16 @@ def main():
     ap.add_argument("--sample_seed", type=int, default=12345)
     ap.add_argument("--staged", type=int, default=1, choices=[0, 1])
 
-    # Repair knobs
+
     ap.add_argument("--alpha_proj", type=float, default=1.0, help="Projection amount in (I - alpha Q Q^T).")
     ap.add_argument("--norm_match", type=int, default=1, choices=[0, 1],
                     help="If 1: scale control repaired vectors to match ||v_shared|| for fair energy budget.")
 
-    # Which layers to build bases for
+
     ap.add_argument("--basis_layers", type=str, default="auto",
                     help="'auto' = unique layers in vectors; else comma-separated layers like '10,15,24'.")
 
-    # Precomputed bases (optional patterns)
+
     ap.add_argument("--shared_basis_npy_pattern", type=str, default="",
                     help="Optional: pattern for Q_shared .npy, e.g. 'bases/Q_shared_layer{layer}.npy'.")
     ap.add_argument("--pca_basis_npy_pattern", type=str, default="",
@@ -1130,7 +1101,7 @@ def main():
     ap.add_argument("--include_pca_prefill", type=int, default=0, choices=[0, 1],
                     help="If 1: add control 'pca_prefill' using prefill-distribution PCA as Q_pca.")
 
-    # Basis estimation config (only used if bases not loaded)
+
     ap.add_argument("--calib_decode_max_new_tokens", type=int, default=-1,
                     help="Max decode steps collected for basis estimation. -1 uses --reasoning_tokens.")
     ap.add_argument("--per_task_max_states", type=int, default=20000)
@@ -1173,7 +1144,7 @@ def main():
     else:
         subspace_shuffle_choices = bool(args.subspace_shuffle_choices)
 
-    # Decide which layers to build bases for
+
     if args.basis_layers.strip().lower() == "auto":
         basis_layers = sorted(set(int(v.layer) for v in vecs))
     else:
@@ -1190,9 +1161,7 @@ def main():
             if v.vec.shape[0] != hidden_dim:
                 raise ValueError(f"Vector dim mismatch for {v.name}: {v.vec.shape[0]} != {hidden_dim}")
 
-    # -------------------
-    # Prepare prompts_by_task for basis estimation (once)
-    # -------------------
+
     print("[Basis] Preparing prompts for basis estimation ...")
     calib_max_new_tokens = int(args.calib_decode_max_new_tokens)
     if calib_max_new_tokens <= 0:
@@ -1201,7 +1170,7 @@ def main():
     sub_by, _eval_by_dummy, _meta = load_selected_tasks(
         tasks=tasks_sub,
         n_subspace=max(1, args.n_subspace),
-        n_eval=1,  # (compat) loader may not accept 0
+        n_eval=1,
         seed=args.seed,
         template_seed=subspace_template_seed,
         template_randomization=bool(args.template_randomization),
@@ -1212,16 +1181,14 @@ def main():
     prompts_by_task = {t: [ex.prompt for ex in sub_by[t]] for t in tasks_sub if t in sub_by}
     print(f"[Basis] Using subspace_template_seed={subspace_template_seed} shuffle_choices={int(subspace_shuffle_choices)}")
 
-    # -------------------
-    # Load / estimate per-layer bases
-    # -------------------
+
     bases_by_layer: Dict[int, Dict[str, Any]] = {}
 
     for layer in basis_layers:
         print("\n" + "=" * 80)
         print(f"[Basis] Building bases for layer={layer} ...")
 
-        # 1) Q_shared
+
         Q_shared = None
         if args.shared_basis_npy_pattern:
             spath = _format_layer_pattern(os.path.expanduser(args.shared_basis_npy_pattern), layer)
@@ -1234,7 +1201,7 @@ def main():
             else:
                 print(f"  - shared basis file not found: {spath} (will estimate)")
 
-        # 2) Q_pca (optional load)
+
         Q_pca = None
         if args.pca_basis_npy_pattern:
             ppath = _format_layer_pattern(os.path.expanduser(args.pca_basis_npy_pattern), layer)
@@ -1245,7 +1212,7 @@ def main():
                 Q_pca = orthonormalize_np(Q_pca)
                 print(f"  - loaded Q_pca from {ppath} (k={Q_pca.shape[1]})")
 
-        # If either basis missing, estimate from decode states (also provides joint_subspace)
+
         info = None
         if Q_shared is None or Q_pca is None:
             print("  - estimating decode-time PCA (+ shared selection if needed) ...")
@@ -1289,14 +1256,14 @@ def main():
         d = Q_shared.shape[0]
         k = Q_shared.shape[1]
         if Q_pca.shape[1] != k:
-            # align dims (take min)
+
             k2 = min(k, Q_pca.shape[1])
             Q_shared = Q_shared[:, :k2]
             Q_pca = Q_pca[:, :k2]
             k = k2
             print(f"  - [Warn] aligned basis dims to k={k}")
 
-        # Optional: PCA control estimated from prefill (prompt) distribution
+
         Q_pca_prefill = None
         pca_prefill_info = None
         if bool(args.include_pca_prefill):
@@ -1334,13 +1301,11 @@ def main():
             "Q_rand": Q_rand,
             "k": int(k),
             "d": int(d),
-            "info": info,  # may be None if both loaded
+            "info": info,
             "pca_prefill_info": pca_prefill_info,
         }
 
-    # -------------------
-    # Pre-load evaluation sets for each template seed and baseline acc
-    # -------------------
+
     eval_sets: Dict[int, Dict[str, List[Any]]] = {}
     base_acc: Dict[int, Dict[str, float]] = {}
 
@@ -1349,7 +1314,7 @@ def main():
         print(f"[Data] Loading eval set for template_seed={tseed} ...")
         _sub_by_dummy, eval_by, _meta = load_selected_tasks(
             tasks=tasks_eval,
-            n_subspace=1,  # (compat) loader may not accept 0
+            n_subspace=1,
             n_eval=args.n_eval,
             seed=args.seed,
             template_seed=tseed,
@@ -1360,7 +1325,7 @@ def main():
         )
         eval_sets[tseed] = eval_by
 
-        # baseline no steering (layer idx doesn't matter when v_np=None)
+
         base_acc[tseed] = {}
         for t in tasks_eval:
             acc0 = eval_decode_steering(
@@ -1375,9 +1340,7 @@ def main():
             base_acc[tseed][t] = acc0
             print(f"  [Baseline] {t}: acc={acc0*100:.1f}")
 
-    # -------------------
-    # Evaluate: original vs repaired vs controls
-    # -------------------
+
     methods = ["orig", "shared", "rand", "pca", "shrink"]
     if bool(args.include_pca_prefill):
         methods = ["orig", "shared", "rand", "pca", "pca_prefill", "shrink"]
@@ -1410,7 +1373,7 @@ def main():
         print(f"[Vector] {sv.name} concept={sv.concept} layer={sv.layer} alpha={sv.alpha}")
         print("#" * 80)
 
-        # Build repaired vectors
+
         v = sv.vec.astype(np.float32, copy=False)
         v_shared = project_out(v, Q_shared, alpha_proj=args.alpha_proj)
         v_rand = project_out(v, Q_rand, alpha_proj=args.alpha_proj)
@@ -1421,13 +1384,13 @@ def main():
                 raise RuntimeError(f"include_pca_prefill=1 but Q_pca_prefill is missing for layer {sv.layer}.")
             v_pca_prefill = project_out(v, Q_pca_prefill, alpha_proj=args.alpha_proj)
 
-        # Shrinkage: norm-match shared by default
+
         norm_v = float(np.linalg.norm(v) + 1e-12)
         norm_shared = float(np.linalg.norm(v_shared) + 1e-12)
         gamma = norm_shared / norm_v
         v_shrink = (gamma * v).astype(np.float32, copy=False)
 
-        # Optionally norm-match rand/pca too (energy-budget control)
+
         if norm_match:
             def _scale_to(x: np.ndarray, target: float) -> np.ndarray:
                 nx = float(np.linalg.norm(x) + 1e-12)
@@ -1447,7 +1410,7 @@ def main():
         if v_pca_prefill is not None:
             repaired["pca_prefill"] = v_pca_prefill
 
-        # Evaluate per template seed
+
         per_method_template_delta: Dict[str, List[float]] = {m: [] for m in methods}
         per_method_template_acc: Dict[str, List[float]] = {m: [] for m in methods}
         per_method_task_template_delta: Dict[str, Dict[str, List[float]]] = {
@@ -1522,9 +1485,7 @@ def main():
             s = summary[m]
             print(f"  {m:6s}  mean={s['mean_delta']:+.3f}  worst={s['worst_delta']:+.3f}  std={s['std_delta']:.3f}  range={s['range_delta']:.3f}")
 
-    # -------------------
-    # Aggregate summary across vectors
-    # -------------------
+
     if results["vectors"]:
         agg: Dict[str, Any] = {"methods": {}, "wins": {}}
         for m in methods:
@@ -1538,7 +1499,7 @@ def main():
                 "mean_of_std_delta": float(np.mean(std_deltas)),
         }
 
-        # win rates for shared vs each control on worst-case metric
+
         controls = [c for c in ["rand", "pca", "pca_prefill", "shrink"] if c in methods]
         wins: Dict[str, float] = {}
         for c in controls:
@@ -1556,7 +1517,7 @@ def main():
 
         agg["wins"] = wins
 
-        # Optional: direct PCA(decode) vs PCA(prefill) comparison
+
         if "pca" in methods and "pca_prefill" in methods:
             diffs_mean = []
             diffs_worst = []

@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Reproducibility code for DecodeShare experiments."
 requires-python = ">=3.10"
 readme = "README.md"
+license = "MIT"
 dependencies = [
     "accelerate>=0.28",
     "datasets>=2.18",

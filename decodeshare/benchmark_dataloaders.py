@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 benchmark_dataloaders.py
 
@@ -38,16 +37,11 @@ import numpy as np
 from datasets import load_dataset
 
 
-# ============================================================
-# HF datasets>=4.x: auto-parquet fallback (no scripts)
-# ============================================================
-
 AUTO_PARQUET_REVISION = "refs/convert/parquet"
 
 
 def _is_dataset_script_unsupported_error(e: Exception) -> bool:
     msg = str(e)
-    # 更鲁棒一些：不同版本可能有大小写/措辞差异
     needles = [
         "Dataset scripts are no longer supported",
         "dataset scripts are no longer supported",
@@ -58,15 +52,11 @@ def _is_dataset_script_unsupported_error(e: Exception) -> bool:
 
 
 def _load_dataset_compat(*args, **kwargs):
-    """
-    兼容不同 datasets 版本的参数差异。
-    重点：trust_remote_code 在部分版本里不存在；若报 TypeError，则去掉该参数重试。
-    """
+    """Internal helper for this experiment."""
     try:
         return load_dataset(*args, **kwargs)
     except TypeError as te:
         msg = str(te)
-        # 只对 trust_remote_code 这个参数做兼容兜底，避免吞掉其它真实错误
         if "trust_remote_code" in msg and ("unexpected keyword" in msg or "got an unexpected keyword argument" in msg):
             kwargs2 = dict(kwargs)
             kwargs2.pop("trust_remote_code", None)
@@ -93,7 +83,6 @@ def load_hf_dataset(
         retry with revision="refs/convert/parquet".
       - Explicitly enforces trust_remote_code=False (with compat fallback).
     """
-    # 显式禁止 remote code（并允许在老版本 datasets 下自动去掉该参数重试）
     if "trust_remote_code" not in kwargs:
         kwargs["trust_remote_code"] = False
 
@@ -117,21 +106,13 @@ def load_hf_dataset(
         raise
 
 
-# ============================================================
-# Core dataclass
-# ============================================================
-
 @dataclass
 class Example:
     dataset: str
     ex_id: str
     prompt: str
-    gold: str  # canonical gold label/answer; may be "" if unlabeled and require_gold=False
+    gold: str
 
-
-# ============================================================
-# Repro / stable seeding
-# ============================================================
 
 def set_global_seed(seed: int) -> None:
     random.seed(seed)
@@ -143,10 +124,6 @@ def stable_int_seed(*items: Any) -> int:
     h = hashlib.md5(s).hexdigest()
     return int(h[:8], 16)
 
-
-# ============================================================
-# Templates
-# ============================================================
 
 MC_LETTERS_8 = list("ABCDEFGH")
 MC_LETTERS_5 = list("ABCDE")
@@ -193,8 +170,8 @@ def maybe_add_answer_prefix(prompt: str, add_prefix: bool, answer_prefix: str) -
     if not add_prefix:
         return prompt
     ap = "" if answer_prefix is None else str(answer_prefix)
-    # Common CLI mistake: --answer_prefix 0 (string) while add_prefix=1
-    # Treat "0"/"none"/"null" as empty.
+
+
     if ap.strip().lower() in {"0", "none", "null", "false"}:
         return prompt
     if not ap.startswith("\n"):
@@ -233,10 +210,6 @@ def build_prompt_nextword(context: str, template_id: int) -> str:
     return tmpl.format(context=context)
 
 
-# ============================================================
-# Choice shuffling (deterministic)
-# ============================================================
-
 def safe_upper(x: Any) -> str:
     return str(x).strip().upper()
 
@@ -269,20 +242,12 @@ def shuffle_choices_if_needed(
     return texts2, new_labels, new_gold
 
 
-# ============================================================
-# HF split sampling
-# ============================================================
-
 def sample_hf_split(ds_split, n: int, seed: int):
     n = min(n, len(ds_split))
     if n <= 0:
         return ds_split.select([])
     return ds_split.shuffle(seed=seed).select(range(n))
 
-
-# ============================================================
-# Robust schema inference for MC tasks
-# ============================================================
 
 def _extract_question_text(ex: dict) -> str:
     if "question_stem" in ex:
@@ -528,10 +493,6 @@ def _canonicalize_mc(texts: List[str], labels: List[str], gold0: Any) -> Tuple[L
     return texts, canon, ""
 
 
-# ============================================================
-# Generic split fallback helper
-# ============================================================
-
 def _build_from_splits_with_fallback(
     ds,
     dataset_name: str,
@@ -610,7 +571,7 @@ def _build_from_splits_with_fallback(
         )
 
     meta = {
-        "prompt_format": "raw_text",  # ⭐明确：loader 只输出纯文本 prompt
+        "prompt_format": "raw_text",
         "subspace_split": sub_split,
         "eval_split": eval_split,
         "available_splits": list(ds.keys()),
@@ -620,10 +581,6 @@ def _build_from_splits_with_fallback(
     }
     return sub_exs, eval_exs, meta
 
-
-# ============================================================
-# Helpers for LogiQA2.0 / JSON-in-text style datasets
-# ============================================================
 
 def _maybe_parse_json_blob_example(ex: dict) -> dict:
     if not isinstance(ex, dict):
@@ -663,10 +620,6 @@ def _extract_text_field_for_lm(ex: dict) -> str:
     return ""
 
 
-# ============================================================
-# Text cleaning helpers
-# ============================================================
-
 def _first_nonempty_line(text: str) -> str:
     if text is None:
         return ""
@@ -689,10 +642,6 @@ def _strip_repeated_choice_prefix(opt: Any, letters: str) -> str:
     s = s.strip().strip(",").strip()
     return s
 
-
-# ============================================================
-# Individual task loaders
-# ============================================================
 
 def load_gsm8k(
     *,
@@ -912,7 +861,7 @@ def load_aqua(
         texts2, labels2, gold2 = shuffle_choices_if_needed(texts, labels, gold, shuffle_choices, seed, ex_id)
         tid = choose_template_id(ex_id, len(MC_TEMPLATES), template_seed) if template_randomization else 0
         p = build_prompt_mc(q, texts2, labels2, tid)
-        # force for AQuA (improves extraction)
+
         p = maybe_add_answer_prefix(p, True, answer_prefix)
         return p, gold2
 
@@ -1277,7 +1226,6 @@ def load_wikitext(
     answer_prefix: str,
     prefix_words: int = 32,
 ) -> Tuple[List[Example], List[Example], Dict[str, Any]]:
-    # 更稳的 id：优先用官方 wikitext（很多环境没有 Salesforce/wikitext）
     cfg = "wikitext-2-raw-v1"
     tried = []
     ds = None
@@ -1367,10 +1315,6 @@ def load_ptb(
     return sub_exs, eval_exs, meta
 
 
-# ============================================================
-# Task registry
-# ============================================================
-
 TASK_LOADERS = {
     "gsm8k": load_gsm8k,
     "commonsenseqa": load_commonsenseqa,
@@ -1448,10 +1392,6 @@ def load_selected_tasks(
     return sub_by, eval_by, meta_by
 
 
-# ============================================================
-# Optional: evaluation helpers (reuse across scripts)
-# ============================================================
-
 _FINAL_RE = re.compile(r"final\s*answer\s*:\s*(.*)", re.IGNORECASE)
 
 
@@ -1520,7 +1460,7 @@ def _normalize_pred_mc(pred_span: str, letters: str) -> str:
     if m:
         return m.group(1)
 
-    m = re.search(rf"(OPTION|CHOICE|ANSWER|ANS|选项|答案)\s*[:：]?\s*([{letters}])", s)
+    m = re.search(rf"(OPTION|CHOICE|ANSWER|ANS)\s*[::]?\s*([{letters}])", s)
     if m:
         return m.group(2)
 
@@ -1599,7 +1539,7 @@ def _normalize_nextword(s: Any) -> str:
     if not t:
         return ""
     first = t.split()[0]
-    first = first.strip().strip("“”\"'`.,;:!?()[]{}")
+    first = first.strip().strip("\"'`.,;:!?()[]{}")
     return first.lower()
 
 
@@ -1704,10 +1644,6 @@ def is_correct(task: str, pred: Any, gold: Any) -> bool:
 
     return False
 
-
-# ============================================================
-# Minimal CLI smoke-test (optional)
-# ============================================================
 
 if __name__ == "__main__":
     tasks = ["aqua"]

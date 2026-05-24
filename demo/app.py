@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """Interactive Gradio chat for the DecodeShare steering demo."""
 
 from __future__ import annotations

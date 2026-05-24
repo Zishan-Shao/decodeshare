@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 disturb_energy_matched_sharedness_kmatch.py
 
@@ -47,9 +46,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-# ---------------------------------------------------------------------
-# Path setup (so imports work when running from different directories)
-# ---------------------------------------------------------------------
+
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if THIS_DIR not in sys.path:
     sys.path.append(THIS_DIR)
@@ -57,9 +54,7 @@ PARENT_DIR = os.path.abspath(os.path.join(THIS_DIR, ".."))
 if PARENT_DIR not in sys.path:
     sys.path.append(PARENT_DIR)
 
-# ---------------------------------------------------------------------
-# Project imports
-# ---------------------------------------------------------------------
+
 Example = None
 load_selected_tasks = None
 _bench_import_err: Optional[Exception] = None
@@ -82,18 +77,15 @@ try:
 except Exception as e:
     raise ImportError("Failed to import decodeshare.eval_perf.") from e
 
-# We still need get_model_layers for attaching collectors
+
 try:
-    from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import get_model_layers  # type: ignore
+    from decodeshare.subspace import get_model_layers  # type: ignore
 except Exception as e:
     raise ImportError(
-        "Failed to import decodeshare.joint_subspace_large.disturb_cross_task_all_shared.get_model_layers."
+        "Failed to import decodeshare.subspace.get_model_layers."
     ) from e
 
 
-# ---------------------------------------------------------------------
-# Small utilities
-# ---------------------------------------------------------------------
 def parse_csv_list(s: str) -> List[str]:
     items = [x.strip() for x in (s or "").split(",")]
     return [x for x in items if x]
@@ -186,9 +178,6 @@ def k_match_from_curve(mean_by_k: np.ndarray, target: float, k_min: int, k_max: 
     return int(idx)
 
 
-# ---------------------------------------------------------------------
-# Prompt-boundary decode-last collector (energy calibration)
-# ---------------------------------------------------------------------
 class PromptBoundaryDecodeCollector:
     """
     Collect last-token hidden states on the PROMPT-BOUNDARY decode step.
@@ -258,27 +247,21 @@ def collect_prompt_boundary_decode_states(
         _past, _logits = ep.cache_decode_aligned_boundary(model, ids, attn)
 
 
-# ---------------------------------------------------------------------
-# Table helpers
-# ---------------------------------------------------------------------
 def fmt_ci(acc: float, lo: float, hi: float) -> str:
     return f"{acc * 100:.1f} [{lo * 100:.1f}, {hi * 100:.1f}]"
 
 
-# ---------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------
 def main() -> None:
     ap = argparse.ArgumentParser()
 
-    # Model
+
     ap.add_argument("--model", type=str, required=True)
     ap.add_argument("--device", type=str, default="cuda")
     ap.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "fp16", "bf16"])
     ap.add_argument("--layer", type=int, default=10)
     ap.add_argument("--use_chat_template", type=int, default=0)
 
-    # Data
+
     ap.add_argument(
         "--tasks",
         type=str,
@@ -289,7 +272,7 @@ def main() -> None:
     ap.add_argument("--max_prompt_len", type=int, default=512)
     ap.add_argument("--batch_size", type=int, default=4)
 
-    # Subspace / sharedness
+
     ap.add_argument("--calib_max_new_tokens", type=int, default=128)
     ap.add_argument("--per_task_max_states", type=int, default=20000)
     ap.add_argument("--pca_var", type=float, default=0.95)
@@ -297,7 +280,7 @@ def main() -> None:
     ap.add_argument("--m_shared", type=str, default="all")
     ap.add_argument("--k_eval", type=int, default=0)
 
-    # Forced-choice scoring
+
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
     ap.add_argument("--fc_prefix_mode", type=str, default="auto", choices=["auto", "always", "never"])
     ap.add_argument("--warmup_tokens", type=int, default=0)
@@ -307,18 +290,18 @@ def main() -> None:
     ap.add_argument("--template_seed", type=int, default=123)
     ap.add_argument("--save_scores", type=int, default=1, help="Include scores_sum in JSON (bigger files).")
 
-    # Alpha sweep / kmatch
+
     ap.add_argument("--alphas", type=str, default="1.0")
     ap.add_argument("--kmatch_per_alpha", type=int, default=int(os.getenv("KMATCH_PER_ALPHA", "0")))
     ap.add_argument("--alpha_ctrl_cap", type=float, default=0.0)
 
-    # Stats
+
     ap.add_argument("--bootstrap_iters", type=int, default=5000)
     ap.add_argument("--perm_iters", type=int, default=10000)
     ap.add_argument("--ci_alpha", type=float, default=0.05)
     ap.add_argument("--seed", type=int, default=42)
 
-    # Outputs
+
     ap.add_argument("--out_json", type=str, default=os.path.join(THIS_DIR, "results", "energy_kmatch_results.json"))
     ap.add_argument("--out_txt", type=str, default=os.path.join(THIS_DIR, "results", "energy_kmatch_summary.txt"))
     ap.add_argument("--out_md", type=str, default=os.path.join(THIS_DIR, "results", "energy_kmatch_summary.md"))
@@ -340,9 +323,7 @@ def main() -> None:
     if not alphas:
         alphas = [1.0]
 
-    # ------------------------------------------------------------------
-    # Load model/tokenizer (via eval_perf helper)
-    # ------------------------------------------------------------------
+
     model, tok = ep.load_model_and_tokenizer(args.model, args.device, args.dtype)
     hidden_dim = getattr(model.config, "hidden_size", None) or getattr(model.config, "n_embd", None)
     if hidden_dim is None:
@@ -356,9 +337,7 @@ def main() -> None:
     print(f"[Cfg] tasks={tasks}")
     print(f"[Cfg] alphas={alphas} kmatch_per_alpha={int(kmatch_per_alpha)}")
 
-    # ------------------------------------------------------------------
-    # Load benchmarks
-    # ------------------------------------------------------------------
+
     sub_by, eval_by, meta = load_selected_tasks(
         tasks=tasks,
         n_subspace=int(args.n_prompts),
@@ -371,9 +350,7 @@ def main() -> None:
         answer_prefix=args.answer_prefix,
     )
 
-    # ------------------------------------------------------------------
-    # Collect DECODE states for shared basis
-    # ------------------------------------------------------------------
+
     layers, _ = get_model_layers(model)
     dec_col = ep.DecodeLastTokenCollector(layer_indices)
     handles = []
@@ -429,9 +406,7 @@ def main() -> None:
     if len(decode_task_states) < 2:
         raise RuntimeError("Need >=2 tasks with decode states to compute shared basis.")
 
-    # ------------------------------------------------------------------
-    # Compute shared basis (decode)
-    # ------------------------------------------------------------------
+
     joint_subspace, shared_idx, extra = ep.compute_shared_basis_from_states(
         decode_task_states,
         pca_var=float(args.pca_var),
@@ -454,9 +429,7 @@ def main() -> None:
     Q_shared_full = ep.orthonormalize_np(joint_subspace[:, shared_idx].astype(np.float32, copy=False))
     Q_shared = Q_shared_full[:, :k_use]
 
-    # ------------------------------------------------------------------
-    # Control pool + structural control
-    # ------------------------------------------------------------------
+
     nonshared_idx = [i for i in range(cross_dim) if i not in set(shared_idx)]
     if len(nonshared_idx) < k_use:
         raise RuntimeError(f"Non-shared pool too small: {len(nonshared_idx)} < k_use={k_use}")
@@ -468,9 +441,7 @@ def main() -> None:
         raise RuntimeError(f"Q_pool rank too small: K_pool={K_pool} < k_use={k_use}")
     Q_ctrl_struct = Q_pool[:, :k_use]
 
-    # ------------------------------------------------------------------
-    # Prompt-boundary states for energy calibration
-    # ------------------------------------------------------------------
+
     pb_col = PromptBoundaryDecodeCollector(layer_indices)
     layers, _ = get_model_layers(model)
     handles = []
@@ -513,9 +484,7 @@ def main() -> None:
     H_calib = np.concatenate([pb_bal[t] for t in tasks_used], axis=0)
     print(f"[EnergyCalib] balanced per task={n_bal}, pooled H_calib={H_calib.shape[0]} x {H_calib.shape[1]}")
 
-    # ------------------------------------------------------------------
-    # Energy curve for pool + k-match
-    # ------------------------------------------------------------------
+
     stats_shared = projection_energy_stats(H_calib, Q_shared)
     stats_ctrl_struct = projection_energy_stats(H_calib, Q_ctrl_struct)
 
@@ -523,11 +492,11 @@ def main() -> None:
     cum_energy = np.cumsum(Z_pool * Z_pool, axis=1)
     mean_by_k = cum_energy.mean(axis=0)
 
-    # IMPORTANT: always compute k-match at alpha=1 (fix KMATCH_PER_ALPHA=0 behavior)
+
     target_alpha1 = float(stats_shared["mean_energy"])
     k_c_alpha1 = k_match_from_curve(mean_by_k, target_alpha1, k_min=k_use, k_max=K_pool)
 
-    # alpha-match scale at fixed k=k_use
+
     Es = float(stats_shared["mean_energy"])
     Ec = float(stats_ctrl_struct["mean_energy"])
     alpha_match_scale = math.sqrt(Es / max(Ec, 1e-12))
@@ -542,9 +511,7 @@ def main() -> None:
         print(f"  [WARN] Pool saturates at K_pool; max_energy/target={ratio:.4f}")
     print("=" * 80 + "\n")
 
-    # ------------------------------------------------------------------
-    # Warmup tokens (teacher-forced)
-    # ------------------------------------------------------------------
+
     warmup_ids: List[int] = []
     if int(args.warmup_tokens) > 0:
         base_ids = tok.encode(args.warmup_phrase, add_special_tokens=False)
@@ -554,9 +521,7 @@ def main() -> None:
         warmup_ids = (base_ids * (W // len(base_ids) + 1))[:W]
     print(f"[FC] warmup_ids_len={len(warmup_ids)} warmup_phrase={repr(args.warmup_phrase)}")
 
-    # ------------------------------------------------------------------
-    # Build eval task list (forced-choice only)
-    # ------------------------------------------------------------------
+
     def task_has_candidates(t: str) -> bool:
         try:
             return len(ep.candidate_strings(t)) > 0
@@ -567,7 +532,7 @@ def main() -> None:
     if not eval_tasks:
         raise RuntimeError("No forced-choice tasks available for evaluation (check --tasks).")
 
-    # Preprocess eval examples ONCE per task (chat template + warmup ids)
+
     eval_examples: Dict[str, List[Any]] = {}
     warmup_token_ids_cache: Dict[str, Optional[np.ndarray]] = {}
     for task in eval_tasks:
@@ -581,7 +546,7 @@ def main() -> None:
         else:
             warmup_token_ids_cache[task] = None
 
-    # Baseline caching (same across alphas)
+
     baseline_cache: Dict[str, Dict[str, Any]] = {}
     for task in eval_tasks:
         exs = eval_examples[task]
@@ -613,9 +578,7 @@ def main() -> None:
             "ci_high": float(hi_b),
         }
 
-    # ------------------------------------------------------------------
-    # Prepare outputs
-    # ------------------------------------------------------------------
+
     results: Dict[str, Any] = {
         "config": {
             "model": args.model,
@@ -667,7 +630,7 @@ def main() -> None:
         "alpha_runs": {},
     }
 
-    # Store baseline summaries
+
     for task in eval_tasks:
         b = baseline_cache[task]
         results["baseline"][task] = {
@@ -702,7 +665,7 @@ def main() -> None:
     md_lines.append(f"- **answer_prefix**: `{args.answer_prefix}`  | **prefix_mode**: `{args.fc_prefix_mode}`  | **warmup_tokens**: `{args.warmup_tokens}`")
     md_lines.append("")
 
-    # Baseline table (once)
+
     base_headers = ["Task", "N", "Baseline acc (95% CI)"]
     base_rows = []
     for task in eval_tasks:
@@ -710,13 +673,11 @@ def main() -> None:
         base_rows.append([task, str(len(eval_examples[task])), fmt_ci(b["acc"], b["ci_low"], b["ci_high"])])
     md_lines.append("## Baseline")
     md_lines.append("")
-    # md_lines.append(ep.md_table(base_headers, base_rows))
+
     md_lines.append(ep.md_table(base_rows, base_headers))
     md_lines.append("")
 
-    # ------------------------------------------------------------------
-    # Alpha loop
-    # ------------------------------------------------------------------
+
     for alpha_shared in alphas:
         alpha_shared_f = float(alpha_shared)
 
@@ -725,7 +686,7 @@ def main() -> None:
             cap = abs(float(args.alpha_ctrl_cap))
             alpha_ctrl = float(np.clip(alpha_ctrl, -cap, cap))
 
-        # k-match
+
         if kmatch_per_alpha:
             target = (alpha_shared_f ** 2) * Es
             k_c = k_match_from_curve(mean_by_k, target, k_min=k_use, k_max=K_pool)
@@ -745,7 +706,7 @@ def main() -> None:
         print(f"[Alpha] alpha_shared={alpha_shared_f:.4g}  alpha_ctrl={alpha_ctrl:.4g}  k_c={k_c}  (kmatch_per_alpha={int(kmatch_per_alpha)})")
         print("-" * 80)
 
-        headers = ["Task", "N", "Baseline", f"Shared(α={alpha_shared_f:g})", "Ctrl α-match", f"Ctrl k-match(k={k_c})"]
+        headers = ["Task", "N", "Baseline", f"Shared(alpha={alpha_shared_f:g})", "Ctrl alpha-match", f"Ctrl k-match(k={k_c})"]
         md_rows: List[List[str]] = []
         tex_rows: List[List[str]] = []
 
@@ -758,7 +719,7 @@ def main() -> None:
             warm = warmup_token_ids_cache[task]
             base = baseline_cache[task]
 
-            # Shared(alpha)
+
             run_shared = ep.forced_choice_logprob_eval(
                 model,
                 tok,
@@ -781,7 +742,7 @@ def main() -> None:
                 seed=ep.stable_int_seed(args.seed, task, "shared", alpha_key),
             )
 
-            # Ctrl alpha-match
+
             run_ctrl_alpha = ep.forced_choice_logprob_eval(
                 model,
                 tok,
@@ -804,7 +765,7 @@ def main() -> None:
                 seed=ep.stable_int_seed(args.seed, task, "ctrl_alpha", alpha_key),
             )
 
-            # Ctrl k-match (alpha fixed 1)
+
             run_ctrl_k = ep.forced_choice_logprob_eval(
                 model,
                 tok,
@@ -827,7 +788,7 @@ def main() -> None:
                 seed=ep.stable_int_seed(args.seed, task, "ctrl_kmatch", alpha_key),
             )
 
-            # Paired summaries
+
             base_arr = np.array(base["correct"], dtype=np.float32)
             sh_arr = np.array(run_shared["correct"], dtype=np.float32)
             ca_arr = np.array(run_ctrl_alpha["correct"], dtype=np.float32)
@@ -841,7 +802,7 @@ def main() -> None:
                 "shared_vs_ctrl_kmatch": ep.summarize_paired(ck_arr, sh_arr, f"{task}:shared_vs_ctrl_kmatch@a={alpha_key}", int(args.bootstrap_iters), int(args.perm_iters), float(args.ci_alpha), seed0 + 4),
             }
 
-            # Store
+
             if save_scores:
                 runs_out = {
                     "baseline": base,
@@ -867,7 +828,7 @@ def main() -> None:
                 f"  {task:12s} "
                 f"base={fmt_ci(base['acc'], base['ci_low'], base['ci_high'])}  "
                 f"shared={fmt_ci(acc_s, lo_s, hi_s)}  "
-                f"ctrlα={fmt_ci(acc_ca, lo_ca, hi_ca)}  "
+                f"ctrl_alpha={fmt_ci(acc_ca, lo_ca, hi_ca)}  "
                 f"ctrlk={fmt_ci(acc_ck, lo_ck, hi_ck)}"
             )
 
@@ -897,7 +858,7 @@ def main() -> None:
         md_lines.append(f"- alpha_ctrl (alpha-match): `{alpha_ctrl:.6g}`")
         md_lines.append(f"- k_c (k-match, alpha=1): `{k_c}` (kmatch_per_alpha={int(kmatch_per_alpha)})")
         md_lines.append("")
-        # md_lines.append(ep.md_table(headers, md_rows))
+
         md_lines.append(ep.md_table(md_rows, headers))
         md_lines.append("")
 
@@ -911,9 +872,7 @@ def main() -> None:
             )
         )
 
-    # ------------------------------------------------------------------
-    # Save outputs
-    # ------------------------------------------------------------------
+
     with open(args.out_json, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 

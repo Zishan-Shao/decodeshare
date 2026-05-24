@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 run_full_benchmark.py
 
@@ -39,9 +38,6 @@ from tqdm import tqdm
 from decodeshare import sharedness as base
 
 
-# -----------------------------
-# Stdout tee (save prints to txt)
-# -----------------------------
 class TeeStdout:
     def __init__(self, *streams):
         self.streams = streams
@@ -70,9 +66,6 @@ def _should_write_txt(path: Optional[str]) -> bool:
     return True
 
 
-# -----------------------------
-# Repro utils
-# -----------------------------
 def set_global_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -82,7 +75,7 @@ def set_global_seed(seed: int) -> None:
 
 
 def to_py(obj: Any):
-    # JSON-safe conversion
+
     if isinstance(obj, (np.integer,)):
         return int(obj)
     if isinstance(obj, (np.floating,)):
@@ -92,9 +85,6 @@ def to_py(obj: Any):
     return obj
 
 
-# -----------------------------
-# Prompt builders (new tasks)
-# -----------------------------
 def _clean_text(x: Any) -> str:
     s = "" if x is None else str(x)
     s = s.replace("\r\n", "\n")
@@ -169,9 +159,6 @@ def build_prompt_mbpp(text: str, starter: str = "") -> str:
     )
 
 
-# -----------------------------
-# Full benchmark prompt loader
-# -----------------------------
 def _try_load_any(paths: List[tuple[str, Optional[str]]]):
     """
     Try (path, name) in order; returns first successful dataset object or None.
@@ -183,7 +170,6 @@ def _try_load_any(paths: List[tuple[str, Optional[str]]]):
     return None, None, None
 
 
-
 def _safe_sample(ds, n_prompts: int, seed: int):
     split = base._pick_split(ds)
     rows = base.sample_hf_split(ds[split], n_prompts, seed)
@@ -193,7 +179,7 @@ def _safe_sample(ds, n_prompts: int, seed: int):
 def load_calib_prompts_full(n_prompts: int, seed: int) -> Dict[str, List[str]]:
     prompts: Dict[str, List[str]] = {}
 
-    # original 9 tasks (copied, robust to partial failure)
+
     ds = base._try_load_dataset("gsm8k", "main")
     if ds is not None:
         rows = _safe_sample(ds, n_prompts, seed + 1)
@@ -282,27 +268,7 @@ def load_calib_prompts_full(n_prompts: int, seed: int) -> Dict[str, List[str]]:
         if piqa_prompts:
             prompts["piqa"] = piqa_prompts
 
-    # # extra benchmarks
-    # ds, used_path, used_name = _try_load_any([
-    #     ("EleutherAI/hendrycks_math", None),
-    #     ("hendrycks/competition_math", None),
-    #     ("qwedsacf/competition_math", None),
-    #     ("Maxwell-Jia/MATH", None),
-    # ])
-    # if ds is not None:
-    #     rows = _safe_sample(ds, n_prompts, seed + 101)
-    #     out = []
-    #     for ex in rows:
-    #         problem = _get_first(ex, ["problem", "question", "prompt"], default="")
-    #         if problem:
-    #             out.append(build_prompt_math_openanswer(problem))
-    #     if out:
-    #         prompts["math"] = out
-    #     print(f"[Info] loaded MATH from {used_path}" + (f"/{used_name}" if used_name else ""))
 
-    # 1) MATH (Hendrycks et al.) — try per-subject configs if needed
-    #    If you want ONE combined "math" task, keep only one config (e.g., algebra).
-    #    If you want broader coverage, include several configs and store them as separate tasks.
     hendrycks_configs = [
         "algebra",
         "counting_and_probability",
@@ -329,7 +295,7 @@ def load_calib_prompts_full(n_prompts: int, seed: int) -> Dict[str, List[str]]:
             if problem:
                 out.append(build_prompt_math_openanswer(problem))
 
-        # put under a name that reflects the config if we used hendrycks_math
+
         if out:
             task_name = "math"
             if used_path == "EleutherAI/hendrycks_math" and used_name:
@@ -355,22 +321,8 @@ def load_calib_prompts_full(n_prompts: int, seed: int) -> Dict[str, List[str]]:
             prompts["aime"] = out
         print(f"[Info] loaded AIME from {used_path}" + (f"/{used_name}" if used_name else ""))
 
-    # ds, used_path, used_name = _try_load_any([
-    #     ("RUC-AIBOX/OlymMATH", None),
-    # ])
-    # if ds is not None:
-    #     rows = _safe_sample(ds, n_prompts, seed + 121)
-    #     out = []
-    #     for ex in rows:
-    #         problem = _get_first(ex, ["problem", "question", "prompt"], default="")
-    #         if problem:
-    #             out.append(build_prompt_math_openanswer(problem))
-    #     if out:
-    #         prompts["olymmath"] = out
-    #     print(f"[Info] loaded OlymMATH from {used_path}" + (f"/{used_name}" if used_name else ""))
 
-    # 3) OlymMATH (olympiad-level) — requires config
-    olymmath_configs = ["en-hard"]  # or ["en-hard", "en-easy", "zh-hard", "zh-easy", "lean"]
+    olymmath_configs = ["en-hard"]
     ds, used_path, used_name = _try_load_any([("RUC-AIBOX/OlymMATH", cfg) for cfg in olymmath_configs])
 
     if ds is not None:
@@ -444,9 +396,6 @@ def load_calib_prompts_full(n_prompts: int, seed: int) -> Dict[str, List[str]]:
     return prompts
 
 
-# -----------------------------
-# Decode last-token activation collector (same behavior as base)
-# -----------------------------
 from collections import defaultdict
 from typing import DefaultDict
 
@@ -479,7 +428,7 @@ class DecodeLastTokenActivationCollector:
             if hs.shape[1] != 1:
                 return output
 
-            x = hs[:, -1, :]  # [B, D]
+            x = hs[:, -1, :]
             if self.active_mask is not None:
                 m = self.active_mask
                 if m.dtype != torch.bool:
@@ -500,14 +449,11 @@ class DecodeLastTokenActivationCollector:
         return np.concatenate(chunks, axis=0)
 
 
-# -----------------------------
-# Chat-template-aware decode collection (Gemma3-*-it friendly)
-# -----------------------------
 def _top_p_filtering(logits: torch.Tensor, top_p: float) -> torch.Tensor:
-    # reuse base helpers if present
+
     if hasattr(base, "top_p_filtering"):
         return base.top_p_filtering(logits, top_p)
-    # minimal implementation
+
     if top_p <= 0.0 or top_p >= 1.0:
         return logits
     sorted_logits, sorted_idx = torch.sort(logits, descending=True, dim=-1)
@@ -530,7 +476,6 @@ def _top_k_filtering(logits: torch.Tensor, top_k: int) -> torch.Tensor:
     values, _ = torch.topk(logits, top_k, dim=-1)
     min_values = values[:, -1].unsqueeze(-1)
     return torch.where(logits < min_values, torch.full_like(logits, float("-inf")), logits)
-
 
 
 @torch.no_grad()
@@ -578,13 +523,13 @@ def collect_decode_last_token_states(
           - BatchEncoding / dict
           - dict of lists
         """
-        # Case 1: tokenizer.apply_chat_template returned a Tensor directly
+
         if isinstance(enc, torch.Tensor):
             input_ids = enc.to(device)
             attention_mask = torch.ones_like(input_ids, device=device)
             return {"input_ids": input_ids, "attention_mask": attention_mask}
 
-        # Case 2: BatchEncoding is dict-like; plain dict also
+
         if isinstance(enc, dict):
             out: Dict[str, torch.Tensor] = {}
             for k, v in enc.items():
@@ -598,7 +543,7 @@ def collect_decode_last_token_states(
                 out["attention_mask"] = (out["input_ids"] != tokenizer.pad_token_id).long()
             return out
 
-        # Case 3: other types (very rare) -> try best-effort
+
         if hasattr(enc, "to") and hasattr(enc, "__getitem__"):
             try:
                 enc = enc.to(device)
@@ -614,7 +559,7 @@ def collect_decode_last_token_states(
         if use_chat:
             convs = [[{"role": "user", "content": p}] for p in batch_prompts]
 
-            # Prefer tokenize=True if it returns a usable structure; otherwise fallback
+
             try:
                 enc = tokenizer.apply_chat_template(
                     convs,
@@ -635,7 +580,7 @@ def collect_decode_last_token_states(
                     padding=True,
                     truncation=True,
                     max_length=max_prompt_len,
-                    add_special_tokens=False,  # avoid double BOS/EOS
+                    add_special_tokens=False,
                 )
         else:
             enc = tokenizer(
@@ -657,13 +602,13 @@ def collect_decode_last_token_states(
         B = input_ids.shape[0]
         unfinished = torch.ones(B, dtype=torch.bool, device=device)
 
-        # Prefill (no capture)
+
         collector.set_capture(False, None)
         out = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True)
         logits = out.logits[:, -1, :]
         past = getattr(out, "past_key_values", None)
 
-        # Decode loop
+
         for _step in range(int(calib_max_new_tokens)):
             if decoding == "greedy":
                 next_token = torch.argmax(logits, dim=-1, keepdim=True)
@@ -703,9 +648,6 @@ def collect_decode_last_token_states(
         collector.set_capture(False, None)
 
 
-# -----------------------------
-# Sharedness helpers (reuse base if exists; else implement minimal)
-# -----------------------------
 def center_and_balance(
     X_by_task: Dict[str, np.ndarray],
     *,
@@ -713,7 +655,7 @@ def center_and_balance(
     balance_to: str,
     seed: int,
 ) -> Tuple[Dict[str, np.ndarray], int]:
-    # Use base implementation if present
+
     if hasattr(base, "center_and_balance"):
         return base.center_and_balance(X_by_task, per_task_max_states=per_task_max_states, balance_to=balance_to, seed=seed)
 
@@ -755,7 +697,7 @@ def compute_shared_indices_from_relvar(relvar_by_task: Dict[str, np.ndarray], ta
     if hasattr(base, "compute_shared_indices_from_relvar"):
         return base.compute_shared_indices_from_relvar(relvar_by_task, tau=tau, m_shared=m_shared)
     tasks = list(relvar_by_task.keys())
-    rel = np.stack([relvar_by_task[t] for t in tasks], axis=0)  # [T,k]
+    rel = np.stack([relvar_by_task[t] for t in tasks], axis=0)
     ok = (rel >= float(tau)).astype(np.int32)
     cnt = ok.sum(axis=0)
     idx = np.where(cnt >= int(m_shared))[0]
@@ -788,9 +730,6 @@ def scramble_features_orthogonal(X: np.ndarray, rng: np.random.Generator) -> np.
     return (X[:, perm] * signs[None, :]).astype(np.float32, copy=False)
 
 
-# -----------------------------
-# Model loader (reuse base if possible)
-# -----------------------------
 def load_model_and_tokenizer(model_name: str, device: str, model_dtype: str):
     if hasattr(base, "load_model_and_tokenizer"):
         return base.load_model_and_tokenizer(model_name, device, model_dtype)
@@ -836,9 +775,6 @@ def infer_hidden_dim(model) -> Optional[int]:
     return None
 
 
-# -----------------------------
-# Main runner
-# -----------------------------
 def main():
     default_out_json = os.path.join(os.getcwd(), "sharedness_existence_full.json")
     default_out_txt = os.path.splitext(default_out_json)[0] + ".txt"
@@ -864,10 +800,10 @@ def main():
     ap.add_argument("--max_dim", type=int, default=4096)
 
     ap.add_argument("--tau", type=float, default=0.001)
-    ap.add_argument("--m_shared", type=str, default="all")  # "all" or int
+    ap.add_argument("--m_shared", type=str, default="all")
 
     ap.add_argument("--per_task_max_states", type=int, default=20000)
-    ap.add_argument("--balance_to", type=str, default="min")  # "min" or int
+    ap.add_argument("--balance_to", type=str, default="min")
 
     ap.add_argument("--null_perm_trials", type=int, default=2000)
     ap.add_argument("--null_scramble_trials", type=int, default=0)
@@ -882,7 +818,7 @@ def main():
 
     args = ap.parse_args()
 
-    # tee stdout early
+
     orig_stdout = sys.stdout
     txt_f = None
     if _should_write_txt(args.out_txt):
@@ -901,7 +837,7 @@ def main():
 
         print(f"[Env] model={args.model} device={args.device} dtype={args.model_dtype} layer={args.layer}")
 
-        # model
+
         model, tok = load_model_and_tokenizer(args.model, args.device, args.model_dtype)
         layers, _arch = base.get_model_layers(model) if hasattr(base, "get_model_layers") else (None, None)
         if layers is None:
@@ -915,7 +851,7 @@ def main():
         else:
             print(f"[Env] hidden_dim={hidden_dim}")
 
-        # load prompts (full suite)
+
         prompts_by_task = load_calib_prompts_full(int(args.n_prompts), int(args.seed))
         all_tasks = list(prompts_by_task.keys())
 
@@ -930,13 +866,13 @@ def main():
         for t in tasks:
             print(f"[Data] task={t} loaded_prompts={len(prompts_by_task[t])}")
 
-        # collector + hooks
+
         collector = DecodeLastTokenActivationCollector([int(args.layer)])
         handles = []
         for li in [int(args.layer)]:
             handles.append(layers[li].register_forward_hook(collector.make_hook(li)))
 
-        # collect decode states
+
         try:
             with torch.inference_mode():
                 for task in tasks:
@@ -963,7 +899,7 @@ def main():
                     pass
             collector.set_capture(False, None)
 
-        # build X_by_task (single layer)
+
         X_raw: Dict[str, np.ndarray] = {}
         for task in tasks:
             X = collector.get(task, int(args.layer))
@@ -972,7 +908,7 @@ def main():
             X_raw[task] = X
             print(f"[Collect] task={task} states={X.shape[0]} x {X.shape[1]}")
 
-        # fair preprocessing: cap, balance, task-center
+
         X_by_task, n0 = center_and_balance(
             X_raw,
             per_task_max_states=int(args.per_task_max_states),
@@ -981,7 +917,7 @@ def main():
         )
         print(f"[Fair] balanced states per task = {n0}")
 
-        # pooled PCA via base.compute_cross_task_subspace (must exist)
+
         if not hasattr(base, "compute_cross_task_subspace"):
             raise RuntimeError("base.compute_cross_task_subspace not found. Ensure decodeshare.sharedness imports it.")
 
@@ -1000,12 +936,12 @@ def main():
         k = int(cross_dim)
         print(f"[PCA] cross_dim={k} / {Q.shape[0]}  (pca_var={args.pca_var})")
 
-        # relvar profiles
+
         relvar_by_task: Dict[str, np.ndarray] = {}
         for t in tasks:
             relvar_by_task[t] = compute_relvar_in_basis(X_by_task[t], Q)
 
-        # sharedness threshold
+
         if args.m_shared == "all":
             m_shared = len(tasks)
         else:
@@ -1026,7 +962,7 @@ def main():
         print("Top-10 components by avg relvar:", top10)
         print("Top-10 avg relvar:", [float(avg_rel[i]) for i in top10])
 
-        # Null-1: relvar permutation
+
         null1_counts, _ = null_perm_sharedcount(
             relvar_by_task,
             tau=float(args.tau),
@@ -1043,7 +979,7 @@ def main():
               f"p95={float(np.percentile(null1_counts, 95)):.2f} max={int(null1_counts.max())}")
         print(f"p-value (null>=obs) = {p1:.4g}")
 
-        # Null-2: scramble + recompute PCA (optional)
+
         null2_counts = None
         p2 = None
         if int(args.null_scramble_trials) > 0:
@@ -1080,7 +1016,7 @@ def main():
                   f"max={int(null2_counts.max())}")
             print(f"[Null-2] p-value (null>=obs) = {p2:.4g}")
 
-        # Save JSON
+
         out_json_dir = os.path.dirname(os.path.abspath(args.out_json))
         if out_json_dir:
             os.makedirs(out_json_dir, exist_ok=True)

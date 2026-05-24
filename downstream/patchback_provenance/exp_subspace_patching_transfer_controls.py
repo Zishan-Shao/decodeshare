@@ -1,61 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-experiment2_subspace_patching_transfer.py
-
-
-它核心在回答：“跨任务共享子空间（decodeshare）是否是因果的、且是结构性的？”
-
-它覆盖/控制了这些点：
-共享子空间的构造是否合理
-从多个任务的 decode last-token 激活做 cross-task PCA + shared basis 筛选（你输出了 cross_dim、shared_basis_count、验证正交性等）。
-删掉 shared 分量是否会导致错误（因果性）
-ablated：在特定层把 P_Q(x) 去掉（α=1），看 baseline→ablated 的变化，构造 flips（baseline 对、ablated 错）。
-能否用 patch “修复” ablation 造成的错误（定位到层与步）
-patched_0 / patched_01 / patched_full：把 donor 的 P_Q(x) patch 回去，看能否 rescue flips，并测 Δmargin。
-
-关键负对照（排除“能量注入/随便 patch 都行”）
-control_rand_subspace：随机子空间 + 能量匹配向量（通常失败）
-control_shared_randvec：同一个 shared 子空间里能量匹配随机向量（你已经看到它也失败）→ 强力排除“只要在 Q_shared 里加能量就好”
-control_patch_nonshared：正交补空间（应失败）
-你还加了 donor cos-sim、flip label 分布 → 解释为何 “cross-example donor” 会强（donor 太相似）。
-
-一句话总结：
-这是“机制主实验”：证明 Q_shared 是因果通道，且需要 on-manifold 的结构性 donor，而非能量/随机方向。
-
-Experiment 2: Subspace patching (transfer) — "workspace feels earned"
-
-Fixes / checks added (2026-01):
-1) Benchmark eval accuracy correctness:
-   - Always scan ALL eval examples loaded (n_eval), regardless of max_flips.
-   - Print both accuracy fraction and correct-count (so "50多" is visible).
-   - Loader is strictly from benchmark_dataloaders.py (dl.load_selected_tasks),
-     not from loto utilities.
-
-2) patched_full vs patched_01 identical:
-   - Print candidate tokenization lengths and derived patch step sets.
-   - Warn if steps_01 == full_steps (then patched_full == patched_01 by design).
-   - At runtime, optionally compute max|scores_full - scores_01| for flips.
-
-Notes:
-- Forced-choice is decode-aligned:
-  Prefill x1:T-1 (seq_len>1)
-  Step 0: decode with xT (seq_len==1) => logits for first candidate token
-  Step 1..: decode with candidate token j (seq_len==1) => logits for next token
-
-- full_steps is defined as all decode-step indices that occur during scoring:
-  If max candidate token length is L, total decode calls = L (step 0..L-1).
-
-CUDA_VISIBLE_DEVICES=1 python subspace_patching_transfer.py \
-  --model meta-llama/Llama-2-7b-chat-hf \
-  --device cuda --dtype fp32 \
-  --layer 10 \
-  --compute_Qs 1 \
-  --Qs_out Q_shared_layer10.npy \
-  --basis_tasks gsm8k,commonsenseqa,strategyqa,openbookqa,qasc,boolq,piqa \
-  --basis_n_subspace 128 \
-  --out_json patch_results.json
-  
-"""
+"""Subspace patchback transfer controls with additional donor baselines."""
 
 from __future__ import annotations
 
@@ -69,11 +12,10 @@ from typing import Any, Dict, List, Optional, Tuple, Iterable, Set
 import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from collections import Counter, defaultdict
+from collections import Counter
+import math
 
-
-# =============================================================================
-# Dynamic imports: reuse the two attached scripts
-# =============================================================================
 
 def _import_from_path(module_name: str, file_path: str):
     spec = importlib.util.spec_from_file_location(module_name, file_path)
@@ -92,10 +34,6 @@ def load_aux_modules(loto8_path: str, dataloaders_path: str):
         from decodeshare import benchmark_dataloaders as dl
     return loto8, dl
 
-
-# =============================================================================
-# Model layer access (fallback)
-# =============================================================================
 
 def _getattr_nested(obj: Any, path: str) -> Any:
     cur = obj
@@ -132,10 +70,6 @@ def get_transformer_layers(model: torch.nn.Module) -> Tuple[List[torch.nn.Module
     )
 
 
-# =============================================================================
-# KV-cache utilities
-# =============================================================================
-
 def repeat_past_key_values(past_key_values: Any, repeat: int) -> Any:
     """
     Repeat batch dimension of past_key_values (assumes current batch=1).
@@ -166,10 +100,6 @@ def repeat_past_key_values(past_key_values: Any, repeat: int) -> Any:
     return past_key_values
 
 
-# =============================================================================
-# Hooks: capture + patch (decode-only, seq_len==1)
-# =============================================================================
-
 class DecodeStepHiddenCaptureHook:
     """
     Captures the last-token hidden state x = h[:, -1, :] at selected decode steps.
@@ -191,7 +121,7 @@ class DecodeStepHiddenCaptureHook:
         if not torch.is_tensor(hs) or hs.ndim != 3:
             return output
         if hs.shape[1] != 1:
-            return output  # strict decode-only
+            return output
 
         t = self.step
         self.step += 1
@@ -214,7 +144,7 @@ class SubspacePatchHook:
         Q = np.asarray(Q_np, dtype=np.float32)
         if Q.ndim != 2:
             raise ValueError(f"Q_np must be 2D [d,k], got shape={Q.shape}")
-        self.Q_cpu = torch.tensor(Q, dtype=torch.float32, device="cpu").contiguous()  # [d,k]
+        self.Q_cpu = torch.tensor(Q, dtype=torch.float32, device="cpu").contiguous()
         self.Q_dev: Optional[torch.Tensor] = None
         self.donor_by_step = {int(k): v.detach().float().cpu() for k, v in donor_by_step.items()}
         self.patch_steps: Set[int] = set(int(s) for s in patch_steps)
@@ -242,10 +172,10 @@ class SubspacePatchHook:
         if t not in self.donor_by_step:
             return output
 
-        Q = self._Q(hs.device)          # [d,k]
-        x = hs[:, -1, :].float()        # [B,d]
-        s = (x @ Q) @ Q.T               # [B,d]
-        p = self.donor_by_step[t].to(device=hs.device, dtype=torch.float32)  # [B,d]
+        Q = self._Q(hs.device)
+        x = hs[:, -1, :].float()
+        s = (x @ Q) @ Q.T
+        p = self.donor_by_step[t].to(device=hs.device, dtype=torch.float32)
         if p.shape != x.shape:
             raise RuntimeError(f"Donor shape mismatch at step={t}: donor={tuple(p.shape)} vs x={tuple(x.shape)}")
         x_new = x - s + p
@@ -256,10 +186,6 @@ class SubspacePatchHook:
             return (hs2,) + output[1:]
         return hs2
 
-
-# =============================================================================
-# Subspace math utilities
-# =============================================================================
 
 def orthonormalize_np(M: np.ndarray) -> np.ndarray:
     M = np.asarray(M, dtype=np.float32)
@@ -311,28 +237,24 @@ def energy_matched_random_vector_in_subspace(
     target_norms: [B] CPU tensor float32
     Returns: r_cpu [B,d] float32
     """
-    Q = torch.tensor(Q_sub, dtype=torch.float32, device="cpu")  # [d,k]
+    Q = torch.tensor(Q_sub, dtype=torch.float32, device="cpu")
     B = int(target_norms.shape[0])
     k = int(Q.shape[1])
     rng = np.random.default_rng(seed)
     z = rng.standard_normal((B, k)).astype(np.float32)
-    z = torch.tensor(z, dtype=torch.float32, device="cpu")  # [B,k]
+    z = torch.tensor(z, dtype=torch.float32, device="cpu")
     eps = 1e-12
     z = z / (torch.linalg.norm(z, dim=1)[:, None] + eps)
     z = z * target_norms[:, None]
-    return z @ Q.T  # [B,d]
+    return z @ Q.T
 
-
-# =============================================================================
-# Forced-choice scoring (decode-aligned, batched candidates)
-# =============================================================================
 
 @dataclass
 class FCResult:
     pred_label: str
     correct: bool
     margin: float
-    scores: Dict[str, float]  # label -> logprob
+    scores: Dict[str, float]
 
 
 def _maybe_call_model(model: AutoModelForCausalLM, **kwargs):
@@ -340,11 +262,11 @@ def _maybe_call_model(model: AutoModelForCausalLM, **kwargs):
     Try to force legacy cache if supported by this Transformers version,
     otherwise fall back.
     """
-    # Always request dict output for consistency
+
     kwargs = dict(kwargs)
     kwargs.setdefault("return_dict", True)
     try:
-        # Some versions support this and will return tuple past_key_values
+
         return model(**kwargs, return_legacy_cache=True)
     except TypeError:
         return model(**kwargs)
@@ -393,12 +315,10 @@ def forced_choice_decode_aligned(
             handles.append(layer_module.register_forward_hook(capture_hook))
         return handles
 
-    # -------------------------------------------------------------------------
-    # Fast path: batched candidates if past_key_values is legacy (tuple/list)
-    # -------------------------------------------------------------------------
+
     handles = _register_hooks()
     try:
-        # Prefill + step0 once
+
         if input_ids.shape[1] > 1:
             out_pre = _maybe_call_model(
                 model,
@@ -423,8 +343,8 @@ def forced_choice_decode_aligned(
             )
 
         past0 = out0.past_key_values
-        logits0 = out0.logits[:, -1, :]             # [1,V]
-        logp0 = torch.log_softmax(logits0, dim=-1)  # [1,V]
+        logits0 = out0.logits[:, -1, :]
+        logp0 = torch.log_softmax(logits0, dim=-1)
         attn0 = attn
 
         legacy_cache = isinstance(past0, (tuple, list))
@@ -444,17 +364,17 @@ def forced_choice_decode_aligned(
             for i, ids in enumerate(cand_token_ids):
                 tok_mat[i, : len(ids)] = torch.tensor(ids, dtype=torch.long, device=device)
 
-            # First token score from logits0
-            first_tokens = tok_mat[:, 0]               # [K]
-            scores = logp0[0, first_tokens].clone()    # [K]
 
-            # Remaining tokens (batched) with repeated legacy cache
+            first_tokens = tok_mat[:, 0]
+            scores = logp0[0, first_tokens].clone()
+
+
             if max_len > 1:
                 past = repeat_past_key_values(past0, K)
                 attn_k = attn0.repeat(K, 1)
 
                 for j in range(max_len - 1):
-                    inp = tok_mat[:, j].unsqueeze(1)  # [K,1]
+                    inp = tok_mat[:, j].unsqueeze(1)
                     attn_k = torch.cat(
                         [attn_k, torch.ones((K, 1), device=device, dtype=attn_k.dtype)],
                         dim=1
@@ -467,9 +387,9 @@ def forced_choice_decode_aligned(
                         use_cache=True,
                     )
                     past = outj.past_key_values
-                    logpj = torch.log_softmax(outj.logits[:, -1, :], dim=-1)  # [K,V]
-                    next_tok = tok_mat[:, j + 1]                              # [K]
-                    mask = (lengths > (j + 1)).float()                        # [K]
+                    logpj = torch.log_softmax(outj.logits[:, -1, :], dim=-1)
+                    next_tok = tok_mat[:, j + 1]
+                    mask = (lengths > (j + 1)).float()
                     scores = scores + logpj[torch.arange(K, device=device), next_tok] * mask
 
             score_by_label = {lab: float(scores[i].item()) for i, lab in enumerate(candidate_labels)}
@@ -495,11 +415,7 @@ def forced_choice_decode_aligned(
             except Exception:
                 pass
 
-    # -------------------------------------------------------------------------
-    # Fallback: unbatched per-candidate (robust for Cache objects)
-    # NOTE: This path is correct for scoring; patching beyond step0 is less
-    # meaningful unless donor vectors are also computed per-candidate.
-    # -------------------------------------------------------------------------
+
     scores_list: List[float] = []
 
     for cand_ids in cand_token_ids:
@@ -584,8 +500,8 @@ def shuffle_coeffs_in_subspace(p0_cpu: torch.Tensor, Q_sub: np.ndarray, seed: in
     p0_cpu: [B,d] CPU float32, assumed in span(Q_sub)
     Returns a new vector in span(Q_sub) with same norm per row but shuffled structure.
     """
-    Q = torch.tensor(Q_sub, dtype=torch.float32, device="cpu")  # [d,k]
-    c = p0_cpu @ Q  # [B,k]
+    Q = torch.tensor(Q_sub, dtype=torch.float32, device="cpu")
+    c = p0_cpu @ Q
     k = c.shape[1]
     rng = np.random.default_rng(seed)
 
@@ -598,12 +514,8 @@ def shuffle_coeffs_in_subspace(p0_cpu: torch.Tensor, Q_sub: np.ndarray, seed: in
     else:
         raise ValueError(mode)
 
-    return c2 @ Q.T  # [B,d]
+    return c2 @ Q.T
 
-
-# =============================================================================
-# Experiment runner helpers
-# =============================================================================
 
 def build_candidate_texts(candidate_labels: List[str], style: str) -> List[str]:
     if style == "raw":
@@ -770,10 +682,6 @@ def maybe_compute_Qs(
     return Q_shared
 
 
-# =============================================================================
-# Dataloader robustness helper: eval-only
-# =============================================================================
-
 def load_selected_tasks_eval_only(
     dl: Any, *,
     task: str,
@@ -869,10 +777,6 @@ def load_selected_tasks_eval_only(
         dl._build_from_splits_with_fallback = orig_bfs  # type: ignore[attr-defined]
 
 
-# =============================================================================
-# Main
-# =============================================================================
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", type=str, required=True, help="HF model id or local path")
@@ -906,7 +810,7 @@ def main():
     ap.add_argument("--tau", type=float, default=0.001)
     ap.add_argument("--m_shared", type=str, default="all")
 
-    ap.add_argument("--loto8_path", type=str, default="disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py")
+    ap.add_argument("--loto8_path", type=str, default="exp_patchback_loto.py")
     ap.add_argument("--dataloaders_path", type=str, default="")
 
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
@@ -916,14 +820,14 @@ def main():
     ap.add_argument("--out_json", type=str, default="patching_results.json")
     args = ap.parse_args()
 
-    # Load helper modules
+
     loto8, dl = load_aux_modules(args.loto8_path, args.dataloaders_path)
 
-    # Seed
+
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    # Load model
+
     dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
     torch_dtype = dtype_map[args.dtype]
 
@@ -946,14 +850,14 @@ def main():
     if tok.pad_token_id is None and tok.eos_token_id is not None:
         tok.pad_token = tok.eos_token
 
-    # Find layer module for hooking
+
     layers, path_used = get_transformer_layers(model)
     if args.layer < 0 or args.layer >= len(layers):
         raise ValueError(f"--layer {args.layer} out of range for layers at {path_used} (n={len(layers)})")
     layer_module = layers[args.layer]
     print(f"[Info] Hooking layer={args.layer} at path {path_used}")
 
-    # Load or compute Q_shared
+
     Qs: Optional[np.ndarray] = None
     if args.Qs_path:
         Qs = orthonormalize_np(np.load(args.Qs_path).astype(np.float32))
@@ -989,7 +893,7 @@ def main():
     assert Qs is not None
     d, k = Qs.shape
 
-    # Candidate setup
+
     candidate_labels = list(args.candidate_labels.strip())
     candidate_texts = build_candidate_texts(candidate_labels, style=args.candidate_text_style)
 
@@ -1002,8 +906,7 @@ def main():
         print(f"  label={lab} text={ct!r} len={len(ids)} ids={ids} toks={_tokens_debug(tok, ids)}")
     print(f"[Info] max candidate token length = {max_len}")
 
-    # Patch windows derived from max_len:
-    # total decode-step calls = max_len (step indices 0..max_len-1)
+
     full_steps = set(range(max_len))
     steps_0 = {0}
     steps_01 = {0, 1} if max_len >= 2 else {0}
@@ -1013,7 +916,7 @@ def main():
         print("[Warn] steps_01 == full_steps, so patched_01 will be IDENTICAL to patched_full (by design). "
               "Reason: max candidate token length <= 2. If you want them different, use longer candidate texts.")
 
-    # Load evaluation examples (benchmark dataloaders only)
+
     sub_by, eval_by, meta_by = load_selected_tasks_eval_only(
         dl,
         task=args.task,
@@ -1031,11 +934,7 @@ def main():
     if len(eval_examples) == 0:
         raise RuntimeError("No eval examples loaded. Check HF dataset availability / splits / dataloader extraction.")
 
-    # -------------------------------------------------------------------------
-    # Scan for flips (baseline correct, ablated wrong)
-    # IMPORTANT FIX: do NOT break early when we have enough flips;
-    # keep scanning to get correct benchmark accuracy.
-    # -------------------------------------------------------------------------
+
     scan_rows: List[Dict[str, Any]] = []
     flip_examples_all: List[Any] = []
     flip_examples_used: List[Any] = []
@@ -1044,7 +943,7 @@ def main():
         prompt = ex.prompt
         gold = (ex.gold or "").strip().upper()
 
-        # Skip if gold not in candidate set (keeps accuracy meaningful)
+
         if gold not in candidate_labels:
             scan_rows.append({
                 "ex_id": ex.ex_id,
@@ -1135,10 +1034,10 @@ def main():
         print(f"[Done] No flips found. Wrote {args.out_json}")
         return
 
-    # Nonshared control basis (k dims), chosen as random orthogonal complement to Qs
+
     Q_nonshared = sample_random_orthonormal_complement(Qs, k=k, seed=args.seed + 2024)
 
-    # Pre-capture step0 donor shared vectors for time-shuffled control (only for used flips)
+
     flip_donor_shared_step0: List[torch.Tensor] = []
     for ex in flip_examples_used:
         cap0 = DecodeStepHiddenCaptureHook(capture_steps=[0])
@@ -1154,7 +1053,17 @@ def main():
             raise RuntimeError("Failed to capture step0 hidden state. Check hook/layer compatibility.")
         flip_donor_shared_step0.append(project_cpu(h0, Qs))
 
-    # Patching runs on flips_used
+
+    flip_golds = [ex.gold.strip().upper() for ex in flip_examples_used]
+    print("[Flip gold distribution]", Counter(flip_golds))
+
+
+    donors_by_gold = defaultdict(list)
+    for g, p in zip(flip_golds, flip_donor_shared_step0):
+        donors_by_gold[g].append(p)
+    all_donors = list(flip_donor_shared_step0)
+
+
     flip_rows: List[Dict[str, Any]] = []
 
     def _max_abs_score_diff(a: FCResult, b: FCResult) -> float:
@@ -1181,7 +1090,7 @@ def main():
             add_special_tokens_prompt=bool(args.add_special_tokens_prompt),
         )
 
-        # Capture baseline hidden states for all decode steps in full_steps
+
         cap_all = DecodeStepHiddenCaptureHook(capture_steps=full_steps)
         _ = forced_choice_decode_aligned(
             model, tok, prompt,
@@ -1221,16 +1130,16 @@ def main():
             add_special_tokens_prompt=bool(args.add_special_tokens_prompt),
         )
 
-        # Extra debug: if full and 01 should match, quantify it
+
         diff_01_full = _max_abs_score_diff(patched01, patched_full)
         if idx == 0:
             print(f"[Debug] max|scores(patched_full)-scores(patched_01)| = {diff_01_full:.6e}")
 
-        # Controls for patch window {0}
-        p0 = donor_shared[0]  # [B=1,d] or [B=K,d] depending on internal batching, but step0 is [1,d]
+
+        p0 = donor_shared[0]
         target_norms = torch.linalg.norm(p0, dim=1).cpu().float()
-        
-        p0_cpu = donor_shared[0].cpu().float()  # already [1,d] in span(Qs)
+
+        p0_cpu = donor_shared[0].cpu().float()
 
         ctrl_shared_perm = forced_choice_decode_aligned(
             model, tok, prompt,
@@ -1251,7 +1160,6 @@ def main():
         )
 
 
-        # (1) Random-subspace energy-matched patch
         Q_rand = sample_random_orthonormal_basis(d=d, k=k, seed=args.seed + 9000 + idx)
         r0 = energy_matched_random_vector_in_subspace(Q_rand, target_norms=target_norms, seed=args.seed + 9100 + idx)
         ctrl_rand = forced_choice_decode_aligned(
@@ -1263,7 +1171,7 @@ def main():
             add_special_tokens_prompt=bool(args.add_special_tokens_prompt),
         )
 
-        # (2) Time-shuffled donor (from another example)
+
         donor_from = (idx + 1) % len(flip_examples_used)
         shuffled_p0 = flip_donor_shared_step0[donor_from]
         ctrl_shuffled = forced_choice_decode_aligned(
@@ -1274,25 +1182,24 @@ def main():
             patch_hook=SubspacePatchHook(Qs, donor_by_step={0: shuffled_p0}, patch_steps={0}),
             add_special_tokens_prompt=bool(args.add_special_tokens_prompt),
         )
-        from collections import Counter
-        import math
+
 
         def _cos(u: torch.Tensor, v: torch.Tensor, eps: float = 1e-12) -> float:
-            # u,v: [1,d] CPU float32
+
             uu = float(torch.linalg.norm(u) + eps)
             vv = float(torch.linalg.norm(v) + eps)
             return float((u @ v.T).item() / (uu * vv))
 
         flip_golds = [ex.gold.strip().upper() for ex in flip_examples_used]
         print("[Flip gold distribution]", Counter(flip_golds))
-        
+
         from collections import defaultdict
         donors_by_gold = defaultdict(list)
         for g, p in zip(flip_golds, flip_donor_shared_step0):
             donors_by_gold[g].append(p)
         all_donors = list(flip_donor_shared_step0)
-        
-                # (2b) label-mismatched donor
+
+
         rng = np.random.default_rng(args.seed + 9500 + idx)
         other_labels = [lab for lab in donors_by_gold.keys() if lab != gold and len(donors_by_gold[lab]) > 0]
         if other_labels:
@@ -1311,7 +1218,7 @@ def main():
             add_special_tokens_prompt=bool(args.add_special_tokens_prompt),
         )
 
-        # donor cosine similarity stats
+
         cos_vals = []
         for i in range(len(flip_donor_shared_step0)):
             for j in range(i+1, len(flip_donor_shared_step0)):
@@ -1321,8 +1228,7 @@ def main():
             print(f"[Donor cos sim] mean={cos_vals.mean():.3f}  median={np.median(cos_vals):.3f}  p90={np.quantile(cos_vals,0.9):.3f}")
 
 
-        # (3) Patch nonshared instead of shared
-        h0 = cap_all.hidden_by_step[0]  # [1,d] CPU
+        h0 = cap_all.hidden_by_step[0]
         p0_ns = project_cpu(h0, Q_nonshared)
         ctrl_nonshared = forced_choice_decode_aligned(
             model, tok, prompt,
@@ -1332,8 +1238,8 @@ def main():
             patch_hook=SubspacePatchHook(Q_nonshared, donor_by_step={0: p0_ns}, patch_steps={0}),
             add_special_tokens_prompt=bool(args.add_special_tokens_prompt),
         )
-        
-        # (4) Random vector IN shared subspace (energy-matched)
+
+
         r0_shared = energy_matched_random_vector_in_subspace(
             Qs, target_norms=target_norms, seed=args.seed + 9200 + idx
         )
@@ -1346,7 +1252,6 @@ def main():
             add_special_tokens_prompt=bool(args.add_special_tokens_prompt),
         )
 
-
         flip_rows.append({
             "ex_id": ex.ex_id,
             "gold": gold,
@@ -1356,11 +1261,16 @@ def main():
             "patched_01": patched01.__dict__,
             "patched_full": patched_full.__dict__,
             "debug_max_abs_diff_patched01_vs_full": float(diff_01_full),
+
             "control_rand_subspace": ctrl_rand.__dict__,
             "control_time_shuffled": ctrl_shuffled.__dict__,
+            "control_shared_mismatch": ctrl_shared_mismatch.__dict__,
+            "control_shared_perm": ctrl_shared_perm.__dict__,
+            "control_shared_signflip": ctrl_shared_signflip.__dict__,
             "control_shared_randvec": ctrl_shared_randvec.__dict__,
             "control_patch_nonshared": ctrl_nonshared.__dict__,
         })
+
 
         print(
             f"[Flip {idx+1}/{len(flip_examples_used)}] ex_id={ex.ex_id} gold={gold} "
@@ -1375,12 +1285,16 @@ def main():
         "control_rand_subspace": summarize_rescue(flip_rows, "control_rand_subspace"),
         "control_shared_randvec": summarize_rescue(flip_rows, "control_shared_randvec"),
         "control_time_shuffled": summarize_rescue(flip_rows, "control_time_shuffled"),
+        "control_shared_mismatch": summarize_rescue(flip_rows, "control_shared_mismatch"),
+        "control_shared_perm": summarize_rescue(flip_rows, "control_shared_perm"),
+        "control_shared_signflip": summarize_rescue(flip_rows, "control_shared_signflip"),
         "control_patch_nonshared": summarize_rescue(flip_rows, "control_patch_nonshared"),
     }
 
+
     print("\n[Summary on flips_used]")
     for name, v in summary.items():
-        print(f"  {name:>22s}: rescued={v['rescued']}/{v['n']} ({v['rescued_pct']:.1f}%)  mean Δmargin={v['mean_dmargin']:.3f}")
+        print(f"  {name:>22s}: rescued={v['rescued']}/{v['n']} ({v['rescued_pct']:.1f}%)  mean delta_margin={v['mean_dmargin']:.3f}")
 
     out = {
         "meta": {

@@ -1,24 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-analyze_tau_sensitivity.py
-
-对 Llama 做 sweep：
-  - energy: pca_var (PCA 解释方差阈值)
-  - tau: relvar threshold
-
-输出：
-  - CSV：每个 (pca_var, tau) 的 cross_dim / shared_count / shared_ratio
-  - PNG：shared_ratio 的 heatmap（y=pca_var, x=tau）
-
-示例：
-  python analysis/analyze_tau_sensitivity.py \
-    --acts_dir results/acts/<LLAMA_TAG>/layer10_... \
-    --pca_vars 0.8,0.9,0.95,0.97,0.99 \
-    --taus 1e-4,2e-4,5e-4,1e-3,2e-3,5e-3,1e-2 \
-    --min_dim 1 --max_dim 4096 --seed 123 \
-    --out_csv results/exp3/llama_sens.csv \
-    --out_png results/exp3/llama_sens.png
-"""
+"""Sweep PCA variance and sharedness thresholds for H1 sensitivity checks."""
 
 import os
 import json
@@ -61,8 +41,8 @@ def load_acts(acts_dir: str) -> Tuple[Dict[str, np.ndarray], Dict]:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--acts_dir", type=str, required=True)
-    ap.add_argument("--pca_vars", type=str, required=True, help="逗号分隔，如 0.8,0.9,0.95")
-    ap.add_argument("--taus", type=str, required=True, help="逗号分隔，如 1e-4,5e-4,1e-3")
+    ap.add_argument("--pca_vars", type=str, required=True, help="Comma-separated values, e.g. 0.8,0.9,0.95")
+    ap.add_argument("--taus", type=str, required=True, help="Comma-separated values, e.g. 1e-4,5e-4,1e-3")
     ap.add_argument("--min_dim", type=int, default=1)
     ap.add_argument("--max_dim", type=int, default=4096)
     ap.add_argument("--seed", type=int, default=123)
@@ -87,7 +67,6 @@ def main():
 
     rows = []
 
-    # 为了效率：每个 pca_var 只算一次 PCA + relvar；tau sweep 只做阈值计数
     for pv in pca_vars:
         task_acts = {t: {layer: X_by_task[t]} for t in tasks}
         joint_subspace, cross_dim, _, _ = compute_cross_task_subspace(
@@ -124,7 +103,7 @@ def main():
             })
         print(f"[pca_var={pv}] cross_dim={k} done")
 
-    # save CSV
+
     with open(args.out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
@@ -132,7 +111,7 @@ def main():
             w.writerow(r)
     print(f"[Save] {args.out_csv}")
 
-    # heatmap: rows=pca_var, cols=tau
+
     pca_vars_sorted = sorted(set([r["pca_var"] for r in rows]))
     taus_sorted = sorted(set([r["tau"] for r in rows]))
 

@@ -1,5 +1,3 @@
-
-# -*- coding: utf-8 -*-
 """
 exp_rank_flip.py
 
@@ -9,7 +7,7 @@ Ranking-flip experiment for steering vectors under:
 and compare both rankings against a "real" held-out-template decode-only evaluation.
 
 This script is designed to plug into the same project layout as:
-  disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8.py
+  experiments/02_decode_ablation/run_loto_reasoning.py
 
 It assumes you have:
   - benchmark_dataloaders.py (or package) providing:
@@ -87,9 +85,6 @@ TQDM_OUTER = False
 TQDM_INNER = True
 
 
-# -----------------------------
-# Repro / stable seed
-# -----------------------------
 def stable_int_seed_fallback(*items: Any) -> int:
     s = "|".join(str(x) for x in items)
     h = hashlib.md5(s.encode("utf-8")).hexdigest()
@@ -144,9 +139,6 @@ def _config_compatible(old_cfg: Dict[str, Any], new_cfg: Dict[str, Any]) -> Tupl
     return (len(diffs) == 0), diffs
 
 
-# -----------------------------
-# Optional project imports
-# -----------------------------
 try:
     from decodeshare.benchmark_dataloaders import (
         Example,
@@ -202,27 +194,24 @@ def get_model_layers(model) -> List[torch.nn.Module]:
     Best-effort layer list extraction for common decoder-only HF models.
     This returns the list of transformer blocks whose forward() outputs hidden states.
     """
-    # LLaMA / Qwen / Gemma / Mistral / etc.
+
     if hasattr(model, "model") and hasattr(model.model, "layers"):
         return list(model.model.layers)
-    # GPT-NeoX
+
     if hasattr(model, "gpt_neox") and hasattr(model.gpt_neox, "layers"):
         return list(model.gpt_neox.layers)
-    # GPT-2 / GPT-J style
+
     if hasattr(model, "transformer") and hasattr(model.transformer, "h"):
         return list(model.transformer.h)
-    # Falcon
+
     if hasattr(model, "transformer") and hasattr(model.transformer, "blocks"):
         return list(model.transformer.blocks)
-    # MPT
+
     if hasattr(model, "transformer") and hasattr(model.transformer, "blocks"):
         return list(model.transformer.blocks)
     raise RuntimeError(f"Cannot locate transformer layers for model class: {type(model)}")
 
 
-# -----------------------------
-# Prompt rendering (chat template safe)
-# -----------------------------
 def render_prompt(tokenizer, user_prompt: str, *, add_generation_prompt: bool = True, system_prompt: Optional[str] = None) -> str:
     tmpl = getattr(tokenizer, "chat_template", None)
     if not tmpl:
@@ -234,14 +223,11 @@ def render_prompt(tokenizer, user_prompt: str, *, add_generation_prompt: bool = 
     try:
         return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=add_generation_prompt)
     except Exception:
-        # Some models don't support system role
+
         messages = [{"role": "user", "content": user_prompt}]
         return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=add_generation_prompt)
 
 
-# -----------------------------
-# Sampling utils
-# -----------------------------
 def top_p_filtering(logits: torch.Tensor, top_p: float) -> torch.Tensor:
     if top_p <= 0.0 or top_p >= 1.0:
         return logits
@@ -265,9 +251,6 @@ def top_k_filtering(logits: torch.Tensor, top_k: int) -> torch.Tensor:
     return torch.where(logits < min_values, torch.full_like(logits, float("-inf")), logits)
 
 
-# -----------------------------
-# Steering vector spec + loader
-# -----------------------------
 @dataclass
 class SteeringVector:
     name: str
@@ -331,9 +314,6 @@ def load_vectors_from_manifest(manifest_path: str, *, max_vectors: Optional[int]
     return vecs
 
 
-# -----------------------------
-# Generation state + hook
-# -----------------------------
 class GenerationState:
     def __init__(self, batch_size: int, device: torch.device, reasoning_threshold: int):
         self.batch_size = batch_size
@@ -423,7 +403,7 @@ class LastTokenSteeringHook:
                 return (hs2,) + output[1:]
             return hs2
 
-        # non-staged (or prefill)
+
         x = hs[:, -1, :].float()
         v = self._v(hs.device)
         hs2 = hs.clone()
@@ -473,9 +453,6 @@ def remove_hooks(handles: List[Any]) -> None:
             pass
 
 
-# -----------------------------
-# Manual KV-cached generation (same spirit as your script)
-# -----------------------------
 @torch.no_grad()
 def generate_continuations(
     model,
@@ -613,9 +590,6 @@ def load_model_and_tokenizer(model_name: str, device: str, model_dtype: str):
     return model, tok
 
 
-# -----------------------------
-# Evaluation helper
-# -----------------------------
 def _is_correct(dataset: str, pred: str, gold: str) -> int:
     if is_correct_bool is None:
         raise RuntimeError(f"benchmark_dataloaders.is_correct not available: {_IMPORT_ERR}")
@@ -637,11 +611,11 @@ def evaluate_with_steering(
     batch_size: int,
     max_prompt_len: int,
     reasoning_token_threshold: int,
-    # steering:
+
     steering: Optional[SteeringVector],
-    phase_mode: str,       # "prefill" | "decode" | "both" | "none"
+    phase_mode: str,
     staged: bool,
-    # repro:
+
     global_seed: int,
     sample_seed: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -704,9 +678,6 @@ def evaluate_with_steering(
         remove_hooks(handles)
 
 
-# -----------------------------
-# Ranking + correlation utils
-# -----------------------------
 def _rankdata(a: np.ndarray) -> np.ndarray:
     """Average ranks for ties, 1..n (like scipy.stats.rankdata(method='average'))."""
     n = a.shape[0]
@@ -809,9 +780,6 @@ def _summarize_scores(scores_by_seed: Dict[int, float]) -> Dict[str, Any]:
     }
 
 
-# -----------------------------
-# Main experiment
-# -----------------------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", type=str, default="meta-llama/Llama-2-7b-chat-hf")
@@ -822,11 +790,11 @@ def main():
     ap.add_argument("--max_vectors", type=int, default=0, help="0 means no limit.")
     ap.add_argument("--filter_regex", type=str, default="", help="Optional regex to filter vector names/concepts.")
 
-    # Evaluation tasks/datasets
+
     ap.add_argument("--tasks", type=str, default="commonsenseqa,arc_challenge,openbookqa,qasc,logiqa")
     ap.add_argument("--n_eval", type=int, default=128)
 
-    # Templates
+
     ap.add_argument("--template_randomization", type=int, default=1, choices=[0, 1])
     ap.add_argument("--shuffle_choices", type=int, default=1, choices=[0, 1])
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
@@ -847,7 +815,7 @@ def main():
         help="Optional comma-separated list of template seeds for REAL eval (overrides --template_seed_real).",
     )
 
-    # Decoding
+
     ap.add_argument("--decoding", type=str, default="greedy", choices=["greedy", "sample"])
     ap.add_argument("--max_new_tokens", type=int, default=256)
     ap.add_argument("--reasoning_tokens", type=int, default=128)
@@ -858,7 +826,7 @@ def main():
     ap.add_argument("--max_prompt_len", type=int, default=512)
     ap.add_argument("--sample_seed", type=int, default=12345)
 
-    # Protocol knobs
+
     ap.add_argument("--trad_mode", type=str, default="prefill", choices=["prefill", "both"],
                     help="Traditional evaluation mode: prefill-only or both (prefill+decode).")
     ap.add_argument(
@@ -937,7 +905,7 @@ def main():
         if not vecs:
             raise RuntimeError("No vectors after --filter_regex")
 
-    # Slice vectors (used for multi-GPU sharding).
+
     vecs_all = list(vecs)
     n_total = len(vecs_all)
     start_idx = max(int(args.start_idx), 0)
@@ -948,7 +916,7 @@ def main():
         start_idx = n_total
     vecs = vecs_all[start_idx:end_idx]
 
-    # Load model
+
     model, tokenizer = load_model_and_tokenizer(args.model, args.device, args.model_dtype)
     hidden_dim = infer_hidden_dim(model)
     if hidden_dim is None:
@@ -958,13 +926,11 @@ def main():
             if v.vec.shape[0] != hidden_dim:
                 raise ValueError(f"Vector dim mismatch for {v.name}: {v.vec.shape[0]} != {hidden_dim}")
 
-    # -------------------
-    # Load evaluation sets for ranking and real
-    # -------------------
+
     def load_eval(template_seed: int) -> Dict[str, List[Any]]:
         _sub_by, eval_by, _meta = load_selected_tasks(
             tasks=tasks,
-            n_subspace=1,  # (compat) loader may not accept 0,                 # We don't need subspace prompts here
+            n_subspace=1,
             n_eval=args.n_eval,
             seed=args.seed,
             template_seed=template_seed,
@@ -985,7 +951,7 @@ def main():
     print(f"[Data] Loading REAL eval sets (template_seeds={real_seeds}) ...")
     eval_real_by_seed: Dict[int, Dict[str, List[Any]]] = {s: load_eval(s) for s in real_seeds}
 
-    # Baseline accuracies (no steering) on both template regimes
+
     base_rank_by_seed: Dict[int, Dict[str, float]] = {}
     base_real_by_seed: Dict[int, Dict[str, float]] = {}
 
@@ -1061,9 +1027,7 @@ def main():
     for t in tasks:
         print(f"  - {t}: acc={base_real_mean[t]*100:.1f} (n_eval={args.n_eval})")
 
-    # -------------------
-    # Evaluate vectors under each protocol
-    # -------------------
+
     if existing is None:
         results: Dict[str, Any] = {
             "config": vars(args),
@@ -1076,7 +1040,7 @@ def main():
             "vectors": {},
         }
     else:
-        # Resume: keep existing per-vector results, and ensure baseline/config are present for consistency.
+
         results = existing
         results["config"] = vars(args)
         results["template_seeds_rank"] = rank_seeds
@@ -1096,8 +1060,7 @@ def main():
         "n_vectors_done": int(len(results.get("vectors", {}))) if isinstance(results.get("vectors"), dict) else 0,
     }
 
-    # Save a baseline-only checkpoint so that long runs can be safely resumed even if interrupted
-    # before finishing the first vector.
+
     _atomic_json_dump(results, out_path)
     last_save_t = time.time()
 
@@ -1138,7 +1101,7 @@ def main():
         per_task_decode = {}
         per_task_real = {}
 
-        # TRAD on ranking templates
+
         per_task_trad_by_seed: Dict[int, Dict[str, float]] = {}
         score_trad_by_seed: Dict[int, float] = {}
         for s in rank_seeds:
@@ -1157,7 +1120,7 @@ def main():
             per_task_trad_by_seed[s] = d
             score_trad_by_seed[s] = agg_task_scores(d, agg=args.agg)
 
-        # DECODE protocol on ranking templates
+
         per_task_decode_by_seed: Dict[int, Dict[str, float]] = {}
         score_decode_by_seed: Dict[int, float] = {}
         for s in rank_seeds:
@@ -1176,7 +1139,7 @@ def main():
             per_task_decode_by_seed[s] = d
             score_decode_by_seed[s] = agg_task_scores(d, agg=args.agg)
 
-        # REAL: decode-only on held-out templates
+
         per_task_real_by_seed: Dict[int, Dict[str, float]] = {}
         score_real_by_seed: Dict[int, float] = {}
         for s in real_seeds:
@@ -1233,9 +1196,9 @@ def main():
 
         print(
             f"[Scores] agg={args.agg}  "
-            f"trad={s_trad:+.4f}±{float(summ_trad['std']):.4f}  "
-            f"decode={s_dec:+.4f}±{float(summ_dec['std']):.4f}  "
-            f"real={s_real:+.4f}±{float(summ_real['std']):.4f}"
+            f"trad={s_trad:+.4f}+/-{float(summ_trad['std']):.4f}  "
+            f"decode={s_dec:+.4f}+/-{float(summ_dec['std']):.4f}  "
+            f"real={s_real:+.4f}+/-{float(summ_real['std']):.4f}"
         )
 
         n_since_save += 1
@@ -1249,7 +1212,7 @@ def main():
             n_since_save = 0
             last_save_t = now_t
 
-    # Compute correlations on *all* vectors currently saved in the results (useful for sharded/resume runs).
+
     all_vecs = results.get("vectors", {})
     if not isinstance(all_vecs, dict) or not all_vecs:
         raise RuntimeError("No vectors in results; nothing to summarize.")
@@ -1268,7 +1231,7 @@ def main():
         "spearman_decode_vs_real": rho_decode_real,
     }
 
-    # Print top-k for sanity
+
     def topk(idx_scores: np.ndarray, k: int = 10) -> List[Tuple[str, float]]:
         order = np.argsort(-idx_scores)
         out = []

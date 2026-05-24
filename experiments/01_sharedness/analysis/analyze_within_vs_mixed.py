@@ -1,25 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-analyze_within_vs_mixed.py
-
-对比：
-  - within-category tasks 的 sharedness
-  - mixed-category tasks 的 sharedness（同样 task 数量，随机抽样多次）
-
-输入：collect_activations.py 的 out_dir（里面有 meta.json 和 <task>.npy）
-
-输出：
-  - CSV（每个 group 的 within 指标 + mixed 分布统计）
-  - PNG（简单柱状图：within vs mixed(mean±std)）
-
-示例：
-  python analysis/analyze_within_vs_mixed.py \
-    --acts_dir results/acts/<MODEL_TAG>/layer10_... \
-    --pca_var 0.95 --tau 0.001 --min_dim 1 --max_dim 4096 \
-    --n_mixed 50 --seed 123 \
-    --out_csv results/exp1/llama_exp1.csv \
-    --out_png results/exp1/llama_exp1.png
-"""
+"""Compare within-category sharedness against mixed-category task samples."""
 
 import os
 import json
@@ -36,7 +15,6 @@ from decodeshare.sharedness import (
     compute_shared_indices_from_relvar,
 )
 
-# 你可以按自己论文习惯调整分类
 TASK2CAT = {
     "gsm8k": "math",
     "aqua": "math",
@@ -67,7 +45,6 @@ def load_acts(acts_dir: str) -> Tuple[Dict[str, np.ndarray], Dict]:
         X = np.load(npy)
         if X.dtype != np.float32:
             X = X.astype(np.float32)
-        # 保险起见再中心化一次（理论上 collect 时已做）
         X = X - X.mean(axis=0, keepdims=True)
         X_by_task[t] = X
     return X_by_task, meta
@@ -100,7 +77,7 @@ def sharedness_metrics(
     Q = joint_subspace.astype(np.float32, copy=False)
     relvar_by_task = {t: compute_relvar_in_basis(X_by_task[t], Q) for t in tasks}
 
-    m_shared = len(tasks)  # within/mixed 都用 all-shared
+    m_shared = len(tasks)
     shared_idx = compute_shared_indices_from_relvar(relvar_by_task, tau=float(tau), m_shared=int(m_shared))
     shared_count = int(len(shared_idx))
     k = int(cross_dim)
@@ -111,16 +88,13 @@ def sharedness_metrics(
     }
 
 def sample_mixed_tasks(all_tasks: List[str], k: int, rng: np.random.Generator) -> List[str]:
-    """
-    抽 k 个 tasks，要求至少来自 >=2 个类别（避免“混合”退化成同类）
-    """
+    """Internal helper for this experiment."""
     assert k >= 2
     for _ in range(10_000):
         pick = rng.choice(all_tasks, size=k, replace=False).tolist()
         cats = {TASK2CAT.get(t, "unknown") for t in pick}
         if len(cats) >= 2:
             return pick
-    # 如果实在抽不到（不太可能），就返回任意
     return rng.choice(all_tasks, size=k, replace=False).tolist()
 
 def main():
@@ -150,7 +124,6 @@ def main():
 
     rows = []
 
-    # 每个 within-group：计算一次；mixed：抽样多次做统计
     for gname, g_tasks0 in GROUPS.items():
         g_tasks = [t for t in g_tasks0 if t in all_tasks]
         if len(g_tasks) < 2:
@@ -162,7 +135,6 @@ def main():
             pca_var=args.pca_var, tau=args.tau, min_dim=args.min_dim, max_dim=args.max_dim
         )
 
-        # mixed baseline（同样 task 数量）
         rng = np.random.default_rng(int(args.seed) + hash(gname) % 10_000)
         mixed_metrics = []
         for _ in range(int(args.n_mixed)):
@@ -191,9 +163,9 @@ def main():
         rows.append(row)
 
         print(f"[Group={gname}] within_ratio={row['within_shared_ratio']:.4f} "
-              f"mixed_ratio_mean={row['mixed_shared_ratio_mean']:.4f}±{row['mixed_shared_ratio_std']:.4f}")
+              f"mixed_ratio_mean={row['mixed_shared_ratio_mean']:.4f}+/-{row['mixed_shared_ratio_std']:.4f}")
 
-    # write CSV
+
     fieldnames = list(rows[0].keys()) if rows else [
         "group","k_tasks","within_tasks","within_cross_dim","within_shared_count","within_shared_ratio",
         "mixed_shared_ratio_mean","mixed_shared_ratio_std","mixed_shared_count_mean","mixed_shared_count_std"
@@ -205,7 +177,7 @@ def main():
             w.writerow(r)
     print(f"[Save] {args.out_csv}")
 
-    # plot
+
     if rows:
         labels = [r["group"] for r in rows]
         x = np.arange(len(labels))
@@ -216,7 +188,7 @@ def main():
         width = 0.35
         plt.figure()
         plt.bar(x - width/2, within, width, label="within-category")
-        plt.bar(x + width/2, mmean, width, yerr=mstd, label="mixed-category (mean±std)")
+        plt.bar(x + width/2, mmean, width, yerr=mstd, label="mixed-category (mean+/-std)")
 
         plt.xticks(x, labels, rotation=0)
         plt.ylabel("shared_ratio = shared_count / cross_dim")

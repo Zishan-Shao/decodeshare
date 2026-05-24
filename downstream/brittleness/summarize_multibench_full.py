@@ -1,10 +1,7 @@
-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-summarize_multibench_v3_full.py
+summarize_multibench_full.py
 
-Summarize multibench v3 outputs into:
+Summarize multibench steering-control outputs into:
   - a rich Markdown report (includes candidate calibration details, per-template breakdown)
   - LaTeX tables (main + deltas + per-template appendix tables)
   - information-rich plots (beta curves + per-template heatmaps + candidate bars)
@@ -28,8 +25,8 @@ Expected directory layout (example):
     summary_pack/   (optional; recommended output directory)
 
 Usage:
-  python summarize_multibench_v3_full.py --root_dir results/steer_repair_multibench_v3
-  python summarize_multibench_v3_full.py --root_dir results/steer_repair_multibench_v3 --out_dir results/steer_repair_multibench_v3/summary_pack
+  python summarize_multibench_full.py --root_dir results/steer_repair_multibench
+  python summarize_multibench_full.py --root_dir results/steer_repair_multibench --out_dir results/steer_repair_multibench/summary_pack
 
 Requires: pandas, matplotlib
 
@@ -55,9 +52,6 @@ import matplotlib.pyplot as plt
 METHOD_BETA_RE = re.compile(r"^decode_beta([0-9.]+)$")
 
 
-# -----------------------------
-# Basic helpers
-# -----------------------------
 def read_json(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
@@ -104,7 +98,7 @@ def beta_to_method(beta: float) -> str:
         return "decode_est"
     if abs(beta - 1.0) < 1e-9:
         return "decode_fixed"
-    # keep a short readable representation
+
     if abs(beta - 0.25) < 1e-9:
         return "decode_beta0.25"
     if abs(beta - 0.5) < 1e-9:
@@ -135,15 +129,12 @@ def savefig(path: Path) -> None:
     try:
         plt.savefig(path, format="pdf", dpi=300)
     except Exception:
-        # fallback PNG
+
         png = path.with_suffix(".png")
         plt.savefig(png, dpi=300)
     plt.close()
 
 
-# -----------------------------
-# Loading task artifacts
-# -----------------------------
 def load_task(task_dir: Path) -> Tuple[pd.DataFrame, dict, dict]:
     """
     Load:
@@ -166,10 +157,10 @@ def load_task(task_dir: Path) -> Tuple[pd.DataFrame, dict, dict]:
     diag = read_json(diag_path)
     report = read_json(rep_path)
 
-    # Attach beta column
+
     df["beta"] = df["method"].apply(method_to_beta)
 
-    # Map method -> sharedness from diag.decode_variants (if present)
+
     sh_map: Dict[str, float] = {}
     beta_to_sh: Dict[float, float] = {}
     for dv in diag.get("decode_variants", []):
@@ -184,11 +175,11 @@ def load_task(task_dir: Path) -> Tuple[pd.DataFrame, dict, dict]:
     df["sharedness_method"] = df["method"].map(lambda m: sh_map.get(str(m), float("nan")))
     df["sharedness_decode_est"] = float(diag.get("sharedness_decode_est", float("nan")))
 
-    # candidate calibration
+
     chosen = diag.get("cand_calibration", {}).get("chosen", {})
     df["cand_calib_acc"] = float(chosen.get("acc", float("nan")))
 
-    # stash for plotting
+
     diag["_beta_to_sharedness"] = beta_to_sh
 
     return df, diag, report
@@ -240,9 +231,6 @@ def collect_all(root_dir: Path) -> Tuple[pd.DataFrame, Dict[str, dict], Dict[str
     return all_df, diags, reports, meta
 
 
-# -----------------------------
-# Per-template extraction from report.json
-# -----------------------------
 def per_template_df_from_report(report: dict) -> pd.DataFrame:
     """
     report["methods"][method]["per_template_last"] is a list of per-template dicts.
@@ -267,14 +255,11 @@ def worst_template_id(pt_df: pd.DataFrame, method: str) -> Optional[int]:
     d = pt_df[pt_df["method"] == method]
     if d.empty:
         return None
-    # worst-case by mean (min)
+
     idx = d["mean"].idxmin()
     return int(d.loc[idx, "template_id"])
 
 
-# -----------------------------
-# Method selection for main/appendix
-# -----------------------------
 def select_methods_for_main(df_task: pd.DataFrame) -> List[str]:
     """
     Select decode_est, mid-beta (~0.5), decode_fixed, rand_matched if present.
@@ -301,7 +286,7 @@ def recommend_beta(df_task: pd.DataFrame, prefer: str = "worst_then_anti", min_m
     - Among remaining, maximize worst_case_mean; tie-break by minimizing anti_worst, then min std.
     Returns recommended beta, or None.
     """
-    # only decode* methods with beta
+
     d = df_task[df_task["beta"].notna()].copy()
     if d.empty:
         return None
@@ -314,7 +299,7 @@ def recommend_beta(df_task: pd.DataFrame, prefer: str = "worst_then_anti", min_m
     if c.empty:
         c = d.copy()
 
-    # sort by robust priority
+
     c = c.sort_values(
         by=["worst_case_mean", "anti_worst", "std_across_templates", "mean_of_means"],
         ascending=[False, True, True, False],
@@ -322,9 +307,6 @@ def recommend_beta(df_task: pd.DataFrame, prefer: str = "worst_then_anti", min_m
     return float(c.iloc[0]["beta"])
 
 
-# -----------------------------
-# LaTeX tables
-# -----------------------------
 def write_latex_tables(all_df: pd.DataFrame, diags: Dict[str, dict], reports: Dict[str, dict], out_tex: Path) -> None:
     """
     Write:
@@ -334,11 +316,11 @@ def write_latex_tables(all_df: pd.DataFrame, diags: Dict[str, dict], reports: Di
       - candidate calibration top-k table per task (top 5)
     """
     lines: List[str] = []
-    lines.append("% Auto-generated by summarize_multibench_v3_full.py")
+    lines.append("% Auto-generated by summarize_multibench_full.py")
     lines.append("% Requires: \\usepackage{booktabs,multirow}")
     lines.append("")
 
-    # Main table
+
     main_rows = []
     for task in sorted(all_df["task"].unique().tolist()):
         dft = all_df[all_df["task"] == task].copy()
@@ -350,7 +332,7 @@ def write_latex_tables(all_df: pd.DataFrame, diags: Dict[str, dict], reports: Di
         main_rows.append(dft)
     main_df = pd.concat(main_rows, axis=0, ignore_index=True)
 
-    # task header info
+
     task_info = {}
     for task in sorted(main_df["task"].unique().tolist()):
         row0 = main_df[main_df["task"] == task].iloc[0]
@@ -407,12 +389,12 @@ def write_latex_tables(all_df: pd.DataFrame, diags: Dict[str, dict], reports: Di
     else:
         lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
-    lines.append("\\caption{\\textbf{Multibench robustness under KV-cache decode (v3).} We report correct-signed margin shift aggregated across prompt templates: mean $\\mu$, template std $\\sigma_{\\text{tmpl}}$, worst-case template mean (worst), and worst-case anti-steer rate (anti$_{\\text{worst}}$; lower is better). $\\mathrm{sh}(v)=\\|B^\\top v\\|/\\|v\\|$ is the overlap between the steering direction and the decode-time shared basis (estimated from neutral prompts). Partial projection uses $v_\\beta = v - \\beta BB^\\top v$.}")
-    lines.append("\\label{tab:multibench_v3}")
+    lines.append("\\caption{\\textbf{Multibench robustness under KV-cache decode.} We report correct-signed margin shift aggregated across prompt templates: mean $\\mu$, template std $\\sigma_{\\text{tmpl}}$, worst-case template mean (worst), and worst-case anti-steer rate (anti$_{\\text{worst}}$; lower is better). $\\mathrm{sh}(v)=\\|B^\\top v\\|/\\|v\\|$ is the overlap between the steering direction and the decode-time shared basis (estimated from neutral prompts). Partial projection uses $v_\\beta = v - \\beta BB^\\top v$.}")
+    lines.append("\\label{tab:multibench}")
     lines.append("\\end{table}")
     lines.append("")
 
-    # Delta table
+
     lines.append("\\begin{table}[t]")
     lines.append("\\centering")
     lines.append("\\small")
@@ -435,17 +417,17 @@ def write_latex_tables(all_df: pd.DataFrame, diags: Dict[str, dict], reports: Di
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
     lines.append("\\caption{\\textbf{Effect of fully removing the shared component of the steering vector.} $\\Delta$ compares decode\\_fixed ($\\beta{=}1$) vs decode\\_est ($\\beta{=}0$). Negative $\\Delta$anti$_{\\text{worst}}$ indicates fewer worst-case failures.}")
-    lines.append("\\label{tab:multibench_v3_delta}")
+    lines.append("\\label{tab:multibench_delta}")
     lines.append("\\end{table}")
     lines.append("")
 
-    # Per-template appendix tables (selected methods)
+
     for task in sorted(reports.keys()):
         report = reports[task]
         pt = per_template_df_from_report(report)
-        # choose methods
+
         dft = all_df[all_df["task"] == task]
-        sel = select_methods_for_main(dft)  # includes rand; we exclude rand for per-template mean/anti table by default
+        sel = select_methods_for_main(dft)
         sel_no_rand = [m for m in sel if m != "rand_matched"]
         pt = pt[pt["method"].isin(sel_no_rand)].copy()
         if pt.empty:
@@ -455,7 +437,7 @@ def write_latex_tables(all_df: pd.DataFrame, diags: Dict[str, dict], reports: Di
         lines.append("\\centering")
         lines.append("\\small")
         lines.append("\\setlength{\\tabcolsep}{5pt}")
-        # columns: template + each method mean + each method anti
+
         methods = sel_no_rand
         cols = "l" + "r" * (len(methods) * 2)
         lines.append(f"\\begin{{tabular}}{{{cols}}}")
@@ -479,11 +461,11 @@ def write_latex_tables(all_df: pd.DataFrame, diags: Dict[str, dict], reports: Di
         lines.append("\\bottomrule")
         lines.append("\\end{tabular}")
         lines.append(f"\\caption{{\\textbf{{Per-template breakdown for {latex_escape(task)}.}} Mean correct-signed margin shift and failure rate (anti) at the final $\\lambda$ for selected methods.}}")
-        lines.append(f"\\label{{tab:multibench_v3_{latex_escape(task)}_pertemplate}}")
+        lines.append(f"\\label{{tab:multibench_{latex_escape(task)}_pertemplate}}")
         lines.append("\\end{table}")
         lines.append("")
 
-    # Candidate calibration top-5 per task
+
     lines.append("\\begin{table}[t]")
     lines.append("\\centering")
     lines.append("\\small")
@@ -517,9 +499,6 @@ def write_latex_tables(all_df: pd.DataFrame, diags: Dict[str, dict], reports: Di
     out_tex.write_text("\n".join(lines), encoding="utf-8")
 
 
-# -----------------------------
-# Markdown report
-# -----------------------------
 def write_markdown_report(
     all_df: pd.DataFrame,
     diags: Dict[str, dict],
@@ -530,9 +509,9 @@ def write_markdown_report(
     figs: List[str],
 ) -> None:
     lines: List[str] = []
-    lines.append("# Multibench v3 summary (full)\n")
+    lines.append("# Multibench summary (full)\n")
 
-    # Run config
+
     run_cfg = meta.get("run_config", {})
     if run_cfg:
         lines.append("## Run config\n")
@@ -546,7 +525,7 @@ def write_markdown_report(
     lines.append("## Tasks\n")
     lines.append(", ".join(tasks) + "\n")
 
-    # Candidate calibration summary + top-3 per task
+
     lines.append("## Candidate calibration\n")
     lines.append("Each task chooses a forced-choice candidate pair by maximizing baseline forced-choice accuracy on a small balanced subset.\n")
     lines.append("| Task | Chosen | Baseline acc | sh(v) | Top-3 candidates (acc) |")
@@ -566,7 +545,7 @@ def write_markdown_report(
         lines.append(f"| {task} | {chosen_str} | {acc:.3f} | {sh:.3f} | " + ", ".join(top3) + " |")
     lines.append("")
 
-    # Main results table
+
     lines.append("## Main results (template robustness)\n")
     lines.append("Metrics are computed on correct-signed margin shift aggregated across templates at the final $\\lambda$: mean $\\mu$, template std $\\sigma_{tmpl}$, worst-case template mean, and worst-case anti-steer rate (lower is better).\n")
     lines.append("| Task | Method | beta | mu | sigma_tmpl | worst | anti_worst | worst template id |")
@@ -574,7 +553,7 @@ def write_markdown_report(
     for task in tasks:
         dft = all_df[all_df["task"] == task].copy()
         sel = select_methods_for_main(dft)
-        # per-template df for worst template id
+
         pt = per_template_df_from_report(reports[task])
         for m in sel:
             row = dft[dft["method"] == m]
@@ -592,7 +571,7 @@ def write_markdown_report(
             )
     lines.append("")
 
-    # Recommended beta
+
     lines.append("## Recommended beta (simple robust heuristic)\n")
     lines.append("We recommend a beta per task by maximizing worst-case mean shift while preserving at least 90\\% of the baseline mean shift (beta=0). This is a reporting aid (not used to tune results).\n")
     lines.append("| Task | recommended beta | recommended method |")
@@ -606,7 +585,7 @@ def write_markdown_report(
             lines.append(f"| {task} | {b:.2f} | {beta_to_method(b)} |")
     lines.append("")
 
-    # Per-template breakdown (selected methods)
+
     lines.append("## Per-template breakdown (selected methods)\n")
     for task in tasks:
         report = reports[task]
@@ -638,7 +617,7 @@ def write_markdown_report(
             lines.append("| " + " | ".join(row) + " |")
         lines.append("")
 
-    # Figures and LaTeX
+
     lines.append("## LaTeX tables\n")
     lines.append(f"Written to `{tex_filename}` (requires `booktabs` and `multirow`).\n")
     lines.append("## Figures\n")
@@ -649,9 +628,6 @@ def write_markdown_report(
     out_md.write_text("\n".join(lines), encoding="utf-8")
 
 
-# -----------------------------
-# Plotting
-# -----------------------------
 def plot_metric_vs_beta(all_df: pd.DataFrame, metric: str, out_path: Path, ylabel: str, title: str) -> None:
     plt.figure()
     for task in sorted(all_df["task"].unique().tolist()):
@@ -749,13 +725,13 @@ def plot_template_heatmap(pt_df: pd.DataFrame, methods: List[str], task: str, va
     if d.empty:
         return
 
-    # sort methods by beta (decode only)
+
     def key(m):
         b = method_to_beta(m)
         return 9.0 if b is None else b
     methods_sorted = sorted(methods, key=key)
 
-    # pivot template x method
+
     piv = d.pivot_table(index="template_id", columns="method", values=value_col, aggfunc="first")
     piv = piv.reindex(columns=methods_sorted)
 
@@ -770,12 +746,9 @@ def plot_template_heatmap(pt_df: pd.DataFrame, methods: List[str], task: str, va
     savefig(out_path)
 
 
-# -----------------------------
-# Main
-# -----------------------------
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root_dir", type=str, required=True, help="v3 output dir containing per-task subdirs")
+    ap.add_argument("--root_dir", type=str, required=True, help="Output dir containing per-task subdirs")
     ap.add_argument("--out_dir", type=str, default="", help="output dir (default: <root>/summary_pack)")
     args = ap.parse_args()
 
@@ -788,13 +761,13 @@ def main() -> None:
 
     all_df, diags, reports, meta = collect_all(root)
 
-    # Write LaTeX tables (full)
-    tex_path = out / "tables_multibench_v3_full.tex"
+
+    tex_path = out / "tables_multibench_full.tex"
     write_latex_tables(all_df, diags, reports, tex_path)
 
     figs: List[str] = []
 
-    # Beta curves (with rand baseline)
+
     p = out / "fig_beta_vs_mean_of_means.pdf"
     plot_metric_vs_beta_with_baseline(all_df, "mean_of_means", p, ylabel="mean of means", title="Effect vs beta")
     figs.append(p.name)
@@ -816,12 +789,12 @@ def main() -> None:
         plot_metric_vs_beta_with_baseline(all_df, "slope", p, ylabel="slope vs lambda", title="Steering strength vs beta")
         figs.append(p.name)
 
-    # Sharedness curves
+
     p = out / "fig_beta_vs_sharedness.pdf"
     plot_sharedness_vs_beta(diags, p)
     figs.append(p.name)
 
-    # Sharedness vs robust metrics
+
     p = out / "fig_sharedness_vs_worst.pdf"
     plot_sharedness_vs_metric(all_df, "worst_case_mean", p, ylabel="worst-case mean", title="Worst-case vs sharedness")
     figs.append(p.name)
@@ -830,16 +803,16 @@ def main() -> None:
     plot_sharedness_vs_metric(all_df, "anti_worst", p, ylabel="anti-worst", title="Worst-case failure vs sharedness")
     figs.append(p.name)
 
-    # Per-task richer plots: candidate bars + per-template heatmaps
+
     for task in sorted(diags.keys()):
-        # candidate bars
+
         p = out / f"fig_candidate_acc_{task}.pdf"
         plot_candidate_bars(diags[task], task, p, topk=8)
         figs.append(p.name)
 
-        # per-template heatmaps
+
         pt = per_template_df_from_report(reports[task])
-        # heatmaps over all decode betas (exclude rand for clarity)
+
         methods = sorted([m for m in pt["method"].unique().tolist() if m.startswith("decode_")])
         if methods:
             p = out / f"fig_heatmap_mean_{task}.pdf"
@@ -850,8 +823,8 @@ def main() -> None:
             plot_template_heatmap(pt, methods, task, value_col="anti", out_path=p, title=f"{task}: per-template anti (failure rate)")
             figs.append(p.name)
 
-    # Markdown report (full)
-    md_path = out / "summary_multibench_v3_full.md"
+
+    md_path = out / "summary_multibench_full.md"
     write_markdown_report(
         all_df=all_df,
         diags=diags,

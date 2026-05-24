@@ -1,4 +1,3 @@
-# coding: utf-8
 """
 disturb_energy_matched_sharedness_kmatch.py
 
@@ -12,7 +11,7 @@ Show BOTH:
 (2) Energy-matched effect with alpha fixed to 1 and control dimension k_c chosen to match
     removed energy on a calibration distribution:
     shared(k_shared, alpha=1) vs control_energy(k_c, alpha=1) where
-    E||P_c h||^2 ≈ E||P_s h||^2
+    E||P_c h||^2 ~ E||P_s h||^2
 
 Additionally, evaluate with forced-choice log-probability (no "Final answer" extraction) to
 separate "general generation collapse" from "decision/reasoning loss".
@@ -31,7 +30,7 @@ MODIFICATIONS (requested)
 
 (3) ENERGY MATCHING CALIBRATION DISTRIBUTION:
     Energy matching is calibrated on PROMPT-BOUNDARY DECODE-LAST states:
-      - For each prompt x1:T, collect hidden state at layer ℓ when feeding xT
+      - For each prompt x1:T, collect hidden state at layer l when feeding xT
         with past from prefill x1:T-1 (seq_len=1).
     This matches the forced-choice intervention point distribution.
 
@@ -43,11 +42,11 @@ Key fixes vs earlier buggy versions
 - Energy matching for alpha=1 uses K-match (choose k_c), not alpha>1.
 
 Requires your project utilities:
-  joint_subspace_large/disturb_cross_task_all_shared.py providing:
+  decodeshare/subspace.py providing:
     - get_model_layers
     - compute_cross_task_subspace
     - find_fully_shared_basis_improved
-    
+
 CUDA_VISIBLE_DEVICES=1 python disturb_energy_matched_sharedness_kmatch.py \
   --model meta-llama/Llama-2-7b-chat-hf --device cuda --dtype fp32 \
   --layer 10 \
@@ -57,7 +56,7 @@ CUDA_VISIBLE_DEVICES=1 python disturb_energy_matched_sharedness_kmatch.py \
   --control_basis joint_nonshared_topk \
   --seed 42 \
   --use_chat_template 0
-  
+
 """
 
 import os
@@ -77,21 +76,17 @@ from tqdm import tqdm
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# ---------------------------------------------------------------------
-# Import project utilities
-# ---------------------------------------------------------------------
+
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(THIS_DIR, ".."))
 
-from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import (  # noqa: E402
+from decodeshare.subspace import (  # noqa: E402
     get_model_layers,
     compute_cross_task_subspace,
     find_fully_shared_basis_improved,
 )
 
-# -----------------------------
-# Repro / stats
-# -----------------------------
+
 def set_global_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -169,9 +164,7 @@ def fmt_acc(acc: float, lo: float, hi: float) -> str:
 def fmt_diff(stat: Dict[str, Any]) -> str:
     return f"{stat['mean_diff']*100:+.1f} [{stat['ci_low']*100:+.1f}, {stat['ci_high']*100:+.1f}]"
 
-# -----------------------------
-# Data / prompts
-# -----------------------------
+
 @dataclass
 class Example:
     dataset: str
@@ -276,7 +269,7 @@ def build_fc_prompt_openbookqa(q_stem: str, choices: Dict[str, List[str]]) -> st
     )
 
 def build_fc_prompt_qasc(q: str, choices: Dict[str, List[str]]) -> str:
-    labels = choices["label"]  # A-H
+    labels = choices["label"]
     texts = choices["text"]
     lines = [f"{lab}) {txt}" for lab, txt in zip(labels, texts)]
     return (
@@ -337,59 +330,7 @@ def load_calib_prompts(n_prompts: int, seed: int) -> Dict[str, List[str]]:
 
     return prompts_by
 
-# def load_forced_choice_eval(n_eval: int, seed: int) -> Dict[str, List[Example]]:
-#     out: Dict[str, List[Example]] = {}
 
-#     ds = load_dataset("commonsense_qa")
-#     split = "validation" if "validation" in ds else ("test" if "test" in ds else list(ds.keys())[0])
-#     rows = sample_hf_split(ds[split], n_eval, seed + 101)
-#     exs = []
-#     for i, ex in enumerate(rows):
-#         exs.append(Example("commonsenseqa", f"csqa-{split}-{i}", build_fc_prompt_csqa(ex["question"], ex["choices"]), safe_upper(ex["answerKey"])))
-#     out["commonsenseqa"] = exs
-
-#     ds = load_dataset("ChilleD/StrategyQA")
-#     split = "test" if "test" in ds else ("validation" if "validation" in ds else list(ds.keys())[0])
-#     rows = sample_hf_split(ds[split], n_eval, seed + 111)
-
-#     def to_yesno(v: Any) -> str:
-#         if isinstance(v, bool):
-#             return "YES" if v else "NO"
-#         if isinstance(v, (int, np.integer)):
-#             return "YES" if int(v) == 1 else "NO"
-#         s = str(v).strip().lower()
-#         if s in ["true", "yes", "1"]:
-#             return "YES"
-#         if s in ["false", "no", "0"]:
-#             return "NO"
-#         if "yes" in s:
-#             return "YES"
-#         if "no" in s:
-#             return "NO"
-#         return ""
-
-#     exs = []
-#     for i, ex in enumerate(rows):
-#         exs.append(Example("strategyqa", f"strategyqa-{split}-{i}", build_fc_prompt_strategyqa(ex["question"]), to_yesno(ex["answer"])))
-#     out["strategyqa"] = exs
-
-#     ds = load_dataset("aqua_rat")
-#     split = "test" if "test" in ds else ("validation" if "validation" in ds else list(ds.keys())[0])
-#     rows = sample_hf_split(ds[split], n_eval, seed + 121)
-
-#     def get_gold(ex: dict) -> str:
-#         if "correct" in ex:
-#             return safe_upper(ex["correct"])
-#         if "answer" in ex:
-#             return safe_upper(ex["answer"])
-#         return ""
-
-#     exs = []
-#     for i, ex in enumerate(rows):
-#         exs.append(Example("aqua", f"aqua-{split}-{i}", build_fc_prompt_aqua(ex["question"], ex["options"]), get_gold(ex)))
-#     out["aqua"] = exs
-
-#     return out
 def load_forced_choice_eval(n_eval: int, seed: int, tasks: Optional[List[str]] = None) -> Dict[str, List[Example]]:
     out: Dict[str, List[Example]] = {}
     tasks = tasks or ["commonsenseqa", "strategyqa", "aqua"]
@@ -438,9 +379,9 @@ def load_forced_choice_eval(n_eval: int, seed: int, tasks: Optional[List[str]] =
                                get_gold(ex)))
         out["aqua"] = exs
 
-    # -------- NEW: ARC-Challenge (A-D) --------
+
     if "arc_challenge" in tasks:
-        ds = load_dataset("allenai/ai2_arc", "ARC-Challenge")  # question/choices/answerKey :contentReference[oaicite:5]{index=5}
+        ds = load_dataset("allenai/ai2_arc", "ARC-Challenge")
         split = "validation" if "validation" in ds else ("train" if "train" in ds else list(ds.keys())[0])
         rows = sample_hf_split(ds[split], n_eval, seed + 201)
         exs = []
@@ -450,9 +391,9 @@ def load_forced_choice_eval(n_eval: int, seed: int, tasks: Optional[List[str]] =
                                safe_upper(ex["answerKey"])))
         out["arc_challenge"] = exs
 
-    # -------- NEW: OpenBookQA (A-D) --------
+
     if "openbookqa" in tasks:
-        ds = load_dataset("allenai/openbookqa", "main")  # question_stem/choices/answerKey :contentReference[oaicite:6]{index=6}
+        ds = load_dataset("allenai/openbookqa", "main")
         split = "validation" if "validation" in ds else ("train" if "train" in ds else list(ds.keys())[0])
         rows = sample_hf_split(ds[split], n_eval, seed + 211)
         exs = []
@@ -462,9 +403,9 @@ def load_forced_choice_eval(n_eval: int, seed: int, tasks: Optional[List[str]] =
                                safe_upper(ex["answerKey"])))
         out["openbookqa"] = exs
 
-    # -------- NEW: QASC (A-H) --------
+
     if "qasc" in tasks:
-        ds = load_dataset("allenai/qasc")  # choices A-H :contentReference[oaicite:7]{index=7}
+        ds = load_dataset("allenai/qasc")
         split = "validation" if "validation" in ds else ("train" if "train" in ds else list(ds.keys())[0])
         rows = sample_hf_split(ds[split], n_eval, seed + 221)
         exs = []
@@ -474,9 +415,9 @@ def load_forced_choice_eval(n_eval: int, seed: int, tasks: Optional[List[str]] =
                                safe_upper(ex["answerKey"])))
         out["qasc"] = exs
 
-    # -------- NEW: LogiQA (A-D, correct_option=0..3) --------
+
     if "logiqa" in tasks:
-        ds = load_dataset("lucasmccabe/logiqa")  # context/query/options/correct_option :contentReference[oaicite:8]{index=8}
+        ds = load_dataset("lucasmccabe/logiqa")
         split = "validation" if "validation" in ds else ("test" if "test" in ds else list(ds.keys())[0])
         rows = sample_hf_split(ds[split], n_eval, seed + 231)
         labels = ["A", "B", "C", "D"]
@@ -489,9 +430,9 @@ def load_forced_choice_eval(n_eval: int, seed: int, tasks: Optional[List[str]] =
                                gold))
         out["logiqa"] = exs
 
-    # -------- NEW: BoolQ (YES/NO) --------
+
     if "boolq" in tasks:
-        ds = load_dataset("google/boolq")  # question/passage/answer :contentReference[oaicite:9]{index=9}
+        ds = load_dataset("google/boolq")
         split = "validation" if "validation" in ds else ("train" if "train" in ds else list(ds.keys())[0])
         rows = sample_hf_split(ds[split], n_eval, seed + 241)
         exs = []
@@ -505,9 +446,6 @@ def load_forced_choice_eval(n_eval: int, seed: int, tasks: Optional[List[str]] =
     return out
 
 
-# -----------------------------
-# Chat template helper
-# -----------------------------
 def maybe_apply_chat_template(tok: AutoTokenizer, user_prompt: str, use_chat_template: bool) -> str:
     if not use_chat_template:
         return user_prompt
@@ -519,16 +457,14 @@ def maybe_apply_chat_template(tok: AutoTokenizer, user_prompt: str, use_chat_tem
     except Exception:
         return user_prompt
 
-# -----------------------------
-# Collectors
-# -----------------------------
+
 class DecodeLastTokenActivationCollector:
     """Collect last-token hidden states ONLY during decode steps (seq_len == 1)."""
     def __init__(self, layer_indices: List[int]):
         self.layer_indices = list(layer_indices)
         self._cur_task: Optional[str] = None
         self.capture_enabled: bool = False
-        self.active_mask: Optional[torch.Tensor] = None  # [B] bool
+        self.active_mask: Optional[torch.Tensor] = None
         self.storage: Dict[str, Dict[int, List[np.ndarray]]] = {}
 
     def set_current_task(self, task: str) -> None:
@@ -593,7 +529,7 @@ class PromptBoundaryDecodeLastTokenCollector:
             hs = output[0] if isinstance(output, tuple) else output
             if not isinstance(hs, torch.Tensor) or hs.ndim != 3:
                 return output
-            # Only record seq_len==1 calls (prompt-boundary decode)
+
             if hs.shape[1] != 1:
                 return output
             x = hs[:, -1, :]
@@ -609,9 +545,7 @@ class PromptBoundaryDecodeLastTokenCollector:
             return None
         return np.concatenate(chunks, axis=0)
 
-# -----------------------------
-# Collect decode states by greedy cached decoding (for basis estimation)
-# -----------------------------
+
 @torch.no_grad()
 def collect_decode_last_token_states(
     model,
@@ -673,9 +607,7 @@ def collect_decode_last_token_states(
 
         collector.set_capture(False, None)
 
-# -----------------------------
-# MOD (3): Collect prompt-boundary decode-last states for energy calibration
-# -----------------------------
+
 @torch.no_grad()
 def collect_prompt_boundary_decode_last_states(
     model,
@@ -702,10 +634,10 @@ def collect_prompt_boundary_decode_last_states(
         batch_raw = prompts[i:i+batch_size]
         batch = [maybe_apply_chat_template(tok, p, use_chat_template) for p in batch_raw]
         inputs = tok(batch, return_tensors="pt", padding=True, truncation=True, max_length=max_prompt_len).to(device)
-        input_ids = inputs["input_ids"]            # [B, L]
-        attention_mask = inputs["attention_mask"]  # [B, L]
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
 
-        lengths = attention_mask.long().sum(dim=1)  # [B]
+        lengths = attention_mask.long().sum(dim=1)
         idx_long = torch.nonzero(lengths > 1, as_tuple=False).view(-1)
         idx_short = torch.nonzero(lengths <= 1, as_tuple=False).view(-1)
 
@@ -713,7 +645,7 @@ def collect_prompt_boundary_decode_last_states(
             ids_long = input_ids[idx_long]
             mask_long = attention_mask[idx_long]
 
-            # Prefill x1:T-1
+
             out_pre = model(
                 input_ids=ids_long[:, :-1],
                 attention_mask=mask_long[:, :-1],
@@ -721,23 +653,21 @@ def collect_prompt_boundary_decode_last_states(
             )
             past = out_pre.past_key_values
 
-            # Prompt-boundary decode step: feed xT (seq_len=1)
+
             _ = model(
                 input_ids=ids_long[:, -1:],
-                attention_mask=mask_long,  # full prompt mask
+                attention_mask=mask_long,
                 past_key_values=past,
                 use_cache=True,
             )
 
         if idx_short.numel() > 0:
-            # Rare; prompt length 1: directly run seq_len==1 (also collected)
+
             ids_short = input_ids[idx_short, -1:]
             mask_short = attention_mask[idx_short, -1:]
             _ = model(input_ids=ids_short, attention_mask=mask_short, use_cache=True)
 
-# -----------------------------
-# Basis helpers
-# -----------------------------
+
 def subsample_rows(x: np.ndarray, n_max: int, seed: int) -> np.ndarray:
     if n_max is None or n_max <= 0 or x.shape[0] <= n_max:
         return x
@@ -800,9 +730,7 @@ def projection_energy_stats(H: np.ndarray, Q: np.ndarray) -> Dict[str, float]:
         "mean_energy": float(proj_e.mean()),
     }
 
-# -----------------------------
-# Intervention hook with stats
-# -----------------------------
+
 class HookStats:
     def __init__(self, name: str):
         self.name = name
@@ -841,7 +769,7 @@ class LastTokenRemovalHook:
         if not isinstance(hs, torch.Tensor) or hs.ndim != 3:
             return output
 
-        # MOD (1): strict decode-only
+
         if hs.shape[1] != 1:
             self.stats.skipped += 1
             return output
@@ -882,40 +810,26 @@ def remove_hooks(handles: List[Any]) -> None:
             pass
 
 
-# # -----------------------------
-# # Forced-choice evaluation (decode-aligned)
-# # -----------------------------
-# def get_candidates(task: str) -> Tuple[List[str], List[str]]:
-#     if task in ["commonsenseqa", "aqua"]:
-#         labels = ["A", "B", "C", "D", "E"]
-#         texts = [f" {x}" for x in labels]
-#         return labels, texts
-#     if task == "strategyqa":
-#         labels = ["YES", "NO"]
-#         texts = [" Yes", " No"]
-#         return labels, texts
-#     raise ValueError(f"Unknown forced-choice task: {task}")
-
 def get_candidates(task: str) -> Tuple[List[str], List[str]]:
-    # 5-way
+
     if task in ["commonsenseqa", "aqua"]:
         labels = ["A", "B", "C", "D", "E"]
         texts = [f" {x}" for x in labels]
         return labels, texts
 
-    # 4-way
+
     if task in ["arc_challenge", "openbookqa", "logiqa"]:
         labels = ["A", "B", "C", "D"]
         texts = [f" {x}" for x in labels]
         return labels, texts
 
-    # 8-way (QASC)
+
     if task in ["qasc"]:
         labels = ["A", "B", "C", "D", "E", "F", "G", "H"]
         texts = [f" {x}" for x in labels]
         return labels, texts
 
-    # yes/no
+
     if task in ["strategyqa", "boolq"]:
         labels = ["YES", "NO"]
         texts = [" Yes", " No"]
@@ -1072,9 +986,7 @@ def forced_choice_eval(
     finally:
         remove_hooks(handles)
 
-# -----------------------------
-# Model loading
-# -----------------------------
+
 def load_model_and_tokenizer(model_name: str, device: str, dtype: str):
     if dtype == "fp32":
         torch_dtype = torch.float32
@@ -1098,9 +1010,7 @@ def load_model_and_tokenizer(model_name: str, device: str, dtype: str):
     model.config.use_cache = True
     return model, tok
 
-# -----------------------------
-# Main
-# -----------------------------
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", type=str, required=True)
@@ -1112,7 +1022,7 @@ def main():
     ap.add_argument("--per_task_max_states", type=int, default=20000)
     ap.add_argument("--pca_var", type=float, default=0.95)
     ap.add_argument("--tau", type=float, default=0.001)
-    ap.add_argument("--m_shared", type=str, default="all")  # "all" or integer
+    ap.add_argument("--m_shared", type=str, default="all")
     ap.add_argument("--control_basis", type=str, default="joint_nonshared_topk", choices=["joint_nonshared_topk"])
     ap.add_argument("--eval_n", type=int, default=2048)
     ap.add_argument("--max_prompt_len", type=int, default=512)
@@ -1147,9 +1057,9 @@ def main():
     print(f"[Env] model={args.model} device={args.device} dtype={args.dtype} hidden_dim={hidden_dim} layer={layer_indices}")
     print(f"[Data] n_prompts={args.n_prompts} eval_n={args.eval_n} use_chat_template={int(use_chat_template)}")
 
-    # 1) Load calibration prompts + eval examples
+
     calib_prompts_by = load_calib_prompts(args.n_prompts, seed=args.seed)
-    #eval_by = load_forced_choice_eval(args.eval_n, seed=args.seed)
+
     eval_tasks = [t.strip() for t in args.eval_tasks.split(",") if t.strip()]
     eval_by = load_forced_choice_eval(args.eval_n, seed=args.seed, tasks=eval_tasks)
     print(f"[Data] eval forced-choice tasks={list(eval_by.keys())}")
@@ -1157,7 +1067,7 @@ def main():
     print(f"[Data] calib tasks={list(calib_prompts_by.keys())}")
     print(f"[Data] eval forced-choice tasks={list(eval_by.keys())}")
 
-    # 2) Collect decode last-token states (basis estimation)
+
     layers, _ = get_model_layers(model)
     dec_col = DecodeLastTokenActivationCollector(layer_indices)
 
@@ -1205,7 +1115,7 @@ def main():
     print(f"[Fair] balanced decode states per task = {n_bal}")
     task_acts_bal = {t: {li0: x} for t, x in task_to_x_bal.items()}
 
-    # 3) Cross-task subspace + shared indices
+
     joint_subspace, cross_dim, contributions, full_pca_info = compute_cross_task_subspace(
         task_acts_bal,
         variance_threshold=args.pca_var,
@@ -1255,7 +1165,7 @@ def main():
 
     Q_ctrl_struct = Q_pool[:, :k_shared]
 
-    # 4) MOD (3): Collect PROMPT-BOUNDARY DECODE-last states for energy matching calibration
+
     pb_col = PromptBoundaryDecodeLastTokenCollector(layer_indices)
     layers, _ = get_model_layers(model)
     handles = []
@@ -1289,14 +1199,13 @@ def main():
     H_calib = np.concatenate([pb_task_to_x_bal[t] for t in tasks], axis=0)
     print(f"[Fair] balanced prompt-boundary decode-last states per task = {n_pb_bal} pooled={H_calib.shape[0]} x {H_calib.shape[1]}")
 
-    # 5) K-match (alpha=1) to match removed energy on H_calib
+
     stats_shared = projection_energy_stats(H_calib, Q_shared)
     target_removed_mean = stats_shared["mean_energy"]
-    
-    # (NEW) Control-1: alpha-scaling mean-match (decode-aligned on H_calib)
-    # Match mean removed energy at fixed dimension k = k_shared using alpha_C (may be > 1).
+
+
     alpha_shared = float(args.alpha_shared_base)
-    stats_ctrl_struct = projection_energy_stats(H_calib, Q_ctrl_struct)  # ensure available before alpha-match
+    stats_ctrl_struct = projection_energy_stats(H_calib, Q_ctrl_struct)
     Es = float(stats_shared["mean_energy"])
     Ec_struct = float(stats_ctrl_struct["mean_energy"])
     alpha_ctrl = alpha_shared * math.sqrt(Es / max(Ec_struct, 1e-12))
@@ -1317,8 +1226,7 @@ def main():
     Q_rand_struct = make_random_orthonormal(hidden_dim, k_shared, seed=args.seed + 1234, orthogonal_to=Q_shared)
     Q_rand_energy = make_random_orthonormal(hidden_dim, k_c, seed=args.seed + 5678, orthogonal_to=Q_shared)
 
-    # 6) Sanity checks on H_calib
-    # stats_ctrl_struct = projection_energy_stats(H_calib, Q_ctrl_struct)
+
     stats_ctrl_energy = projection_energy_stats(H_calib, Q_ctrl_energy)
 
     print("\n" + "=" * 80)
@@ -1333,7 +1241,7 @@ def main():
     print(f"    shared      mean={stats_shared['mean_ratio']:.4f} (p50={stats_shared['p50_ratio']:.4f}, p95={stats_shared['p95_ratio']:.4f})  mean||P h||^2={stats_shared['mean_energy']:.4e}")
     print(f"    ctrl_struct mean={stats_ctrl_struct['mean_ratio']:.4f} (p50={stats_ctrl_struct['p50_ratio']:.4f}, p95={stats_ctrl_struct['p95_ratio']:.4f})  mean||P h||^2={stats_ctrl_struct['mean_energy']:.4e}")
     print(f"    ctrl_energy mean={stats_ctrl_energy['mean_ratio']:.4f} (p50={stats_ctrl_energy['p50_ratio']:.4f}, p95={stats_ctrl_energy['p95_ratio']:.4f})  mean||P h||^2={stats_ctrl_energy['mean_energy']:.4e}")
-    
+
     print("  (Control-1) Alpha-scaling mean match at fixed k=k_shared (decode-aligned, may allow alpha>1):")
     print(f"    alpha_shared={alpha_shared:.4f}  removed_mean(shared)=alpha^2*E||P_s h||^2={removed_shared_mean:.4e}")
     print(f"    alpha_ctrl  ={alpha_ctrl:.4f}  removed_mean(ctrl)  =alpha^2*E||P_c h||^2={removed_ctrl_alpha_mean:.4e}")
@@ -1345,7 +1253,7 @@ def main():
     print(f"    ctrl_energy    removed_mean={stats_ctrl_energy['mean_energy']:.4e}  (ratio={stats_ctrl_energy['mean_energy']/max(target_removed_mean,1e-12):.4f})")
     print("=" * 80)
 
-    # 7) Forced-choice evaluation with paired stats
+
     conditions: List[Tuple[str, Optional[np.ndarray], float]] = [
         ("baseline", None, 0.0),
         ("shared_alpha", Q_shared, alpha_shared),
@@ -1383,9 +1291,9 @@ def main():
             "k_c": int(k_c),
             "alpha_shared_base": float(alpha_shared),
             "alpha_ctrl_alpha_match": float(alpha_ctrl),
-            "energy_match_space": "prompt_boundary_decode_last",  # MOD (3)
-            "forced_choice_decode_aligned": True,  # MOD (2)
-            "hook_decode_only": True,              # MOD (1)
+            "energy_match_space": "prompt_boundary_decode_last",
+            "forced_choice_decode_aligned": True,
+            "hook_decode_only": True,
         },
         "sanity": {
             "overlap_shared_ctrl_struct": max_overlap(Q_shared, Q_ctrl_struct),
@@ -1439,7 +1347,7 @@ def main():
             )
             block["runs"][cname] = run
             print(f"  {cname:11s} acc={fmt_acc(run['accuracy'], run['ci_low'], run['ci_high'])} alpha={run.get('alpha', float('nan')):.4g} hook={run.get('hookstats', {})}")
-            #print(f"  {cname:11s} acc={fmt_acc(run['accuracy'], run['ci_low'], run['ci_high'])} hook={run.get('hookstats', {})}")
+
 
         base = np.array(block["runs"]["baseline"]["correct"], dtype=np.float32)
         def arr(name: str) -> np.ndarray:
@@ -1459,7 +1367,7 @@ def main():
 
         print("  [Paired]")
         for k, st in block["paired"].items():
-            print(f"    {k:22s} Δ={fmt_diff(st)} p={st['p_value']:.4g}")
+            print(f"    {k:22s} Delta={fmt_diff(st)} p={st['p_value']:.4g}")
 
         results["by_task"][task] = block
 
@@ -1467,18 +1375,18 @@ def main():
         for cname in ["baseline", "shared_alpha", "ctrl_alpha"]:
             r = block["runs"][cname]
             summary_lines.append(f"  {cname:11s} {fmt_acc(r['accuracy'], r['ci_low'], r['ci_high'])}  (alpha={r.get('alpha', float('nan')):.4g})")
-         
+
         for cname in ["baseline", "shared_full", "ctrl_struct", "ctrl_energy"]:
             r = block["runs"][cname]
             summary_lines.append(f"  {cname:11s} {fmt_acc(r['accuracy'], r['ci_low'], r['ci_high'])}")
-        summary_lines.append(f"  Δ(shared_alpha-base) {fmt_diff(block['paired']['shared_alpha_vs_base'])} p={block['paired']['shared_alpha_vs_base']['p_value']:.4g}")
-        summary_lines.append(f"  Δ(ctrl_alpha-base)   {fmt_diff(block['paired']['ctrl_alpha_vs_base'])} p={block['paired']['ctrl_alpha_vs_base']['p_value']:.4g}")
-        summary_lines.append(f"  Δ(shared_alpha-ctrl_alpha) {fmt_diff(block['paired']['shared_alpha_vs_ctrl_alpha'])} p={block['paired']['shared_alpha_vs_ctrl_alpha']['p_value']:.4g}")
-        summary_lines.append(f"  Δ(shared-base)       {fmt_diff(block['paired']['shared_vs_base'])} p={block['paired']['shared_vs_base']['p_value']:.4g}")
-        summary_lines.append(f"  Δ(ctrl_struct-base)  {fmt_diff(block['paired']['ctrl_struct_vs_base'])} p={block['paired']['ctrl_struct_vs_base']['p_value']:.4g}")
-        summary_lines.append(f"  Δ(ctrl_energy-base)  {fmt_diff(block['paired']['ctrl_energy_vs_base'])} p={block['paired']['ctrl_energy_vs_base']['p_value']:.4g}")
-        summary_lines.append(f"  Δ(shared-ctrl_struct){fmt_diff(block['paired']['shared_vs_ctrl_struct'])} p={block['paired']['shared_vs_ctrl_struct']['p_value']:.4g}")
-        summary_lines.append(f"  Δ(shared-ctrl_energy){fmt_diff(block['paired']['shared_vs_ctrl_energy'])} p={block['paired']['shared_vs_ctrl_energy']['p_value']:.4g}")
+        summary_lines.append(f"  Delta(shared_alpha-base) {fmt_diff(block['paired']['shared_alpha_vs_base'])} p={block['paired']['shared_alpha_vs_base']['p_value']:.4g}")
+        summary_lines.append(f"  Delta(ctrl_alpha-base)   {fmt_diff(block['paired']['ctrl_alpha_vs_base'])} p={block['paired']['ctrl_alpha_vs_base']['p_value']:.4g}")
+        summary_lines.append(f"  Delta(shared_alpha-ctrl_alpha) {fmt_diff(block['paired']['shared_alpha_vs_ctrl_alpha'])} p={block['paired']['shared_alpha_vs_ctrl_alpha']['p_value']:.4g}")
+        summary_lines.append(f"  Delta(shared-base)       {fmt_diff(block['paired']['shared_vs_base'])} p={block['paired']['shared_vs_base']['p_value']:.4g}")
+        summary_lines.append(f"  Delta(ctrl_struct-base)  {fmt_diff(block['paired']['ctrl_struct_vs_base'])} p={block['paired']['ctrl_struct_vs_base']['p_value']:.4g}")
+        summary_lines.append(f"  Delta(ctrl_energy-base)  {fmt_diff(block['paired']['ctrl_energy_vs_base'])} p={block['paired']['ctrl_energy_vs_base']['p_value']:.4g}")
+        summary_lines.append(f"  Delta(shared-ctrl_struct){fmt_diff(block['paired']['shared_vs_ctrl_struct'])} p={block['paired']['shared_vs_ctrl_struct']['p_value']:.4g}")
+        summary_lines.append(f"  Delta(shared-ctrl_energy){fmt_diff(block['paired']['shared_vs_ctrl_energy'])} p={block['paired']['shared_vs_ctrl_energy']['p_value']:.4g}")
         summary_lines.append("")
 
     with open(args.out_json, "w", encoding="utf-8") as f:

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Activation collection helpers used by DecodeShare experiments."""
 
 from decodeshare.sharedness import (

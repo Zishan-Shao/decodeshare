@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 """
-exp_unique_vs_IH_TC.py
+exp_unique_vs_ih_tc.py
 
 Goal: argue your shared-subspace intervention is *not* reducible to
 (1) Induction Heads (IH) and (2) Circuit-style sparse head subsets (TC).
@@ -27,12 +26,11 @@ Metrics:
   - Forced-choice accuracy (cache-advanced prompt-boundary alignment; decision-level evaluation).
   - Optional overlap analysis between Q_shared and head-write subspaces (o_proj column subspace).
 
-This script imports and reuses utilities from your existing pipeline file:
-  - disturb_CoT_shared_acc_lasttoken_*_loto8.py
-and benchmark dataloaders.
+This script imports and reuses utilities from `exp_patchback_loto.py` and
+benchmark dataloaders.
 
 Run (example):
-    CUDA_VISIBLE_DEVICES=1 python exp_unique_vs_IH_TC.py \
+    CUDA_VISIBLE_DEVICES=1 python exp_unique_vs_ih_tc.py \
         --model meta-llama/Llama-2-7b-chat-hf --device cuda --model_dtype fp32 \
         --tasks gsm8k,commonsenseqa,strategyqa,openbookqa,qasc,boolq,piqa \
         --layer 10 --n_subspace 128 --n_eval 256 \
@@ -44,7 +42,7 @@ Run (example):
         --balance_tasks 1 --task_center 1 \
         --tc_score margin
 
-    
+
 """
 
 from __future__ import annotations
@@ -60,43 +58,22 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-# -----------------------------------------------------------------------------
-# Import your existing pipeline bits
-# -----------------------------------------------------------------------------
-# Prefer the "energy_balanced" filename if present; fallback to your fp32 sanity script.
-try:
-    from disturb_CoT_shared_acc_lasttoken_energy_balanced_loto8 import (  # type: ignore
-        HookStats,
-        GenerationState,
-        load_model_and_tokenizer,
-        register_hooks_for_condition,
-        remove_hooks,
-        generate_continuations,
-        bootstrap_ci_mean,
-        summarize_paired,
-        orthonormalize_np,
-        DecodeLastTokenActivationCollector,
-        collect_decode_last_token_states,
-    )
-except Exception:
-    from disturb_CoT_shared_acc_lasttoken_fp32_sanity_energy_balance_loto8 import (  # type: ignore
-        HookStats,
-        GenerationState,
-        load_model_and_tokenizer,
-        register_hooks_for_condition,
-        remove_hooks,
-        generate_continuations,
-        bootstrap_ci_mean,
-        summarize_paired,
-        orthonormalize_np,
-        DecodeLastTokenActivationCollector,
-        collect_decode_last_token_states,
-    )
 
-# -----------------------------------------------------------------------------
-# Import task loading from benchmark dataloaders
-# -----------------------------------------------------------------------------
-# Keep your original import, but add a safe fallback to your uploaded module name.
+from exp_patchback_loto import (  # type: ignore
+    HookStats,
+    GenerationState,
+    load_model_and_tokenizer,
+    register_hooks_for_condition,
+    remove_hooks,
+    generate_continuations,
+    bootstrap_ci_mean,
+    summarize_paired,
+    orthonormalize_np,
+    DecodeLastTokenActivationCollector,
+    collect_decode_last_token_states,
+)
+
+
 try:
     from decodeshare.benchmark_dataloaders import (  # type: ignore
         Example,
@@ -114,18 +91,14 @@ except Exception:
         stable_int_seed,
     )
 
-# -----------------------------------------------------------------------------
-# Import cross-task PCA + sharedness scorer (same as your main pipeline)
-# -----------------------------------------------------------------------------
-from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import (  # type: ignore
+
+from decodeshare.subspace import (  # type: ignore
     get_model_layers,
     compute_cross_task_subspace,
     find_fully_shared_basis_improved,
 )
 
-# -----------------------------
-# Helpers: numeric utilities
-# -----------------------------
+
 def _subsample_rows_np(x: np.ndarray, n: int, seed: int) -> np.ndarray:
     """Deterministic subsample without replacement to exactly n rows."""
     if x is None:
@@ -156,7 +129,7 @@ def _effective_tau(base_tau: float, cross_dim: int, *, mode: str, ref_dim: int) 
       - fixed: use base_tau
       - auto: tau_eff = base_tau * (ref_dim / cross_dim)
 
-    Motivation: tau=1e-3 is conservative when k≈2500–3000; for smaller k we should
+    Motivation: tau=1e-3 is conservative when k~2500-3000; for smaller k we should
     raise tau to avoid "everything is shared" artifacts.
     """
     base_tau = float(base_tau)
@@ -166,7 +139,7 @@ def _effective_tau(base_tau: float, cross_dim: int, *, mode: str, ref_dim: int) 
         tau_eff = base_tau
     else:
         tau_eff = base_tau * (float(ref_dim) / float(cross_dim))
-    # clamp to sane range
+
     tau_eff = float(min(max(tau_eff, 1e-6), 0.2))
     return tau_eff
 
@@ -177,7 +150,7 @@ def _min_tasks_from_m_shared(m_shared: str, tasks: List[str]) -> int:
         return len(tasks)
     if ms == "half":
         return max(2, int(math.ceil(len(tasks) / 2)))
-    # try integer
+
     try:
         v = int(ms)
         return max(2, min(v, len(tasks)))
@@ -250,7 +223,7 @@ def collect_task_activations_decode_only(
             acts = collector.get_task_activations(task_name, layer_idx)
             if acts is None or acts.shape[0] == 0:
                 continue
-            # cap per-task states
+
             ss = stable_int_seed(global_seed, task_name, layer_idx, "cap_states")
             acts = _subsample_rows_np(acts, int(per_task_max_states), seed=ss)
             layer_dict[int(layer_idx)] = acts
@@ -280,7 +253,7 @@ def balance_and_task_center(
     out: Dict[str, Dict[int, np.ndarray]] = {t: {} for t in tasks_order if t in task_activations}
 
     for layer_idx in layer_indices:
-        # gather available tasks for this layer
+
         avail = []
         for t in tasks_order:
             if t in task_activations and layer_idx in task_activations[t]:
@@ -310,16 +283,13 @@ def balance_and_task_center(
 
             out[t][layer_idx] = a2
 
-    # prune empties
+
     out = {t: ld for t, ld in out.items() if len(ld) > 0}
     if not out:
         raise RuntimeError("[A3] After balance/center, no activations remain.")
     return out
 
 
-# -----------------------------
-# Candidate sets for forced-choice
-# -----------------------------
 CHOICE_LABELS: Dict[str, List[str]] = {
     "commonsenseqa": list("ABCDE"),
     "aqua": list("ABCDE"),
@@ -328,7 +298,7 @@ CHOICE_LABELS: Dict[str, List[str]] = {
     "qasc": list("ABCDEFGH"),
     "logiqa": list("ABCD"),
     "strategyqa": ["YES", "NO"],
-    # gsm8k is not multiple-choice here; we skip forced-choice by default
+
 }
 
 
@@ -345,9 +315,6 @@ def candidate_texts_for_task(task: str) -> Tuple[List[str], List[str]]:
     return labels, texts
 
 
-# -----------------------------
-# Head ablation hooks (pre-hook on attention o_proj)
-# -----------------------------
 def _get_attn_o_proj(block: torch.nn.Module) -> torch.nn.Module:
     """
     Find the attention output projection module in a transformer block.
@@ -482,7 +449,7 @@ class HeadAblationPreHook:
 def register_head_ablation_hooks(
     model: torch.nn.Module,
     head_map: Dict[int, List[int]],
-    condition: str,  # "baseline" | "full" | "staged"
+    condition: str,
     reasoning_token_threshold: int,
 ) -> Tuple[List[Any], Optional[Any], List[HookStats]]:
     """
@@ -528,9 +495,6 @@ def register_head_ablation_hooks(
     return handles, (setter if condition == "staged" else None), stats_list
 
 
-# -----------------------------
-# Forced-choice: cache-advanced with prompt-boundary alignment
-# -----------------------------
 def ensure_cache_for_model(past_key_values):
     if past_key_values is None:
         return None
@@ -611,7 +575,7 @@ def score_candidates_cache_advanced(
         max_length=max_prompt_len,
     ).to(device)
 
-    input_ids: torch.Tensor = enc["input_ids"]   # [1, T]
+    input_ids: torch.Tensor = enc["input_ids"]
     attn_mask: torch.Tensor = enc.get("attention_mask", None)
     if attn_mask is None:
         attn_mask = torch.ones_like(input_ids)
@@ -633,7 +597,7 @@ def score_candidates_cache_advanced(
 
             last_id = input_ids[:, -1:]
             out1 = model(input_ids=last_id, attention_mask=attn_mask, past_key_values=past, use_cache=True)
-            logits = out1.logits[:, -1, :]  # [1, V]
+            logits = out1.logits[:, -1, :]
             past = ensure_cache_for_model(out1.past_key_values)
             cur_attn = attn_mask
         else:
@@ -660,7 +624,7 @@ def score_candidates_cache_advanced(
 
         return logits, past, cur_attn
 
-    # Fast path
+
     if all_single_token:
         if state_setter is not None:
             state0 = GenerationState(1, input_ids.device, reasoning_token_threshold)
@@ -669,7 +633,7 @@ def score_candidates_cache_advanced(
             state0 = None
         try:
             logits, _past, _cur_attn = _compute_base_after_warmup(state0)
-            logp = torch.log_softmax(logits.float(), dim=-1)[0]  # [V]
+            logp = torch.log_softmax(logits.float(), dim=-1)[0]
             scores: List[float] = []
             for ids in cand_ids_list:
                 if len(ids) != 1:
@@ -681,7 +645,7 @@ def score_candidates_cache_advanced(
             if state_setter is not None:
                 state_setter(None)
 
-    # Slow path
+
     scores: List[float] = []
     for cand_ids in cand_ids_list:
         if len(cand_ids) == 0:
@@ -752,9 +716,6 @@ def forced_choice_predict(
     return labels[best], scores
 
 
-# -----------------------------
-# Induction head identification
-# -----------------------------
 @torch.no_grad()
 def induction_scores_via_attn(
     model: torch.nn.Module,
@@ -788,7 +749,7 @@ def induction_scores_via_attn(
             device=device,
             dtype=torch.long,
         )
-        inp = torch.cat([base, base], dim=1)  # [B, seq_len]
+        inp = torch.cat([base, base], dim=1)
         attn_mask = torch.ones_like(inp)
 
         out = model(
@@ -810,8 +771,8 @@ def induction_scores_via_attn(
         diag_j = diag_i - half
 
         for l in range(L):
-            a = attns[l]  # [B,H,T,T]
-            s = a[:, :, diag_i, diag_j].mean(dim=(0, 2))  # [H]
+            a = attns[l]
+            s = a[:, :, diag_i, diag_j].mean(dim=(0, 2))
             all_scores[l] += s.detach().double().cpu()
         count += 1
 
@@ -857,9 +818,9 @@ def induction_scores_via_ablation(
 
     for _ in range(int(n_batches)):
         base_np = rng.choice(pool, size=(int(batch_size), half), replace=True)
-        base = torch.tensor(base_np, device=device, dtype=torch.long)  # [B, half]
+        base = torch.tensor(base_np, device=device, dtype=torch.long)
 
-        prompt = torch.cat([base, base[:, :-1], base[:, :1]], dim=1)  # [B, seq_len]
+        prompt = torch.cat([base, base[:, :-1], base[:, :1]], dim=1)
         prefix = prompt[:, :-1]
         last = prompt[:, -1:]
         target = base[:, 1]
@@ -923,9 +884,6 @@ def pick_top_heads_from_scores(scores: np.ndarray, topk: int, layer_scope: Optio
     return head_map
 
 
-# -----------------------------
-# TC baseline: task-specific head selection at a layer
-# -----------------------------
 def _gold_margin_from_scores(dataset: str, scores: List[float], gold: str) -> Optional[float]:
     """
     Compute margin = logp(gold) - logsumexp(logp(others)).
@@ -936,12 +894,12 @@ def _gold_margin_from_scores(dataset: str, scores: List[float], gold: str) -> Op
     labels, _ = candidate_texts_for_task(dataset)
 
     g = str(gold).strip()
-    # normalize common cases
+
     g_up = g.upper()
     if g_up in labels:
         gold_label = g_up
     else:
-        # try raw
+
         gold_label = g
     if gold_label not in labels:
         return None
@@ -961,12 +919,12 @@ def select_task_specific_heads(
     device: str,
     layer_idx: int,
     topk: int,
-    condition: str,  # "full" or "staged"
+    condition: str,
     reasoning_token_threshold: int,
     max_prompt_len: int,
     warmup_text: str = "",
     n_search: int = 64,
-    score_mode: str = "margin",  # "margin" or "acc"
+    score_mode: str = "margin",
 ) -> Dict[int, List[int]]:
     """
     Circuits-like baseline:
@@ -994,7 +952,7 @@ def select_task_specific_heads(
         print(f"[TC-search] dataset {dataset_name} not in CHOICE_LABELS; returning empty head_map.")
         return {}
 
-    # Baseline stats
+
     base_correct = []
     base_margins = []
 
@@ -1024,7 +982,7 @@ def select_task_specific_heads(
 
     drops = np.zeros((n_heads,), dtype=np.float64)
 
-    # Single-head ablations
+
     for h in range(n_heads):
         head_map = {int(layer_idx): [int(h)]}
         handles, state_setter, _stats = register_head_ablation_hooks(
@@ -1055,7 +1013,7 @@ def select_task_specific_heads(
                 drops[h] = base_acc - acc_h
             else:
                 mean_m_h = float(np.mean(margins_h)) if margins_h else float("nan")
-                # If margins are unavailable, fall back to acc drop rather than produce NaN
+
                 if not math.isfinite(base_margin) or not math.isfinite(mean_m_h):
                     drops[h] = base_acc - acc_h
                 else:
@@ -1068,9 +1026,6 @@ def select_task_specific_heads(
     return {int(layer_idx): [int(i) for i in idx]}
 
 
-# -----------------------------
-# Overlap analysis (Q_shared vs head-write subspace)
-# -----------------------------
 def head_write_subspace(
     model: torch.nn.Module,
     *,
@@ -1082,7 +1037,7 @@ def head_write_subspace(
     o_proj = _get_attn_o_proj(block)
     n_heads, head_dim = _get_num_heads_and_head_dim(model, block=block)
 
-    W = o_proj.weight.detach().float().cpu().numpy()  # [out, in]
+    W = o_proj.weight.detach().float().cpu().numpy()
     D_out, D_in = W.shape
     assert D_out == D_in, "Expected square o_proj weight"
     assert D_in == n_heads * head_dim, f"Expected {n_heads*head_dim} in_features, got {D_in}"
@@ -1110,9 +1065,6 @@ def subspace_overlap_stats(Qa: np.ndarray, Qb: np.ndarray) -> Dict[str, float]:
     return {"mean_cos2": mean_cos2, "max_abs": max_abs}
 
 
-# -----------------------------
-# Generic evaluation helpers
-# -----------------------------
 def fmt_ci(acc: float, lo: float, hi: float) -> str:
     if any(map(lambda x: x is None or (isinstance(x, float) and math.isnan(x)), [acc, lo, hi])):
         return "nan"
@@ -1234,9 +1186,6 @@ def eval_forced_choice(
         remove_hooks(handles)
 
 
-# -----------------------------
-# Main experiment driver
-# -----------------------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", type=str, required=True)
@@ -1269,22 +1218,22 @@ def main():
     ap.add_argument("--add_answer_prefix", type=int, default=1)
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
 
-    # Shared-subspace params
+
     ap.add_argument("--pca_var", type=float, default=0.95)
     ap.add_argument("--min_dim", type=int, default=16)
 
-    # SOLID change: default max_dim should not truncate PCA below pca_var
+
     ap.add_argument("--max_dim", type=int, default=4096,
                     help="Max PCA rank cap. Set <=0 to auto(use hidden_size). Default 4096 to avoid truncation.")
 
     ap.add_argument("--tau", type=float, default=1e-3)
-    ap.add_argument("--m_shared", type=str, default="all")  # or "half" etc
+    ap.add_argument("--m_shared", type=str, default="all")
 
-    # SOLID change: tau scaling for small cross_dim
+
     ap.add_argument("--tau_mode", type=str, default="auto", choices=["fixed", "auto"])
     ap.add_argument("--tau_ref_dim", type=int, default=3000)
 
-    # SOLID change: enforce A3 balance + task-centering by default
+
     ap.add_argument("--balance_tasks", type=int, default=1,
                     help="If 1, balance per-task states to n_min per layer before pooled PCA.")
     ap.add_argument("--task_center", type=int, default=1,
@@ -1292,7 +1241,7 @@ def main():
 
     ap.add_argument("--alpha_remove", type=float, default=1.0)
 
-    # Baselines
+
     ap.add_argument("--ih_topk", type=int, default=4)
     ap.add_argument("--ih_scope", type=str, default="layer", choices=["layer", "all"])
     ap.add_argument("--ih_method", type=str, default="attn", choices=["attn", "ablation"])
@@ -1301,15 +1250,15 @@ def main():
     ap.add_argument("--tc_topk", type=int, default=4)
     ap.add_argument("--tc_search_n", type=int, default=256)
 
-    # SOLID change: TC search score mode
+
     ap.add_argument("--tc_score", type=str, default="margin", choices=["margin", "acc"])
 
-    # Forced-choice options
+
     ap.add_argument("--forced_choice_warmup", type=str, default="")
     ap.add_argument("--batch_size", type=int, default=8)
     ap.add_argument("--max_prompt_len", type=int, default=1024)
 
-    # Stats
+
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--bootstrap_iters", type=int, default=1000)
     ap.add_argument("--ci_alpha", type=float, default=0.05)
@@ -1326,10 +1275,10 @@ def main():
     tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
     layer_indices = [int(args.layer)]
 
-    # 1) Load model/tokenizer
+
     model, tok = load_model_and_tokenizer(args.model, device=args.device, model_dtype=args.model_dtype)
 
-    # infer hidden size for max_dim sanity
+
     hidden = getattr(model.config, "hidden_size", None) or getattr(model.config, "n_embd", None)
     hidden = int(hidden) if hidden is not None else 4096
     max_dim_eff = int(args.max_dim)
@@ -1337,7 +1286,7 @@ def main():
         max_dim_eff = hidden
     max_dim_eff = min(max_dim_eff, hidden)
 
-    # 2) Load data
+
     sub_by, eval_by, meta_by = load_selected_tasks(
         tasks=tasks,
         n_subspace=args.n_subspace,
@@ -1350,7 +1299,7 @@ def main():
         answer_prefix=args.answer_prefix,
     )
 
-    # 3) IH baseline
+
     ih_head_map: Dict[int, List[int]] = {}
     if args.ih_topk > 0:
         if args.ih_method == "attn":
@@ -1429,7 +1378,7 @@ def main():
             return_full_pca=True,
         )
 
-        # warn if likely truncated
+
         if int(cross_dim) >= int(max_dim_eff) and int(max_dim_eff) < int(hidden):
             print(f"[Warn] cross_dim hit max_dim cap (cross_dim={cross_dim}, max_dim={max_dim_eff}). "
                   f"pca_var={args.pca_var} may be truncated; consider increasing --max_dim.")
@@ -1473,7 +1422,7 @@ def main():
                 return t
         return None
 
-    # 4) folds
+
     folds: List[Tuple[str, List[str], List[str]]] = []
     if args.mode == "all":
         folds.append(("all", tasks, tasks))
@@ -1495,10 +1444,10 @@ def main():
         print(f"[Fold] {fold_name}  train={train_tasks}  eval={eval_tasks}")
         print("=" * 100)
 
-        # 4.1) shared basis
+
         Q_shared = compute_Q_shared_for_tasks(train_tasks)
 
-        # 4.2) TC baseline head selection
+
         tc_head_map: Dict[int, List[int]] = {}
         if args.tc_topk > 0:
             anchor = choose_tc_anchor(train_tasks)
@@ -1522,7 +1471,7 @@ def main():
                 )
         print(f"[TC] selected head_map={tc_head_map}")
 
-        # 4.3) Overlap analysis
+
         try:
             ih_heads_layer = ih_head_map.get(args.layer, [])
             tc_heads_layer = tc_head_map.get(args.layer, [])
@@ -1631,7 +1580,7 @@ def main():
                         task_block["forced_choice"][f"{cond}"] = run_fc
                         print(f"[FC ] {cond}: acc={fmt_ci(run_fc['accuracy'], run_fc['ci_low'], run_fc['ci_high'])} n_used={run_fc['n_used']}")
 
-            # Paired tests on forced-choice
+
             if task in CHOICE_LABELS and "baseline" in task_block["forced_choice"] and "shared_full" in task_block["forced_choice"]:
                 base = np.array(task_block["forced_choice"]["baseline"]["correct"], dtype=np.float32)
                 shared = np.array(task_block["forced_choice"]["shared_full"]["correct"], dtype=np.float32)

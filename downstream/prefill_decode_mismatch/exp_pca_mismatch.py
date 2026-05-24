@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 exp_pca_mismatch.py
 
@@ -42,9 +41,6 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# -----------------------------
-# Repro / stable seed
-# -----------------------------
 def stable_int_seed_fallback(*items: Any) -> int:
     s = "|".join(str(x) for x in items)
     h = hashlib.md5(s.encode("utf-8")).hexdigest()
@@ -107,9 +103,6 @@ def get_model_layers(model) -> List[torch.nn.Module]:
     raise RuntimeError(f"Cannot locate transformer layers for model class: {type(model)}")
 
 
-# -----------------------------
-# Prompt rendering (chat template safe)
-# -----------------------------
 def render_prompt(tokenizer, user_prompt: str, *, add_generation_prompt: bool = True, system_prompt: Optional[str] = None) -> str:
     tmpl = getattr(tokenizer, "chat_template", None)
     if not tmpl:
@@ -125,9 +118,6 @@ def render_prompt(tokenizer, user_prompt: str, *, add_generation_prompt: bool = 
         return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=add_generation_prompt)
 
 
-# -----------------------------
-# Sampling utils (optional)
-# -----------------------------
 def top_p_filtering(logits: torch.Tensor, top_p: float) -> torch.Tensor:
     if top_p <= 0.0 or top_p >= 1.0:
         return logits
@@ -151,9 +141,6 @@ def top_k_filtering(logits: torch.Tensor, top_k: int) -> torch.Tensor:
     return torch.where(logits < min_values, torch.full_like(logits, float("-inf")), logits)
 
 
-# -----------------------------
-# Collect prefill + decode last-token states
-# -----------------------------
 class PhaseLastTokenActivationCollector:
     """
     One collector that can capture either:
@@ -166,7 +153,7 @@ class PhaseLastTokenActivationCollector:
     def __init__(self, layer_indices: List[int]):
         self.layer_indices = list(layer_indices)
         self._cur_task: Optional[str] = None
-        self.phase: Optional[str] = None  # None | "prefill" | "decode"
+        self.phase: Optional[str] = None
         self.active_mask: Optional[torch.Tensor] = None
         self.storage_prefill: DefaultDict[str, DefaultDict[int, List[np.ndarray]]] = defaultdict(lambda: defaultdict(list))
         self.storage_decode: DefaultDict[str, DefaultDict[int, List[np.ndarray]]] = defaultdict(lambda: defaultdict(list))
@@ -194,11 +181,11 @@ class PhaseLastTokenActivationCollector:
             if self.phase == "prefill":
                 if seq_len <= 1:
                     return output
-            else:  # decode
+            else:
                 if seq_len != 1:
                     return output
 
-            x = hs[:, -1, :]  # [B, D]
+            x = hs[:, -1, :]
             if self.active_mask is not None:
                 m = self.active_mask.bool()
                 if m.numel() == x.shape[0]:
@@ -265,7 +252,7 @@ def collect_prefill_and_decode_last_token_states(
     collector = PhaseLastTokenActivationCollector(layer_indices)
     handles = [layers[li].register_forward_hook(collector.make_hook(li)) for li in layer_indices]
 
-    # deterministic sampling (if enabled)
+
     if decoding == "sample":
         torch.manual_seed(seed)
         if torch.cuda.is_available():
@@ -294,7 +281,7 @@ def collect_prefill_and_decode_last_token_states(
                 B, _T0 = input_ids.shape
                 unfinished = torch.ones(B, dtype=torch.bool, device=device)
 
-                # Prefill forward (capture prefill states)
+
                 collector.set_phase("prefill", None)
                 out = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True)
                 collector.set_phase(None, None)
@@ -302,7 +289,7 @@ def collect_prefill_and_decode_last_token_states(
                 logits = out.logits[:, -1, :]
                 past = out.past_key_values
 
-                # KV-cached decode loop (capture decode states)
+
                 for _ in range(calib_decode_max_new_tokens):
                     if decoding == "greedy":
                         next_token = torch.argmax(logits, dim=-1, keepdim=True)
@@ -361,9 +348,6 @@ def collect_prefill_and_decode_last_token_states(
     return prefill_by_task, decode_by_task
 
 
-# -----------------------------
-# PCA + metrics
-# -----------------------------
 def _subsample_rows_np(x: np.ndarray, n_max: int, seed: int) -> np.ndarray:
     if n_max is None or n_max <= 0 or x.shape[0] <= n_max:
         return x
@@ -401,11 +385,11 @@ def pca_basis_lowrank(Xc: np.ndarray, *, k: int, seed: int, max_dim: int = 4096)
         raise RuntimeError("q<=0 in PCA.")
 
     torch.manual_seed(int(seed))
-    X_t = torch.from_numpy(Xc)  # float32 on CPU
+    X_t = torch.from_numpy(Xc)
     _U, _S, V = torch.pca_lowrank(X_t, q=q, center=False)
     Q = V[:, :q].contiguous().cpu().numpy().astype(np.float32, copy=False)
     if Q.shape[1] < k:
-        # Caller asked for larger k than possible; return what we have.
+
         return Q
     return Q[:, :k]
 
@@ -519,7 +503,7 @@ def main():
     ap.add_argument("--layers", type=str, default="28", help="Comma-separated layer indices, e.g. '10,28'.")
     ap.add_argument("--filter_regex", type=str, default="", help="Optional regex to filter tasks.")
 
-    # Calibration tasks/data
+
     ap.add_argument("--tasks_subspace", type=str, default="gsm8k,commonsenseqa,strategyqa,aqua,arc_challenge,openbookqa,qasc,logiqa")
     ap.add_argument("--n_subspace", type=int, default=128)
     ap.add_argument("--template_seed", type=int, default=1234)
@@ -528,14 +512,14 @@ def main():
     ap.add_argument("--answer_prefix", type=str, default="\nFinal answer:")
     ap.add_argument("--add_answer_prefix", type=int, default=1, choices=[0, 1])
 
-    # Decode collection
+
     ap.add_argument("--calib_decode_max_new_tokens", type=int, default=128)
     ap.add_argument("--decoding", type=str, default="greedy", choices=["greedy", "sample"])
     ap.add_argument("--temperature", type=float, default=0.7)
     ap.add_argument("--top_p", type=float, default=0.9)
     ap.add_argument("--top_k", type=int, default=0)
 
-    # PCA
+
     ap.add_argument("--ks", type=str, default="32,64,128,256", help="Comma-separated k values to compare.")
     ap.add_argument("--pca_max_rows", type=int, default=200000, help="Max pooled rows used per phase (0=no limit).")
     ap.add_argument("--per_task_max_states", type=int, default=20000, help="Max rows per task per phase (0=no limit).")
@@ -572,12 +556,12 @@ def main():
         raise ValueError("Empty --ks")
     max_k_req = int(max(ks))
 
-    # Load prompts (subspace prompts only)
+
     print("[Data] Loading prompts for basis estimation ...")
     sub_by, _eval_by_dummy, _meta = load_selected_tasks(
         tasks=tasks,
         n_subspace=max(1, int(args.n_subspace)),
-        n_eval=1,  # (compat) loader may not accept 0
+        n_eval=1,
         seed=int(args.seed),
         template_seed=int(args.template_seed),
         template_randomization=bool(args.template_randomization),
@@ -627,7 +611,7 @@ def main():
         print("\n" + "=" * 80)
         print(f"[Layer] {layer}")
 
-        # Build per-task matrices for each phase at this layer
+
         mats_pre: Dict[str, np.ndarray] = {}
         mats_dec: Dict[str, np.ndarray] = {}
 
@@ -661,7 +645,7 @@ def main():
         if max_k_possible < max_k_req:
             print(f"[Warn] requested max_k={max_k_req} but only possible k={max_k_possible} (n_pre={n_pre}, n_dec={n_dec}, d={d_pre})")
 
-        # Compute bases (up to max_k_possible)
+
         Qp = pca_basis_lowrank(Xp_c, k=max_k_possible, seed=stable_int_seed(args.seed, "pca_prefill", layer), max_dim=pca_max_dim)
         Qd = pca_basis_lowrank(Xd_c, k=max_k_possible, seed=stable_int_seed(args.seed, "pca_decode", layer), max_dim=pca_max_dim)
 

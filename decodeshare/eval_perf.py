@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 eval_perf.py
 
@@ -26,7 +25,7 @@ Key design points:
 Dependencies (typical in your environment):
   - transformers, datasets, numpy, torch, tqdm
   - decodeshare.benchmark_dataloaders
-  - decodeshare.joint_subspace_large.disturb_cross_task_all_shared (project utilities)
+  - decodeshare.subspace (project utilities)
 
 The shared benchmark loader is packaged under `decodeshare/`.
 
@@ -44,9 +43,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-# -----------------------------------------------------------------------------
-# Imports: shared benchmark dataloaders
-# -----------------------------------------------------------------------------
+
 from decodeshare.benchmark_dataloaders import (  # type: ignore
     Example,
     load_selected_tasks,
@@ -55,19 +52,16 @@ from decodeshare.benchmark_dataloaders import (  # type: ignore
     stable_int_seed as stable_int_seed_bdl,
 )
 
-# -----------------------------------------------------------------------------
-# Imports: shared-subspace utilities (user-provided)
-# -----------------------------------------------------------------------------
-# We try the canonical project import first; fallback to a local file if needed.
+
 try:
-    from decodeshare.joint_subspace_large.disturb_cross_task_all_shared import (  # type: ignore
+    from decodeshare.subspace import (  # type: ignore
         get_model_layers,
         compute_cross_task_subspace,
         find_fully_shared_basis_improved,
     )
 except Exception:
     try:
-        from disturb_cross_task_all_shared import (  # type: ignore
+        from subspace import (  # type: ignore
             get_model_layers,
             compute_cross_task_subspace,
             find_fully_shared_basis_improved,
@@ -76,17 +70,15 @@ except Exception:
         raise ImportError(
             "Could not import shared-subspace utilities.\n"
             "Expected one of:\n"
-            "  - decodeshare.joint_subspace_large.disturb_cross_task_all_shared\n"
-            "  - disturb_cross_task_all_shared (local)\n"
+            "  - decodeshare.subspace\n"
+            "  - subspace (local)\n"
             "Please ensure your project is on PYTHONPATH."
         ) from e
 
-# -----------------------------------------------------------------------------
-# Transformers imports (in your runtime env)
-# -----------------------------------------------------------------------------
+
 from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore
 
-# Public API for convenient imports
+
 __all__ = [
     "Example",
     "SharedBases",
@@ -109,10 +101,6 @@ __all__ = [
 ]
 
 
-
-# -----------------------------------------------------------------------------
-# Repro / utils
-# -----------------------------------------------------------------------------
 def set_global_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -145,11 +133,6 @@ def safe_upper(x: Any) -> str:
     return str(x).strip().upper()
 
 
-
-# -----------------------------------------------------------------------------
-# Stats: bootstrap + paired sign-flip test
-# -----------------------------------------------------------------------------
-
 def _coerce_seed_to_uint32(seed):
     """
     Make seed compatible with np.random.default_rng / SeedSequence.
@@ -158,16 +141,16 @@ def _coerce_seed_to_uint32(seed):
     if seed is None:
         return None
 
-    # python int / numpy int
+
     if isinstance(seed, (int, np.integer)):
         return int(seed) & 0xFFFFFFFF
 
-    # float seeds: keep fractional info (e.g. 123.05 -> 123050000)
+
     if isinstance(seed, (float, np.floating)):
         v = int(np.round(float(seed) * 1_000_000.0))
         return v & 0xFFFFFFFF
 
-    # fallback: stable hash -> uint32
+
     import hashlib
     s = str(seed).encode("utf-8")
     digest = hashlib.blake2b(s, digest_size=8).digest()
@@ -273,20 +256,20 @@ def summarize_paired(
     label = kwargs.pop("label", None)
 
     if len(args) == 5:
-        # (label, bootstrap_iters, perm_iters, alpha, seed)
+
         label = str(args[0])
         bootstrap_iters = int(args[1])
         perm_iters = int(args[2])
         alpha = float(args[3])
         seed = args[4]
     elif len(args) == 4:
-        # (bootstrap_iters, perm_iters, alpha, seed)  -- no label
+
         bootstrap_iters = int(args[0])
         perm_iters = int(args[1])
         alpha = float(args[2])
         seed = args[3]
     elif len(args) == 0:
-        # keyword-only
+
         bootstrap_iters = int(kwargs.pop("bootstrap_iters"))
         perm_iters = int(kwargs.pop("perm_iters"))
         alpha = float(kwargs.pop("alpha"))
@@ -297,7 +280,7 @@ def summarize_paired(
             "(baseline_correct, treat_correct)."
         )
 
-    # Make seeds deterministic and integer-only
+
     seed0 = _coerce_seed_to_uint32(seed)
     base_seed = int(seed0 or 0)
     seed_ci = _coerce_seed_to_uint32(base_seed + 123)
@@ -323,16 +306,10 @@ def summarize_paired(
     return out
 
 
-
-
-
 def fmt_acc(acc: float, lo: float, hi: float) -> str:
     return f"{acc*100:.1f} [{lo*100:.1f}, {hi*100:.1f}]"
 
 
-# -----------------------------------------------------------------------------
-# Candidate utilities for forced-choice
-# -----------------------------------------------------------------------------
 def candidate_strings(task: str) -> List[str]:
     """
     Candidate labels/strings used for forced-choice scoring.
@@ -347,7 +324,7 @@ def candidate_strings(task: str) -> List[str]:
     if t == "qasc":
         return list("ABCDEFGH")
     if t == "boolq":
-        # Many loaders map to A/B (A=Yes, B=No)
+
         return ["A", "B"]
     if t == "strategyqa":
         return ["Yes", "No"]
@@ -365,9 +342,6 @@ def cand_token_ids(tok, s: str) -> List[int]:
     return ids
 
 
-# -----------------------------------------------------------------------------
-# Decode-aligned prompt boundary cache
-# -----------------------------------------------------------------------------
 @torch.no_grad()
 def cache_decode_aligned_boundary(model, ids: torch.Tensor, attn: torch.Tensor):
     """
@@ -389,9 +363,6 @@ def cache_decode_aligned_boundary(model, ids: torch.Tensor, attn: torch.Tensor):
     return out1.past_key_values, out1.logits[:, -1, :]
 
 
-# -----------------------------------------------------------------------------
-# Sampling helpers (top-k, top-p)
-# -----------------------------------------------------------------------------
 def top_p_filtering(logits: torch.Tensor, top_p: float) -> torch.Tensor:
     if top_p <= 0.0 or top_p >= 1.0:
         return logits
@@ -441,9 +412,6 @@ def choose_next_token(
     return torch.multinomial(probs, num_samples=1)
 
 
-# -----------------------------------------------------------------------------
-# Prefix helpers (forced-choice anchoring)
-# -----------------------------------------------------------------------------
 def normalize_answer_prefix(x: Any) -> str:
     """
     Some scripts pass --answer_prefix 0 (string). Treat '0'/'none' as empty.
@@ -459,13 +427,10 @@ def normalize_answer_prefix(x: Any) -> str:
 def prompt_endswith_prefix(prompt: str, prefix: str) -> bool:
     if not prefix:
         return True
-    # Be tolerant to trailing whitespace
+
     return prompt.rstrip().endswith(prefix.rstrip())
 
 
-# -----------------------------------------------------------------------------
-# Decode/prefill activation collectors
-# -----------------------------------------------------------------------------
 class DecodeLastTokenCollector:
     """Collect last-token hidden states during decode passes only (seq_len==1)."""
 
@@ -635,9 +600,6 @@ def collect_prefill_states(
         _ = model(**inputs)
 
 
-# -----------------------------------------------------------------------------
-# Shared basis computation (decode vs prefill)
-# -----------------------------------------------------------------------------
 def orthonormalize_np(basis: np.ndarray) -> np.ndarray:
     q, _ = np.linalg.qr(basis.astype(np.float32, copy=False))
     return q.astype(np.float32, copy=False)
@@ -695,10 +657,10 @@ def compute_shared_basis_from_states(
     Compute joint subspace + shared indices from task->states dict (single layer).
     Uses your project utilities: compute_cross_task_subspace + find_fully_shared_basis_improved.
     """
-    # Balance task state counts to avoid overweighting tasks with more states
+
     task_states_bal, n_bal = balance_task_states(task_states, seed)
     tasks = list(task_states_bal.keys())
-    # compute_cross_task_subspace expects dict: task -> {layer_idx -> states}
+
     task_dict = {t: {0: task_states_bal[t]} for t in tasks}
 
     joint_subspace, cross_dim, contributions, full_pca_info = compute_cross_task_subspace(
@@ -807,7 +769,7 @@ def compute_decode_prefill_shared_bases(
     if int(layer_idx) < 0 or int(layer_idx) >= len(layers):
         raise ValueError(f"layer_idx={layer_idx} out of range: num_layers={len(layers)}")
 
-    # Collect decode states
+
     decode_col = DecodeLastTokenCollector([int(layer_idx)])
     handles = [layers[int(layer_idx)].register_forward_hook(decode_col.make_hook(int(layer_idx)))]
     decode_task_states: Dict[str, np.ndarray] = {}
@@ -838,7 +800,7 @@ def compute_decode_prefill_shared_bases(
                 pass
         decode_col.set_capture(False, None)
 
-    # Collect prefill states
+
     pre_col = PrefillLastTokenCollector([int(layer_idx)])
     handles = [layers[int(layer_idx)].register_forward_hook(pre_col.make_hook(int(layer_idx)))]
     pre_task_states: Dict[str, np.ndarray] = {}
@@ -863,7 +825,7 @@ def compute_decode_prefill_shared_bases(
             except Exception:
                 pass
 
-    # Optional state-count matching
+
     if bool(match_state_count):
         n_decode_min = min(v.shape[0] for v in decode_task_states.values())
         n_prefill_min = min(v.shape[0] for v in pre_task_states.values())
@@ -871,7 +833,7 @@ def compute_decode_prefill_shared_bases(
         decode_task_states = {t: subsample_rows_np(X, n_match, seed=stable_int_seed(seed, t, "decode_match")) for t, X in decode_task_states.items()}
         pre_task_states = {t: subsample_rows_np(X, n_match, seed=stable_int_seed(seed, t, "prefill_match")) for t, X in pre_task_states.items()}
 
-    # Compute joint subspaces
+
     joint_decode, shared_idx_decode, extra_decode = compute_shared_basis_from_states(
         decode_task_states, pca_var=pca_var, min_dim=min_dim, max_dim=max_dim, tau=tau, m_shared=m_shared, seed=seed + 100
     )
@@ -892,7 +854,7 @@ def compute_decode_prefill_shared_bases(
         else:
             k_use = int(k_eval)
 
-    # Build bases
+
     hidden_dim = joint_decode.shape[0]
     Q_decode_full = build_shared_basis_from_joint(joint_decode, shared_idx_decode, k_decode)
     Q_prefill_full = build_shared_basis_from_joint(joint_prefill, shared_idx_prefill, k_prefill)
@@ -900,11 +862,11 @@ def compute_decode_prefill_shared_bases(
     Q_prefill_k = build_shared_basis_from_joint(joint_prefill, shared_idx_prefill, k_use)
     Q_rand_k = random_orthonormal_basis_np(hidden_dim, k_use, seed=stable_int_seed(seed, "rand", k_use))
 
-    # Diagnostics
+
     similarity_full = subspace_similarity(Q_decode_full, Q_prefill_full)
     similarity_k = subspace_similarity(Q_decode_k, Q_prefill_k)
 
-    # Energy ratios: sample pools
+
     decode_pool = np.concatenate([subsample_rows_np(X, 4000, seed=stable_int_seed(seed, t, "er_d")) for t, X in decode_task_states.items()], axis=0)
     pre_pool = np.concatenate([subsample_rows_np(X, 4000, seed=stable_int_seed(seed, t, "er_p")) for t, X in pre_task_states.items()], axis=0)
 
@@ -941,9 +903,6 @@ def compute_decode_prefill_shared_bases(
     )
 
 
-# -----------------------------------------------------------------------------
-# Intervention hooks (decode-only)
-# -----------------------------------------------------------------------------
 class HookStats:
     def __init__(self, name: str):
         self.name = name
@@ -1027,9 +986,6 @@ def remove_hooks(handles: Sequence[Any]) -> None:
             pass
 
 
-# -----------------------------------------------------------------------------
-# Forced-choice warmup tokens
-# -----------------------------------------------------------------------------
 @torch.no_grad()
 def precompute_fc_warmup_tokens(
     model,
@@ -1089,15 +1045,12 @@ def precompute_fc_warmup_tokens(
             logits = out.logits[:, -1, :]
             past = out.past_key_values
 
-        toks_mat = torch.cat(toks, dim=1)  # [B,W]
+        toks_mat = torch.cat(toks, dim=1)
         out_tokens[i : i + B, :] = toks_mat.detach().cpu().numpy().astype(np.int64, copy=False)
 
     return out_tokens
 
 
-# -----------------------------------------------------------------------------
-# Forced-choice evaluation (with continuous metrics)
-# -----------------------------------------------------------------------------
 def is_correct_any(task: str, pred: str, gold: str) -> bool:
     """
     Unified correctness check using benchmark_dataloaders.is_correct.
@@ -1122,7 +1075,7 @@ def forced_choice_logprob_eval(
     max_prompt_len: int,
     warmup_token_ids: Optional[np.ndarray],
     answer_prefix: str,
-    prefix_mode: str = "auto",  # auto|always|never
+    prefix_mode: str = "auto",
     save_scores: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -1178,11 +1131,11 @@ def forced_choice_logprob_eval(
         scores_sum_all = np.full((N, C), np.nan, dtype=np.float32)
 
     def gold_index_for(gold_label: str) -> int:
-        # Use is_correct on candidates to find which candidate matches the gold label
+
         for j, c in enumerate(cands):
             if is_correct_any(task, c, gold_label):
                 return j
-        # Fallback: direct match
+
         g = safe_upper(gold_label)
         for j, c in enumerate(cands):
             if safe_upper(c) == g:
@@ -1204,7 +1157,7 @@ def forced_choice_logprob_eval(
         attn = inputs["attention_mask"]
         B = ids.shape[0]
 
-        # Warmup slice
+
         warm_ids = None
         W = 0
         if warmup_token_ids is not None:
@@ -1253,7 +1206,7 @@ def forced_choice_logprob_eval(
                     past_c = out.past_key_values
             scores[:, ci] = lp
 
-        pred_idx = torch.argmax(scores, dim=1)  # [B]
+        pred_idx = torch.argmax(scores, dim=1)
         probs = torch.softmax(scores, dim=1)
         ent = -(probs * torch.log(probs.clamp_min(1e-12))).sum(dim=1)
         top2 = torch.topk(scores, k=min(2, C), dim=1).values
@@ -1275,7 +1228,7 @@ def forced_choice_logprob_eval(
             idxs = np.arange(j0, j1, dtype=np.int64)
             B = idxs.shape[0]
 
-            # Decide prefix per example
+
             W = 0
             if warmup_token_ids is not None and warmup_token_ids.shape[1] > 0:
                 W = int(warmup_token_ids.shape[1])
@@ -1284,7 +1237,7 @@ def forced_choice_logprob_eval(
                 need_prefix = np.zeros(B, dtype=bool)
             elif prefix_mode == "always":
                 need_prefix = np.ones(B, dtype=bool) if bool(answer_prefix) else np.zeros(B, dtype=bool)
-            else:  # auto
+            else:
                 if not answer_prefix:
                     need_prefix = np.zeros(B, dtype=bool)
                 elif W > 0:
@@ -1298,7 +1251,7 @@ def forced_choice_logprob_eval(
                     continue
                 scores_sum, pred_idx, ent, gap, gidx = score_subset(sub, do_prefix=bool(flag))
 
-                # Store per-example results
+
                 for row_pos, ex_idx in enumerate(sub.tolist()):
                     pred_label = cands[int(pred_idx[row_pos])]
                     gold_label = str(golds[int(ex_idx)])
@@ -1360,9 +1313,6 @@ def forced_choice_logprob_eval(
         remove_hooks(handles)
 
 
-# -----------------------------------------------------------------------------
-# Generation evaluation
-# -----------------------------------------------------------------------------
 @torch.no_grad()
 def generate_decode_aligned(
     model,
@@ -1503,9 +1453,6 @@ def generation_eval(
         remove_hooks(handles)
 
 
-# -----------------------------------------------------------------------------
-# Model loading
-# -----------------------------------------------------------------------------
 def load_model_and_tokenizer(model_name: str, device: str, dtype: str, trust_remote_code: bool = False):
     if dtype == "fp32":
         torch_dtype = torch.float32
@@ -1533,9 +1480,6 @@ def load_model_and_tokenizer(model_name: str, device: str, dtype: str, trust_rem
     return model, tok
 
 
-# -----------------------------------------------------------------------------
-# Output tables
-# -----------------------------------------------------------------------------
 def md_table(rows: List[List[str]], header: List[str]) -> str:
     out = []
     out.append("| " + " | ".join(header) + " |")
@@ -1567,7 +1511,7 @@ def latex_table(
     def _esc(s: str) -> str:
         if not escape_cells:
             return s
-        # escape LaTeX special chars in table cells/headers
+
         repl = {
             "\\": r"\textbackslash{}",
             "&": r"\&",
@@ -1595,7 +1539,7 @@ def latex_table(
     out.append(r"\begin{table}[t]")
     out.append(r"\centering")
     if caption:
-        # caption is assumed LaTeX-ready (do not escape)
+
         out.append(rf"\caption{{{caption}}}")
     if label:
         out.append(rf"\label{{{label}}}")
@@ -1610,9 +1554,6 @@ def latex_table(
     return "\n".join(out)
 
 
-# -----------------------------------------------------------------------------
-# High-level evaluation runner (supports alpha sweep + gen modes)
-# -----------------------------------------------------------------------------
 def evaluate_tasks_once(
     model,
     tok,
@@ -1625,19 +1566,19 @@ def evaluate_tasks_once(
     batch_size: int,
     max_prompt_len: int,
     do_generation: bool,
-    # forced-choice settings
+
     fc_warmup_by_task: Dict[str, np.ndarray],
     fc_answer_prefix: str,
     fc_prefix_mode: str,
     fc_save_scores: bool,
-    # generation settings
+
     gen_modes: List[str],
     gen_max_new_tokens: int,
     gen_temperature: float,
     gen_top_p: float,
     gen_top_k: int,
     gen_seed: int,
-    # stats
+
     bootstrap_iters: int,
     perm_iters: int,
     ci_alpha: float,
@@ -1657,15 +1598,15 @@ def evaluate_tasks_once(
         use_generation = bool(do_generation) or (len(candidate_strings(task)) == 0)
         protocol = "generation" if use_generation else "forced_choice"
 
-        # Baseline run(s)
+
         baseline_detail: Dict[str, Any]
         baseline_correct: np.ndarray
 
         if use_generation:
-            # For generation, we may evaluate multiple decoding modes (greedy + sample)
+
             baseline_detail = {}
             baseline_correct = None  # type: ignore
-            # We'll use the first mode as the main for paired tests/tables; store others as extras.
+
             main_mode = gen_modes[0]
             for mode in gen_modes:
                 run = generation_eval(
@@ -1705,7 +1646,7 @@ def evaluate_tasks_once(
             baseline_correct, bootstrap_iters, ci_alpha, seed=stable_int_seed(seed, task, protocol, "baseline", alpha_remove)
         )
 
-        # Helper to eval a condition
+
         def _eval_condition(name: str, Q: Optional[np.ndarray]) -> Tuple[Dict[str, Any], np.ndarray, Tuple[float, float, float]]:
             if use_generation:
                 main_mode = gen_modes[0]
@@ -1749,12 +1690,12 @@ def evaluate_tasks_once(
                 m, lo, hi = bootstrap_ci_mean(arr, bootstrap_iters, ci_alpha, seed=stable_int_seed(seed, task, protocol, name, alpha_remove))
                 return detail, arr, (m, lo, hi)
 
-        # Conditions
+
         dec_detail, dec_arr, (d_acc, d_lo, d_hi) = _eval_condition("decode_shared", bases.Q_decode_k)
         pre_detail, pre_arr, (p_acc, p_lo, p_hi) = _eval_condition("prefill_shared", bases.Q_prefill_k)
         rnd_detail, rnd_arr, (r_acc, r_lo, r_hi) = _eval_condition("random", bases.Q_rand_k)
 
-        # Paired decode vs prefill (using correct arrays)
+
         stat = summarize_paired(
             baseline_correct=pre_arr,
             treat_correct=dec_arr,
@@ -1777,7 +1718,6 @@ def evaluate_tasks_once(
     return results
 
 
-
 def evaluate_tasks_alpha_sweep(
     model,
     tok,
@@ -1790,19 +1730,19 @@ def evaluate_tasks_alpha_sweep(
     batch_size: int,
     max_prompt_len: int,
     do_generation: bool,
-    # forced-choice settings
+
     fc_warmup_by_task: Dict[str, np.ndarray],
     fc_answer_prefix: str,
     fc_prefix_mode: str,
     fc_save_scores: bool,
-    # generation settings
+
     gen_modes: List[str],
     gen_max_new_tokens: int,
     gen_temperature: float,
     gen_top_p: float,
     gen_top_k: int,
     gen_seed: int,
-    # stats
+
     bootstrap_iters: int,
     perm_iters: int,
     ci_alpha: float,
@@ -1821,9 +1761,7 @@ def evaluate_tasks_alpha_sweep(
 
     layer_indices = [int(layer_idx)]
 
-    # -------------------------
-    # Baseline cache (per task)
-    # -------------------------
+
     baseline_cache: Dict[str, Dict[str, Any]] = {}
     baseline_correct_cache: Dict[str, np.ndarray] = {}
     protocol_cache: Dict[str, str] = {}
@@ -1884,9 +1822,7 @@ def evaluate_tasks_alpha_sweep(
         baseline_cache[task] = {"acc": b_acc, "ci": [b_lo, b_hi], "detail": baseline_detail}
         baseline_correct_cache[task] = baseline_correct
 
-    # -------------------------
-    # Sweep over alphas
-    # -------------------------
+
     runs: Dict[str, Dict[str, Any]] = {}
 
     for alpha_remove in alphas:
@@ -1975,7 +1911,6 @@ def evaluate_tasks_alpha_sweep(
     return runs
 
 
-
 def build_summary_table(eval_results: Dict[str, Any], *, k: int) -> str:
     rows = []
     for task, r in eval_results.items():
@@ -1997,7 +1932,7 @@ def build_summary_table(eval_results: Dict[str, Any], *, k: int) -> str:
         f"Decode-shared (k={k})",
         f"Prefill-shared (k={k})",
         f"Random (k={k})",
-        "Δ(Decode-Prefill) [CI]",
+        "Delta(Decode-Prefill) [CI]",
         "p",
     ]
     return md_table(rows, header)

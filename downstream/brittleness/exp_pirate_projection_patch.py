@@ -1,71 +1,22 @@
-
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-mvp_projection_patch_pirate_v4.py
 
-A "fixed" MVP script for user-facing generation utility (Pirate style) under true KV-cache decode.
-
-v4 improvements (vs your v0/v1 MVP):
-  1) --v_mode prefill|decode (default: decode)
-     - decode mode estimates steering vectors from prompt-boundary seq_len==1 calls (KV-aligned).
-  2) Chat template support (auto for Llama-2-chat style models/tokenizers)
-     - v estimation and evaluation prompts are formatted consistently.
-  3) Pirate anchor option for v estimation
-     - makes the estimated direction more lexically "pirate" so regex metrics detect it.
-  4) Optional alpha sweep + early-token-only injection
-     - --alphas "1,2,3" to evaluate multiple strengths
-     - --inject_first_n N: inject only first N generated tokens (plus prompt-boundary call)
-
-Outputs:
-  - results.csv: per-example outputs + pirate_hits/success
-  - summary.md/json: mean±std + worst-case across templates (per decoding and method)
-
-Example:
-  CUDA_VISIBLE_DEVICES=0 python mvp_projection_patch_pirate_v4.py \
-    --model meta-llama/Llama-2-7b-chat-hf --device cuda --dtype fp32 \
-    --layer 10 --v_mode decode \
-    --alpha 3.0 --betas 0,1 \
-    --basis_k 128 --calib_max_new_tokens 128 --max_new_tokens 256 \
-    --batch_size 8 --do_greedy 1 --do_sample 1 --sample_seeds 1,2 \
-    --inject_first_n 64 \
-    --out_dir results/mvp_pirate_v4 \
-    --pirate_anchor "Start your answer with 'Ahoy matey!' and include: ahoy, matey, arrr, aye, cap'n."
-
-CUDA_VISIBLE_DEVICES=0 python mvp_projection_patch_pirate_v4.py \
-  --model meta-llama/Llama-2-7b-chat-hf --device cuda --dtype fp32 \
-  --layer 10 --v_mode decode --v_n 16 --v_decode_steps 16 \
-  --pirate_anchor "Start your answer with 'Ahoy matey!' and include: ahoy, matey, arrr, aye, cap'n." \
-  --alphas 6,10,14 \
-  --inject_first_n 64 \
-  --pirate_threshold 1 \
-  --do_greedy 1 --do_sample 0 \
-  --out_dir results/mvp_pirate_v4_fix
-
-
-Notes:
-  - Pirate success metric is lexicon-based and configurable.
-  - This script is intentionally self-contained.
-
-"""
+"""Pirate-style steering projection provenance check with fail-fast diagnostics."""
 
 import argparse
 import csv
 import json
 import os
 import random
+import re
+import sys
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
-import re
 
 import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# -----------------------------
-# Defaults: prompts/templates
-# -----------------------------
 BASE_PROMPTS = [
     "Explain why the sky looks blue during the day.",
     "Give practical tips to improve sleep quality.",
@@ -123,9 +74,6 @@ TEMPLATES = [
 ]
 
 
-# -----------------------------
-# Pirate metric (expanded lexicon)
-# -----------------------------
 _PIRATE_PATTERNS = [
     r"\bahoy\b",
     r"\bmatey\b",
@@ -139,11 +87,11 @@ _PIRATE_PATTERNS = [
     r"\bprivateer\b",
     r"\bseadog\b",
     r"\baye\b",
-    r"\bcap['’]?n\b",
+    r"\bcap[']?n\b",
     r"\bshiver\s+me\s+timbers\b",
     r"\bscurvy\b",
-    r"\bar{2,}\b",     # arrr
-    r"\byar{1,}\b",    # yar
+    r"\bar{2,}\b",
+    r"\byar{1,}\b",
     r"\bme\s+heart(?:y|ies)\b",
     r"\bdead\s+men\s+tell\s+no\s+tales\b",
     r"\bwalk\s+the\s+plank\b",
@@ -160,30 +108,18 @@ def pirate_hits(text: str) -> int:
     return hits
 
 
-# -----------------------------
-# Utils: seeding, blocks, chat formatting
-# -----------------------------
 def seed_everything(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def tok(tokenizer, text: str, max_len: int, use_chat: bool):
-    # chat template 产物通常已经包含 special tokens，不要重复加
-    return tokenizer(
-        text,
-        return_tensors="pt",
-        truncation=True,
-        max_length=max_len,
-        add_special_tokens=(not use_chat),
-    )
 
 def get_block(model, layer_idx: int):
-    # LLaMA-like HF: model.model.layers[i]
+
     if hasattr(model, "model") and hasattr(model.model, "layers"):
         return model.model.layers[layer_idx]
-    # GPT-2-like: model.transformer.h[i]
+
     if hasattr(model, "transformer") and hasattr(model.transformer, "h"):
         return model.transformer.h[layer_idx]
     raise ValueError("Cannot locate transformer blocks; adapt get_block() for your model.")
@@ -211,29 +147,32 @@ def should_use_chat_template(model_name: str, tokenizer, flag: str) -> bool:
         return False
     if flag == "on":
         return supports_chat_template(tokenizer)
-    # auto
+
     if not supports_chat_template(tokenizer):
         return False
     low = model_name.lower()
-    # heuristic: llama-2 chat, instruct models
     return ("chat" in low) or ("instruct" in low) or ("assistant" in low)
 
 
 def format_chat(tokenizer, user_text: str, system_text: str = "You are a helpful assistant.") -> str:
-    """
-    Returns a single string prompt. Works only if tokenizer supports apply_chat_template.
-    """
     messages = [
         {"role": "system", "content": system_text},
         {"role": "user", "content": user_text},
     ]
-    # add_generation_prompt makes the assistant prefix appear (important for chat models)
     return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
 
-# -----------------------------
-# Hooks for collect / add
-# -----------------------------
+def tok(tokenizer, text: str, max_len: int, use_chat: bool):
+    """Tokenize a prompt with chat-template handling."""
+    return tokenizer(
+        text,
+        return_tensors="pt",
+        truncation=True,
+        max_length=max_len,
+        add_special_tokens=(not use_chat),
+    )
+
+
 class CollectLastTokenHook:
     """
     Records last-token hidden states. If decode_only=True, records only when seq_len==1.
@@ -255,19 +194,23 @@ class CollectLastTokenHook:
 class AddVectorHook:
     """
     Adds alpha*v on seq_len==1 calls. Optional early-token window.
-    - inject_first_n == 0: inject for all decode calls
-    - inject_first_n > 0: inject only while step < inject_first_n
-      (step counts decode steps within each generation run)
+    Debug counters:
+      - n_seen_seq1: number of seq_len==1 calls observed
+      - n_applied : number of times injection actually applied
     """
     def __init__(self, v: torch.Tensor, alpha: float, inject_first_n: int = 0):
         self.v = v.detach()
         self.alpha = float(alpha)
         self.inject_first_n = int(inject_first_n)
         self._cache = {}
-        self.step = 0  # increments each seq_len==1 call
+        self.step = 0
+        self.n_seen_seq1 = 0
+        self.n_applied = 0
 
     def reset(self):
         self.step = 0
+        self.n_seen_seq1 = 0
+        self.n_applied = 0
 
     def _v_on(self, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
         key = (device, dtype)
@@ -286,15 +229,17 @@ class AddVectorHook:
         if not isinstance(h, torch.Tensor) or h.ndim != 3:
             return output
 
-        # Only apply on KV-cached decode calls (seq_len==1)
         if h.shape[1] != 1:
             return output
 
+        self.n_seen_seq1 += 1
+
         do_inject = (self.inject_first_n <= 0) or (self.step < self.inject_first_n)
         self.step += 1
-
         if not do_inject:
             return output
+
+        self.n_applied += 1
 
         v = self._v_on(h.device, h.dtype)
         h2 = h.clone()
@@ -305,14 +250,7 @@ class AddVectorHook:
         return (h2, *rest)
 
 
-# -----------------------------
-# Prompt construction
-# -----------------------------
 def make_eval_prompts(base_prompts: List[str], templates: List[str]) -> List[Tuple[int, str]]:
-    """
-    Returns list of (template_id, prompt_text_without_chat_wrapping)
-    length = len(base_prompts) * len(templates)
-    """
     out = []
     for tid, tpl in enumerate(templates):
         for q in base_prompts:
@@ -321,8 +259,6 @@ def make_eval_prompts(base_prompts: List[str], templates: List[str]) -> List[Tup
 
 
 def make_pirate_instruction(anchor: str) -> str:
-    # For v estimation only: strengthen lexical style signal with anchors.
-    # Keep it short; chat models often follow this well.
     base = "Reply like a pirate."
     if anchor.strip():
         base += " " + anchor.strip()
@@ -330,26 +266,19 @@ def make_pirate_instruction(anchor: str) -> str:
 
 
 def make_v_est_pair(text: str, *, anchor: str) -> Tuple[str, str]:
-    """
-    Returns (pirate_variant, normal_variant) user-texts (without chat wrapping).
-    """
     pirate = make_pirate_instruction(anchor) + "\n\n" + text
     normal = text
     return pirate, normal
 
 
-# -----------------------------
-# v estimation: prefill / decode
-# -----------------------------
 @torch.inference_mode()
-def collect_last_token_state_prefill(model, tokenizer, prompt_text: str, layer: int, max_prompt_tokens: int) -> torch.Tensor:
+def collect_last_token_state_prefill(model, tokenizer, prompt_text: str, layer: int, max_prompt_tokens: int, use_chat: bool) -> torch.Tensor:
     device = get_model_device(model)
     block = get_block(model, layer)
     hook = CollectLastTokenHook(decode_only=False)
     handle = block.register_forward_hook(hook)
     try:
-        #toks = tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=max_prompt_tokens, add_special_tokens=True)
-        toks = tok(tokenizer, prompt_text, max_prompt_tokens, use_chat=True)
+        toks = tok(tokenizer, prompt_text, max_prompt_tokens, use_chat)
         input_ids = toks["input_ids"].to(device)
         _ = model(input_ids=input_ids, use_cache=False)
         if len(hook.records) < 1:
@@ -360,18 +289,13 @@ def collect_last_token_state_prefill(model, tokenizer, prompt_text: str, layer: 
 
 
 @torch.inference_mode()
-def collect_last_token_state_decode_prompt_boundary(model, tokenizer, prompt_text: str, layer: int, max_prompt_tokens: int) -> torch.Tensor:
-    """
-    Prefill T-1 tokens with cache, then feed last prompt token as seq_len==1 decode call.
-    Returns last token hidden state captured on seq_len==1 call.
-    """
+def collect_last_token_state_decode_prompt_boundary(model, tokenizer, prompt_text: str, layer: int, max_prompt_tokens: int, use_chat: bool) -> torch.Tensor:
     device = get_model_device(model)
     block = get_block(model, layer)
     hook = CollectLastTokenHook(decode_only=True)
     handle = block.register_forward_hook(hook)
     try:
-        #toks = tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=max_prompt_tokens, add_special_tokens=True)
-        toks = tok(tokenizer, prompt_text, max_prompt_tokens, use_chat=True)
+        toks = tok(tokenizer, prompt_text, max_prompt_tokens, use_chat)
         input_ids = toks["input_ids"].to(device)
         T = input_ids.shape[1]
         past = None
@@ -387,146 +311,12 @@ def collect_last_token_state_decode_prompt_boundary(model, tokenizer, prompt_tex
 
 
 @torch.inference_mode()
-def estimate_v_mean_diff(
-    model,
-    tokenizer,
-    texts: List[str],
-    *,
-    layer: int,
-    v_mode: str,
-    max_prompt_tokens: int,
-    use_chat: bool,
-    system_text: str,
-    pirate_anchor: str,
-    decode_steps: int,
-) -> torch.Tensor:
-    """
-    Estimate steering direction v = mean(h_pirate) - mean(h_normal)
-    using either prefill or decode-aligned prompt-boundary hidden states.
-    """
-    states_p = []
-    states_n = []
-
-    for t in texts:
-        pirate_u, normal_u = make_v_est_pair(t, anchor=pirate_anchor)
-
-        if use_chat:
-            pirate_prompt = format_chat(tokenizer, pirate_u, system_text=system_text)
-            normal_prompt = format_chat(tokenizer, normal_u, system_text=system_text)
-        else:
-            pirate_prompt = pirate_u
-            normal_prompt = normal_u
-
-        if v_mode == "prefill":
-            hp = collect_last_token_state_prefill(model, tokenizer, pirate_prompt, layer, max_prompt_tokens)
-            hn = collect_last_token_state_prefill(model, tokenizer, normal_prompt, layer, max_prompt_tokens)
-        elif v_mode == "decode":
-            # hp = collect_last_token_state_decode_prompt_boundary(model, tokenizer, pirate_prompt, layer, max_prompt_tokens)
-            # hn = collect_last_token_state_decode_prompt_boundary(model, tokenizer, normal_prompt, layer, max_prompt_tokens)
-            hp = collect_mean_decode_state_over_steps(
-                model, tokenizer, pirate_prompt,
-                layer=layer, max_prompt_tokens=max_prompt_tokens,
-                use_chat=use_chat, system_text=system_text,
-                decode_steps=decode_steps,
-            )
-            hn = collect_mean_decode_state_over_steps(
-                model, tokenizer, normal_prompt,
-                layer=layer, max_prompt_tokens=max_prompt_tokens,
-                use_chat=use_chat, system_text=system_text,
-                decode_steps=decode_steps,
-            )
-        else:
-            raise ValueError("--v_mode must be prefill or decode")
-
-        states_p.append(hp)
-        states_n.append(hn)
-
-    Hp = torch.stack(states_p, dim=0)
-    Hn = torch.stack(states_n, dim=0)
-    v = (Hp.mean(dim=0) - Hn.mean(dim=0)).float()
-    v = v / (v.norm() + 1e-12)
-    return v
-
-
-# -----------------------------
-# Basis estimation B: decode PCA from no-steer generation traces
-# -----------------------------
-@torch.inference_mode()
-def generate_collect_decode_states(
-    model,
-    tokenizer,
-    prompts: List[str],
-    *,
-    layer: int,
-    max_prompt_tokens: int,
-    max_new_tokens: int,
-    use_chat: bool,
-    system_text: str,
-    temperature: float,
-    top_p: float,
-    seed: int,
-) -> torch.Tensor:
-    """
-    Generate with no steering and collect seq_len==1 hidden states at the specified layer.
-    Returns X: [n_states, d] float32 on CPU.
-    """
-    seed_everything(seed)
-    device = get_model_device(model)
-    block = get_block(model, layer)
-    hook = CollectLastTokenHook(decode_only=True)
-    handle = block.register_forward_hook(hook)
-    try:
-        for p in prompts:
-            user_text = p
-            prompt_text = format_chat(tokenizer, user_text, system_text=system_text) if use_chat else user_text
-
-            # toks = tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=max_prompt_tokens, add_special_tokens=True)
-            toks = tok(tokenizer, prompt_text, max_prompt_tokens, use_chat=True)
-            input_ids = toks["input_ids"].to(device)
-            T = input_ids.shape[1]
-
-            # Prefill all but last token to initialize cache
-            past = None
-            if T > 1:
-                out_prefill = model(input_ids=input_ids[:, :-1], use_cache=True)
-                past = out_prefill.past_key_values
-
-            # First seq_len==1 call: last prompt token
-            out = model(input_ids=input_ids[:, -1:], past_key_values=past, use_cache=True)
-            past = out.past_key_values
-            logits = out.logits[:, -1, :]
-
-            # Now decode loop for max_new_tokens
-            prev = None
-            for _ in range(max_new_tokens):
-                if prev is None:
-                    # sample from first logits
-                    next_id = sample_next_token(logits, temperature=temperature, top_p=top_p)
-                else:
-                    out = model(input_ids=prev, past_key_values=past, use_cache=True)
-                    past = out.past_key_values
-                    logits = out.logits[:, -1, :]
-                    next_id = sample_next_token(logits, temperature=temperature, top_p=top_p)
-
-                prev = next_id
-                # early stop if EOS
-                if int(next_id.item()) == tokenizer.eos_token_id:
-                    break
-
-        if len(hook.records) == 0:
-            raise RuntimeError("No decode states were recorded for basis estimation.")
-        X = torch.cat([r.float().cpu() for r in hook.records], dim=0)  # [n, d]
-        return X
-    finally:
-        handle.remove()
-
-
-@torch.inference_mode()
 def collect_mean_decode_state_over_steps(
     model, tokenizer, prompt_text: str,
-    *, layer: int, max_prompt_tokens: int, use_chat: bool, system_text: str,
+    *, layer: int, max_prompt_tokens: int, use_chat: bool,
     decode_steps: int,
 ) -> torch.Tensor:
+    """Collect a mean decode-state vector over the prompt boundary and early decode steps."""
     device = get_model_device(model)
     block = get_block(model, layer)
 
@@ -542,13 +332,11 @@ def collect_mean_decode_state_over_steps(
             out_prefill = model(input_ids=input_ids[:, :-1], use_cache=True)
             past = out_prefill.past_key_values
 
-        # prompt-boundary (seq_len=1)
+
         out = model(input_ids=input_ids[:, -1:], past_key_values=past, use_cache=True)
         past = out.past_key_values
         logits = out.logits[:, -1, :]
 
-        # greedy decode a few steps to expose style tokens
-        prev = None
         for _ in range(int(decode_steps)):
             next_id = torch.argmax(logits, dim=-1, keepdim=True)
             if int(next_id.item()) == tokenizer.eos_token_id:
@@ -560,58 +348,72 @@ def collect_mean_decode_state_over_steps(
         if len(hook.records) < 1:
             raise RuntimeError("No decode-only record captured in collect_mean_decode_state_over_steps().")
 
-        H = torch.cat([r.float().cpu() for r in hook.records], dim=0)  # [n_steps, d]
+        H = torch.cat([r.float().cpu() for r in hook.records], dim=0)
         return H.mean(dim=0).float()
     finally:
         handle.remove()
 
 
 @torch.inference_mode()
-def pca_basis(X: torch.Tensor, k: int) -> torch.Tensor:
-    """
-    X: [n, d] float32 on CPU or GPU
-    Returns B: [d, k] float32 on CPU with orthonormal columns.
-    """
-    X = X.float()
-    n, d = X.shape
-    q = int(min(k, n - 1, d))
-    if q < 1:
-        raise RuntimeError(f"Not enough states for PCA: n={n}, d={d}, k={k}")
-    # do PCA on CPU to reduce GPU memory spikes
-    Xc = X
-    U, S, V = torch.pca_lowrank(Xc, q=q, center=True, niter=2)
-    B = V[:, :q].contiguous()
-    B, _ = torch.linalg.qr(B, mode="reduced")
-    return B.cpu().float()
+def estimate_v_mean_diff(
+    model,
+    tokenizer,
+    texts: List[str],
+    *,
+    layer: int,
+    v_mode: str,
+    v_decode_steps: int,
+    max_prompt_tokens: int,
+    use_chat: bool,
+    system_text: str,
+    pirate_anchor: str,
+) -> torch.Tensor:
+    states_p = []
+    states_n = []
+
+    for t in texts:
+        pirate_u, normal_u = make_v_est_pair(t, anchor=pirate_anchor)
+
+        if use_chat:
+            pirate_prompt = format_chat(tokenizer, pirate_u, system_text=system_text)
+            normal_prompt = format_chat(tokenizer, normal_u, system_text=system_text)
+        else:
+            pirate_prompt = pirate_u
+            normal_prompt = normal_u
+
+        if v_mode == "prefill":
+            hp = collect_last_token_state_prefill(model, tokenizer, pirate_prompt, layer, max_prompt_tokens, use_chat)
+            hn = collect_last_token_state_prefill(model, tokenizer, normal_prompt, layer, max_prompt_tokens, use_chat)
+        elif v_mode == "decode":
+            if v_decode_steps and v_decode_steps > 0:
+                hp = collect_mean_decode_state_over_steps(
+                    model, tokenizer, pirate_prompt,
+                    layer=layer, max_prompt_tokens=max_prompt_tokens, use_chat=use_chat,
+                    decode_steps=v_decode_steps,
+                )
+                hn = collect_mean_decode_state_over_steps(
+                    model, tokenizer, normal_prompt,
+                    layer=layer, max_prompt_tokens=max_prompt_tokens, use_chat=use_chat,
+                    decode_steps=v_decode_steps,
+                )
+            else:
+                hp = collect_last_token_state_decode_prompt_boundary(model, tokenizer, pirate_prompt, layer, max_prompt_tokens, use_chat)
+                hn = collect_last_token_state_decode_prompt_boundary(model, tokenizer, normal_prompt, layer, max_prompt_tokens, use_chat)
+        else:
+            raise ValueError("--v_mode must be prefill or decode")
+
+        states_p.append(hp)
+        states_n.append(hn)
+
+    Hp = torch.stack(states_p, dim=0)
+    Hn = torch.stack(states_n, dim=0)
+    v = (Hp.mean(dim=0) - Hn.mean(dim=0)).float()
+    v = v / (v.norm() + 1e-12)
+    return v
 
 
-def project_out(B: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-    """
-    v_fixed = v - B(B^T v) , B is orthonormal [d,k]
-    """
-    B = B.to(v.device, dtype=torch.float32)
-    v32 = v.float()
-    v_fixed = v32 - B @ (B.t() @ v32)
-    # rescale to match ||v||
-    v_fixed = v_fixed / (v_fixed.norm() + 1e-12) * (v32.norm() + 1e-12)
-    return v_fixed.to(dtype=v.dtype)
-
-
-def sharedness(B: torch.Tensor, v: torch.Tensor) -> float:
-    B = B.to(v.device, dtype=torch.float32)
-    v32 = v.float()
-    return float((B.t() @ v32).norm().item() / (v32.norm().item() + 1e-12))
-
-
-# -----------------------------
-# Sampling helper
-# -----------------------------
 @torch.inference_mode()
 def sample_next_token(logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:
-    """
-    logits: [1, V]
-    returns next_id: [1,1]
-    """
     if temperature <= 0.0:
         return torch.argmax(logits, dim=-1, keepdim=True)
 
@@ -622,7 +424,6 @@ def sample_next_token(logits: torch.Tensor, temperature: float, top_p: float) ->
         sorted_probs, sorted_idx = torch.sort(probs, descending=True, dim=-1)
         cum = torch.cumsum(sorted_probs, dim=-1)
         mask = cum > top_p
-        # keep at least 1 token
         mask[..., 0] = False
         sorted_probs = sorted_probs.masked_fill(mask, 0.0)
         sorted_probs = sorted_probs / (sorted_probs.sum(dim=-1, keepdim=True) + 1e-12)
@@ -633,9 +434,160 @@ def sample_next_token(logits: torch.Tensor, temperature: float, top_p: float) ->
         return torch.multinomial(probs, num_samples=1)
 
 
-# -----------------------------
-# Generation evaluation
-# -----------------------------
+@torch.inference_mode()
+def generate_collect_decode_states(
+    model,
+    tokenizer,
+    prompts: List[str],
+    *,
+    layer: int,
+    max_prompt_tokens: int,
+    max_new_tokens: int,
+    use_chat: bool,
+    system_text: str,
+    temperature: float,
+    top_p: float,
+    seed: int,
+) -> torch.Tensor:
+    seed_everything(seed)
+    device = get_model_device(model)
+    block = get_block(model, layer)
+    hook = CollectLastTokenHook(decode_only=True)
+    handle = block.register_forward_hook(hook)
+    try:
+        for p in prompts:
+            prompt_text = format_chat(tokenizer, p, system_text=system_text) if use_chat else p
+
+            toks = tok(tokenizer, prompt_text, max_prompt_tokens, use_chat)
+            input_ids = toks["input_ids"].to(device)
+            T = input_ids.shape[1]
+
+            past = None
+            if T > 1:
+                out_prefill = model(input_ids=input_ids[:, :-1], use_cache=True)
+                past = out_prefill.past_key_values
+
+
+            out = model(input_ids=input_ids[:, -1:], past_key_values=past, use_cache=True)
+            past = out.past_key_values
+            logits = out.logits[:, -1, :]
+
+            prev = None
+            for _ in range(max_new_tokens):
+                if prev is None:
+                    next_id = sample_next_token(logits, temperature=temperature, top_p=top_p)
+                else:
+                    out = model(input_ids=prev, past_key_values=past, use_cache=True)
+                    past = out.past_key_values
+                    logits = out.logits[:, -1, :]
+                    next_id = sample_next_token(logits, temperature=temperature, top_p=top_p)
+
+                prev = next_id
+                if int(next_id.item()) == tokenizer.eos_token_id:
+                    break
+
+        if len(hook.records) == 0:
+            raise RuntimeError("No decode states were recorded for basis estimation.")
+        X = torch.cat([r.float().cpu() for r in hook.records], dim=0)
+        return X
+    finally:
+        handle.remove()
+
+
+@torch.inference_mode()
+def pca_basis(X: torch.Tensor, k: int) -> torch.Tensor:
+    X = X.float()
+    n, d = X.shape
+    q = int(min(k, n - 1, d))
+    if q < 1:
+        raise RuntimeError(f"Not enough states for PCA: n={n}, d={d}, k={k}")
+    U, S, V = torch.pca_lowrank(X, q=q, center=True, niter=2)
+    B = V[:, :q].contiguous()
+    B, _ = torch.linalg.qr(B, mode="reduced")
+    return B.cpu().float()
+
+
+def project_out(B: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    B = B.to(v.device, dtype=torch.float32)
+    v32 = v.float()
+    v_fixed = v32 - B @ (B.t() @ v32)
+    v_fixed = v_fixed / (v_fixed.norm() + 1e-12) * (v32.norm() + 1e-12)
+    return v_fixed.to(dtype=v.dtype)
+
+
+def sharedness(B: torch.Tensor, v: torch.Tensor) -> float:
+    B = B.to(v.device, dtype=torch.float32)
+    v32 = v.float()
+    return float((B.t() @ v32).norm().item() / (v32.norm().item() + 1e-12))
+
+
+@torch.inference_mode()
+def probe_injection(
+    model, tokenizer, user_text: str,
+    *, layer: int, max_prompt_tokens: int, use_chat: bool, system_text: str,
+    v: torch.Tensor, alpha: float, inject_first_n: int,
+    topk: int = 15,
+):
+    device = get_model_device(model)
+    block = get_block(model, layer)
+
+    prompt = format_chat(tokenizer, user_text, system_text=system_text) if use_chat else user_text
+    toks = tok(tokenizer, prompt, max_prompt_tokens, use_chat)
+    input_ids = toks["input_ids"].to(device)
+    T = input_ids.shape[1]
+
+    past = None
+    if T > 1:
+        out_prefill = model(input_ids=input_ids[:, :-1], use_cache=True)
+        past = out_prefill.past_key_values
+
+
+    out0 = model(input_ids=input_ids[:, -1:], past_key_values=past, use_cache=True)
+    logits0 = out0.logits[0, -1, :].float().cpu()
+
+
+    hook = AddVectorHook(v, alpha=alpha, inject_first_n=inject_first_n)
+    hook.reset()
+    h = block.register_forward_hook(hook)
+    out1 = model(input_ids=input_ids[:, -1:], past_key_values=past, use_cache=True)
+    h.remove()
+    logits1 = out1.logits[0, -1, :].float().cpu()
+
+    d = logits1 - logits0
+    delta_norm = float(d.norm().item())
+
+    print(f"[Probe] hook n_seen_seq1={hook.n_seen_seq1} n_applied={hook.n_applied} ||delta_logits||={delta_norm:.4f}")
+
+    topv, topi = torch.topk(d, k=min(topk, d.numel()))
+    print("[Probe] Top delta-logit tokens:")
+    for dv, tid in zip(topv.tolist(), topi.tolist()):
+        s = tokenizer.decode([tid]).replace("\n", "\\n")
+        print(f"  Delta={dv:+.3f}  id={tid}  tok={repr(s)}")
+
+    cands = [" ahoy", "Ahoy", " matey", "Matey", " arrr", "Arrr", " aye", "Aye", " cap'n", " Cap'n"]
+    p0 = torch.softmax(logits0, dim=-1)
+    p1 = torch.softmax(logits1, dim=-1)
+
+    pirate_deltas = []
+    print("[Probe] Pirate candidates:")
+    for s in cands:
+        ids = tokenizer.encode(s, add_special_tokens=False)
+        if len(ids) == 1:
+            tid = ids[0]
+            dl = float(d[tid].item())
+            pirate_deltas.append(dl)
+            print(f"  {repr(s)} id={tid} delta_logit={dl:+.3f} p0={p0[tid].item():.2e} p1={p1[tid].item():.2e}")
+        else:
+            print(f"  {repr(s)} -> ids={ids} (multi-token)")
+
+    return {
+        "n_seen_seq1": hook.n_seen_seq1,
+        "n_applied": hook.n_applied,
+        "delta_norm": delta_norm,
+        "pirate_deltas": pirate_deltas,
+    }
+
+
 @dataclass
 class EvalCfg:
     temperature: float = 0.7
@@ -650,17 +602,14 @@ def generate_one(
     *,
     max_prompt_tokens: int,
     max_new_tokens: int,
-    decoding: str,  # 'greedy'|'sample'
+    decoding: str,
     seed: Optional[int],
     hook: Optional[AddVectorHook],
     layer: int,
     use_chat: bool,
     system_text: str,
     eval_cfg: EvalCfg,
-) -> Tuple[str, int, bool]:
-    """
-    Returns: (generated_text, new_tokens, ended_by_eos)
-    """
+) -> Tuple[str, int, bool, Optional[Dict[str, int]]]:
     if seed is not None:
         seed_everything(seed)
 
@@ -672,10 +621,8 @@ def generate_one(
         handle = block.register_forward_hook(hook)
 
     try:
-        # Wrap as chat if needed
         prompt = format_chat(tokenizer, prompt_text, system_text=system_text) if use_chat else prompt_text
-        # toks = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_prompt_tokens, add_special_tokens=True)
-        toks = tok(tokenizer, prompt, max_prompt_tokens, use_chat=True)
+        toks = tok(tokenizer, prompt, max_prompt_tokens, use_chat)
         input_ids = toks["input_ids"].to(device)
         T = input_ids.shape[1]
 
@@ -684,7 +631,6 @@ def generate_one(
             out_prefill = model(input_ids=input_ids[:, :-1], use_cache=True)
             past = out_prefill.past_key_values
 
-        # prompt-boundary decode call (seq_len==1) for last prompt token
         out = model(input_ids=input_ids[:, -1:], past_key_values=past, use_cache=True)
         past = out.past_key_values
         logits = out.logits[:, -1, :]
@@ -699,10 +645,10 @@ def generate_one(
             else:
                 next_id = sample_next_token(logits, temperature=eval_cfg.temperature, top_p=eval_cfg.top_p)
 
-            tok = int(next_id.item())
-            gen_ids.append(tok)
+            tok_id = int(next_id.item())
+            gen_ids.append(tok_id)
 
-            if tok == tokenizer.eos_token_id:
+            if tok_id == tokenizer.eos_token_id:
                 ended = True
                 break
 
@@ -712,7 +658,12 @@ def generate_one(
             logits = out.logits[:, -1, :]
 
         text = tokenizer.decode(gen_ids, skip_special_tokens=True)
-        return text, len(gen_ids), ended
+
+        hook_stats = None
+        if hook is not None:
+            hook_stats = {"n_seen_seq1": hook.n_seen_seq1, "n_applied": hook.n_applied}
+
+        return text, len(gen_ids), ended, hook_stats
     finally:
         if handle is not None:
             handle.remove()
@@ -750,23 +701,26 @@ def main():
 
     ap.add_argument("--layer", type=int, default=10)
 
-    # v estimation
+
     ap.add_argument("--v_mode", type=str, default="decode", choices=["prefill", "decode"])
     ap.add_argument("--v_n", type=int, default=32)
     ap.add_argument("--v_max_prompt_tokens", type=int, default=512)
-    ap.add_argument("--pirate_anchor", type=str, default="Use at least two of: ahoy, matey, arrr, aye, cap'n.",
+    ap.add_argument("--v_decode_steps", type=int, default=16,
+                    help="For v_mode=decode, average states over prompt-boundary + first N decode steps. Set 0 to disable.")
+    ap.add_argument("--pirate_anchor", type=str,
+                    default="Start your answer with 'Ahoy matey!' and include: ahoy, matey, arrr, aye, cap'n.",
                     help="Anchor string used ONLY for v estimation to encourage lexical pirate tokens.")
 
-    # basis
+
     ap.add_argument("--basis_k", type=int, default=128)
     ap.add_argument("--basis_n_prompts", type=int, default=30)
     ap.add_argument("--calib_max_new_tokens", type=int, default=128)
     ap.add_argument("--basis_max_states", type=int, default=20000)
 
-    # eval generation
+
     ap.add_argument("--max_prompt_tokens", type=int, default=512)
     ap.add_argument("--max_new_tokens", type=int, default=256)
-    ap.add_argument("--batch_size", type=int, default=4)  # currently used for loop chunking
+    ap.add_argument("--batch_size", type=int, default=4)
     ap.add_argument("--do_greedy", type=int, default=1)
     ap.add_argument("--do_sample", type=int, default=1)
     ap.add_argument("--sample_seeds", type=str, default="1,2")
@@ -776,23 +730,40 @@ def main():
     ap.add_argument("--inject_first_n", type=int, default=0, help="Inject only first N decode steps; 0=all.")
     ap.add_argument("--n_rand", type=int, default=1)
 
-    # metric
-    ap.add_argument("--pirate_threshold", type=int, default=2)
-    ap.add_argument("--v_decode_steps", type=int, default=16,
-                help="In v_mode=decode, average hidden states over prompt-boundary + first N generated tokens.")
 
-    # chat template
+    ap.add_argument("--pirate_threshold", type=int, default=2)
+
+
     ap.add_argument("--chat_template", type=str, default="auto", choices=["auto", "on", "off"])
     ap.add_argument("--system_text", type=str, default="You are a helpful assistant.")
 
+
+    ap.add_argument("--fail_fast", type=int, default=1, help="If probe shows injection ineffective, exit early.")
+    ap.add_argument("--probe_alpha", type=float, default=12.0)
+    ap.add_argument("--probe_text", type=str, default="Explain why the sky looks blue during the day.")
+    ap.add_argument("--probe_min_delta_norm", type=float, default=0.10, help="Fail-fast if ||delta_logits|| below this.")
+    ap.add_argument("--probe_require_pirate_uplift", type=int, default=0,
+                    help="If 1, require at least one pirate candidate token delta_logit>0 in probe.")
+    ap.add_argument("--debug_only", type=int, default=0, help="If 1, only estimate v + probe, then exit.")
+
+    ap.add_argument("--eval_n_base", type=int, default=0, help="0=all, else only first N base prompts")
+    ap.add_argument("--eval_n_templates", type=int, default=0, help="0=all, else only first N templates")
+    ap.add_argument("--max_eval_prompts", type=int, default=0, help="0=all, else cap total eval prompts")
+
+    ap.add_argument("--flush_every", type=int, default=20)
+    ap.add_argument("--print_hit_examples", type=int, default=1, help="Print when pirate_hits>0")
+    ap.add_argument("--early_abort_after", type=int, default=0, help="0=off; else check after this many rows per method/decoding")
+    ap.add_argument("--early_abort_if_all_zero", type=int, default=1)
+    ap.add_argument("--stop_on_first_success", type=int, default=0)
+
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out_dir", type=str, default="results/mvp_pirate_v4")
+    ap.add_argument("--out_dir", type=str, default="results/pirate_projection")
 
     args = ap.parse_args()
     seed_everything(args.seed)
     ensure_dir(args.out_dir)
 
-    # dtype
+
     if args.dtype == "fp16":
         torch_dtype = torch.float16
     elif args.dtype == "bf16":
@@ -800,17 +771,15 @@ def main():
     else:
         torch_dtype = torch.float32
 
-    # load
+
     tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    kw = {"torch_dtype": torch_dtype}
-    # newer HF prefers 'dtype', but keep compatibility
     try:
         model = AutoModelForCausalLM.from_pretrained(args.model, dtype=torch_dtype, device_map=args.device_map)
     except TypeError:
-        model = AutoModelForCausalLM.from_pretrained(args.model, **kw, device_map=args.device_map)
+        model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch_dtype, device_map=args.device_map)
 
     model.eval()
     if args.device_map is None:
@@ -818,42 +787,75 @@ def main():
 
     use_chat = should_use_chat_template(args.model, tokenizer, args.chat_template)
 
-    print(f"[Load] model={args.model} device={args.device} dtype={args.dtype} layer={args.layer} use_chat={use_chat} v_mode={args.v_mode}")
+    print(f"[Load] model={args.model} device={args.device} dtype={args.dtype} layer={args.layer} use_chat={use_chat} v_mode={args.v_mode} v_decode_steps={args.v_decode_steps}")
     if use_chat:
-        print("[Chat] using tokenizer.apply_chat_template for prompts.")
+        print("[Chat] using tokenizer.apply_chat_template for prompts (and tokenize with add_special_tokens=False).")
 
-    # choose alphas
+
     alphas = parse_float_list(args.alphas) if args.alphas.strip() else [float(args.alpha)]
 
-    # prepare prompts
-    base_prompts = BASE_PROMPTS
-    templates = TEMPLATES
+
+    base_prompts = BASE_PROMPTS[:args.eval_n_base] if args.eval_n_base > 0 else BASE_PROMPTS
+    templates = TEMPLATES[:args.eval_n_templates] if args.eval_n_templates > 0 else TEMPLATES
     eval_prompts = make_eval_prompts(base_prompts, templates)
+    if args.max_eval_prompts > 0:
+        eval_prompts = eval_prompts[:args.max_eval_prompts]
+
     print(f"[Data] base_prompts={len(base_prompts)} templates={len(templates)} eval_prompts={len(eval_prompts)}")
 
-    # v estimation texts: just use first v_n base prompts (content only, not templates)
-    v_texts = base_prompts[: min(args.v_n, len(base_prompts))]
+
+    v_texts = BASE_PROMPTS[: min(args.v_n, len(BASE_PROMPTS))]
     print(f"[v] estimating v with n={len(v_texts)} layer={args.layer} mode={args.v_mode}")
     v = estimate_v_mean_diff(
         model, tokenizer, v_texts,
         layer=args.layer,
         v_mode=args.v_mode,
+        v_decode_steps=args.v_decode_steps,
         max_prompt_tokens=args.v_max_prompt_tokens,
         use_chat=use_chat,
         system_text=args.system_text,
         pirate_anchor=args.pirate_anchor,
-        decode_steps=args.v_decode_steps,
     ).to(get_model_device(model))
 
     v_path = os.path.join(args.out_dir, f"v_pirate_{args.v_mode}_layer{args.layer}.npy")
     np.save(v_path, v.detach().cpu().numpy())
     print(f"[v] saved {v_path} ||v||={float(v.norm().item()):.4f}")
 
-    # basis estimation prompts: use some templates to diversify (no pirate)
+
+    print("[Sanity] probing injection effect on next-token logits...")
+    probe = probe_injection(
+        model, tokenizer, args.probe_text,
+        layer=args.layer,
+        max_prompt_tokens=args.max_prompt_tokens,
+        use_chat=use_chat,
+        system_text=args.system_text,
+        v=v,
+        alpha=args.probe_alpha,
+        inject_first_n=max(64, args.inject_first_n),
+        topk=15,
+    )
+
+    if args.fail_fast:
+        if probe["n_applied"] <= 0:
+            print("[FailFast] hook did not apply any injection (n_applied=0). Exiting.")
+            raise SystemExit(2)
+        if probe["delta_norm"] < args.probe_min_delta_norm:
+            print(f"[FailFast] ||delta_logits|| too small ({probe['delta_norm']:.4f} < {args.probe_min_delta_norm:.4f}). Exiting.")
+            raise SystemExit(2)
+        if args.probe_require_pirate_uplift:
+            if not any(dl > 0.0 for dl in probe["pirate_deltas"]):
+                print("[FailFast] no pirate candidate token got positive delta_logit. Exiting.")
+                raise SystemExit(2)
+
+    if args.debug_only:
+        print("[DebugOnly] Done (v + probe). Exiting.")
+        return
+
+
     calib_prompts = []
-    for i in range(min(args.basis_n_prompts, len(base_prompts))):
-        tid = i % len(templates)
-        calib_prompts.append(templates[tid].format(q=base_prompts[i]))
+    for i in range(min(args.basis_n_prompts, len(BASE_PROMPTS))):
+        tid = i % len(TEMPLATES)
+        calib_prompts.append(TEMPLATES[tid].format(q=BASE_PROMPTS[i]))
 
     print(f"[B] collecting decode states for PCA: n_prompts={len(calib_prompts)} max_new_tokens={args.calib_max_new_tokens} basis_k={args.basis_k}")
     X = generate_collect_decode_states(
@@ -869,7 +871,6 @@ def main():
     )
     print(f"[B] collected states X shape={tuple(X.shape)}")
 
-    # subsample states if needed
     if args.basis_max_states > 0 and X.shape[0] > args.basis_max_states:
         idx = torch.randperm(X.shape[0])[: args.basis_max_states]
         X = X[idx]
@@ -884,7 +885,7 @@ def main():
     v_fixed = project_out(B, v)
     print(f"[Sharedness] ||B^T v_fixed||/||v_fixed|| = {sharedness(B, v_fixed):.4f}")
 
-    # random control(s) energy matched
+
     v_norm = float(v.float().norm().item())
     rand_vs = []
     for rid in range(max(args.n_rand, 0)):
@@ -892,11 +893,11 @@ def main():
         r = r / (r.norm() + 1e-12) * v_norm
         rand_vs.append(r.to(v.dtype))
 
-    # evaluation configs
-    eval_cfg = EvalCfg()
 
+    eval_cfg = EvalCfg()
     sample_seeds = parse_int_list(args.sample_seeds) if args.sample_seeds.strip() else [1, 2]
-    methods = []  # list of dict with method_name, vector_or_none, rand_id
+
+    methods = []
     methods.append({"name": "no_steer", "v": None, "rand_id": None})
 
     for a in alphas:
@@ -906,15 +907,38 @@ def main():
         for a in alphas:
             methods.append({"name": f"rand{rid}_a{a:g}", "v": rv, "alpha": a, "rand_id": rid})
 
-    # evaluate
+
+    out_csv = os.path.join(args.out_dir, "results.csv")
+    f_csv = open(out_csv, "w", newline="", encoding="utf-8")
+    fieldnames = ["method","decoding","seed","template_id","pirate_hits","success","new_tokens","ended_by_eos","text","hook_n_seen_seq1","hook_n_applied"]
+    w = csv.DictWriter(f_csv, fieldnames=fieldnames)
+    w.writeheader()
+    f_csv.flush()
+
     rows = []
+
+    def maybe_early_abort(method_name: str, decoding: str):
+        if args.early_abort_after <= 0 or not args.early_abort_if_all_zero:
+            return
+        subset = [r for r in rows if r["method"] == method_name and r["decoding"] == decoding]
+        if len(subset) >= args.early_abort_after:
+            if max(int(r["pirate_hits"]) for r in subset) == 0:
+                print(f"[EarlyAbort] method={method_name} decoding={decoding} still all pirate_hits=0 after {len(subset)} rows. Exiting.")
+                raise SystemExit(3)
+
+    def record_row(r: Dict):
+        rows.append(r)
+        w.writerow(r)
+        if len(rows) % args.flush_every == 0:
+            f_csv.flush()
+
     def eval_one_setting(method, decoding: str, seed: Optional[int]):
         hook = None
         if method["v"] is not None:
             hook = AddVectorHook(method["v"], alpha=float(method["alpha"]), inject_first_n=args.inject_first_n)
 
         for (tid, prompt_text) in eval_prompts:
-            out_text, new_tokens, ended = generate_one(
+            out_text, new_tokens, ended, hook_stats = generate_one(
                 model, tokenizer, prompt_text,
                 max_prompt_tokens=args.max_prompt_tokens,
                 max_new_tokens=args.max_new_tokens,
@@ -928,7 +952,11 @@ def main():
             )
             hits = pirate_hits(out_text)
             succ = 1 if hits >= args.pirate_threshold else 0
-            rows.append({
+
+            hn_seen = hook_stats["n_seen_seq1"] if hook_stats else ""
+            hn_appl = hook_stats["n_applied"] if hook_stats else ""
+
+            row = {
                 "method": method["name"],
                 "decoding": decoding,
                 "seed": seed if seed is not None else "",
@@ -938,36 +966,44 @@ def main():
                 "new_tokens": new_tokens,
                 "ended_by_eos": int(ended),
                 "text": out_text,
-            })
+                "hook_n_seen_seq1": hn_seen,
+                "hook_n_applied": hn_appl,
+            }
+            record_row(row)
 
-    if args.do_greedy:
-        for m in methods:
-            print(f"[Eval] method={m['name']} decoding=greedy")
-            eval_one_setting(m, "greedy", None)
+            if args.print_hit_examples and hits > 0:
+                preview = out_text.replace("\n", " ")[:160]
+                print(f"[HIT] method={method['name']} dec={decoding} seed={seed} tid={tid} hits={hits} :: {preview}")
 
-    if args.do_sample:
-        for s in sample_seeds:
+            if args.stop_on_first_success and succ == 1:
+                print(f"[StopOnFirstSuccess] method={method['name']} decoding={decoding} seed={seed} tid={tid}")
+                raise SystemExit(0)
+
+            maybe_early_abort(method["name"], decoding)
+
+
+    try:
+        if args.do_greedy:
             for m in methods:
-                print(f"[Eval] method={m['name']} decoding=sample seed={s}")
-                eval_one_setting(m, "sample", s)
+                print(f"[Eval] method={m['name']} decoding=greedy")
+                eval_one_setting(m, "greedy", None)
 
-    # save csv
-    out_csv = os.path.join(args.out_dir, "results.csv")
-    with open(out_csv, "w", newline="", encoding="utf-8") as f:
-        fieldnames = list(rows[0].keys()) if rows else []
-        w = csv.DictWriter(f, fieldnames=fieldnames)
-        w.writeheader()
-        for r in rows:
-            w.writerow(r)
-    print(f"[Save] wrote {out_csv} rows={len(rows)}")
+        if args.do_sample:
+            for s in sample_seeds:
+                for m in methods:
+                    print(f"[Eval] method={m['name']} decoding=sample seed={s}")
+                    eval_one_setting(m, "sample", s)
 
-    # summarize across templates: mean±std and worst-case (template min) per decoding and method
+    finally:
+        f_csv.flush()
+        f_csv.close()
+        print(f"[Save] wrote {out_csv} rows={len(rows)}")
+
+
     def summarize(decoding: str):
-        # method -> list of template success rates
         summary = {}
         for m in methods:
             name = m["name"]
-            # gather by template
             t_rates = []
             for tid in range(len(templates)):
                 subset = [r for r in rows if r["decoding"] == decoding and r["method"] == name and int(r["template_id"]) == tid]
@@ -986,25 +1022,24 @@ def main():
     summ_g = summarize("greedy") if args.do_greedy else {}
     summ_s = summarize("sample") if args.do_sample else {}
 
-    # Write summary.md
     md_path = os.path.join(args.out_dir, "summary.md")
     with open(md_path, "w", encoding="utf-8") as f:
-        f.write("# MVP v4: Pirate steering projection repair\n\n")
+        f.write("# Pirate steering projection repair\n\n")
         f.write(f"- model: {args.model}\n")
         f.write(f"- layer: {args.layer}\n")
         f.write(f"- v_mode: {args.v_mode}\n")
+        f.write(f"- v_decode_steps: {args.v_decode_steps}\n")
         f.write(f"- pirate_threshold: {args.pirate_threshold}\n")
         f.write(f"- inject_first_n: {args.inject_first_n}\n")
         f.write(f"- basis_k: {B.shape[1]}\n")
         f.write(f"- sharedness(v): {sharedness(B, v):.6f}\n")
         f.write(f"- sharedness(v_fixed): {sharedness(B, v_fixed):.6f}\n\n")
 
-        # Table
-        f.write("| Method | Greedy mean ± std | Greedy worst | Sample mean ± std | Sample worst |\n")
+        f.write("| Method | Greedy mean +/- std | Greedy worst | Sample mean +/- std | Sample worst |\n")
         f.write("| --- | --- | --- | --- | --- |\n")
 
         all_method_names = [m["name"] for m in methods]
-        # show a nice ordering: no_steer, v_orig..., v_fixed..., rand...
+
         def sort_key(name: str):
             if name == "no_steer":
                 return (0, name)
@@ -1019,18 +1054,18 @@ def main():
         for name in sorted(all_method_names, key=sort_key):
             g = summ_g.get(name, None)
             s = summ_s.get(name, None)
-            g_str = f"{g['mean']:.3f} ± {g['std']:.3f}" if g else ""
+            g_str = f"{g['mean']:.3f} +/- {g['std']:.3f}" if g else ""
             g_w = f"{g['worst']:.3f}" if g else ""
-            s_str = f"{s['mean']:.3f} ± {s['std']:.3f}" if s else ""
+            s_str = f"{s['mean']:.3f} +/- {s['std']:.3f}" if s else ""
             s_w = f"{s['worst']:.3f}" if s else ""
             f.write(f"| {name} | {g_str} | {g_w} | {s_str} | {s_w} |\n")
 
     print(f"[Save] wrote {md_path}")
 
-    # Write summary.json
     js_path = os.path.join(args.out_dir, "summary.json")
     payload = {
         "config": vars(args),
+        "probe": probe,
         "sharedness_v": sharedness(B, v),
         "sharedness_v_fixed": sharedness(B, v_fixed),
         "greedy": summ_g,
