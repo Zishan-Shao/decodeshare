@@ -26,7 +26,11 @@ Large raw model outputs are intentionally not committed. Full reruns write to
 before launching model inference.
 
 <p align="center">
-  <video src="paper_artifacts/figures/decodeshare_steering_demo.mp4" controls muted loop playsinline width="96%"></video>
+  <img src="paper_artifacts/figures/decodeshare_steering_demo.gif" alt="DecodeShare GPU steering demo comparing baseline, prefill steering, and decode steering" width="96%">
+</p>
+
+<p align="center">
+  <a href="paper_artifacts/figures/decodeshare_steering_demo.mp4">MP4 demo clip</a>
 </p>
 
 ## Core Results
