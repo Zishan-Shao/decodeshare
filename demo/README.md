@@ -146,6 +146,10 @@ Visitors can open the hosted Space directly; they do not need a local checkout,
 Hugging Face token, or paid hardware. The commands below are only for
 maintainers updating the Space bundle.
 
+The hosted demo runs on a free CPU Space. If it is sleeping, the first page load
+can take about 2-3 minutes while Hugging Face starts the container and loads the
+model.
+
 ```bash
 conda activate decodeshare
 hf auth login
@@ -154,8 +158,8 @@ python demo/deploy_hf_space.py \
   --space-id Zishan-Shao/decodeshare-demo
 ```
 
-The free CPU Space may sleep when inactive and cold-start slowly. It still loads
-TinyLlama model weights at startup, so CPU generation is slow but usable for
-short prompts and small `Max new tokens` values. GPU hardware can be selected
-from the Space settings page later if paid credits are available, but it is not
-required for deployment.
+The free CPU Space may sleep when inactive and take about 2-3 minutes to
+cold-start. It still loads TinyLlama model weights at startup, so CPU generation
+is slow but usable for short prompts and small `Max new tokens` values. GPU
+hardware can be selected from the Space settings page later if paid credits are
+available, but it is not required for deployment.

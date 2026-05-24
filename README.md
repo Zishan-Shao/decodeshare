@@ -29,13 +29,17 @@ before launching model inference.
   <img src="paper_artifacts/figures/decodeshare_steering_demo.gif" alt="DecodeShare GPU steering demo comparing baseline, prefill steering, and decode steering" width="96%">
 </p>
 
+**Note:** the hosted demo runs on a free CPU Hugging Face Space. If the Space is
+sleeping, the first load can take about 2-3 minutes while Hugging Face starts
+the container and loads the model.
+
 <p align="center">
   <a href="https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo">Try the free CPU Space</a>
 </p>
 
 The hosted demo is public: visitors do not need a local checkout, Hugging Face
 token, or paid hardware. The free CPU Space may be sleeping when opened, so the
-first request can take time to cold-start.
+first request can take about 2-3 minutes to cold-start.
 
 ## Core Results
 
@@ -252,9 +256,10 @@ Hosted CPU Space: https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo
 
 The hosted Space uses Hugging Face's free CPU hardware by default. Visitors can
 open it directly without logging in or installing this repository. It may be
-sleeping when opened and can take time to cold-start. The same Gradio demo can
-also run locally on CPU with the bundled cache, though generation is much slower
-than on GPU. Responses stream sequentially so CPU runs remain trackable.
+sleeping when opened and can take about 2-3 minutes to cold-start. The same
+Gradio demo can also run locally on CPU with the bundled cache, though
+generation is much slower than on GPU. Responses stream sequentially so CPU runs
+remain trackable.
 
 ## Reproducing Experiments
 

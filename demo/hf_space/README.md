@@ -22,7 +22,8 @@ three generations for the same prompt:
 The bundled cache contains the demo decode-shared basis and preset steering
 vectors for TinyLlama. It does not contain model weights. The Space still loads
 `TinyLlama/TinyLlama-1.1B-Chat-v1.0` at startup. Free CPU hardware works, but
-startup and generation are slow; keep `Max new tokens` small for CPU runs.
+startup can take about 2-3 minutes if the Space is sleeping, and generation is
+slow; keep `Max new tokens` small for CPU runs.
 
 Recommended prompt:
 
