@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DecodeShare</title>
+    <meta
+      name="description"
+      content="DecodeShare traces shared decode-time decision subspaces in LLMs and tests their causal role under KV-cached inference."
+    >
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#top">DecodeShare</a>
+      <nav aria-label="Project navigation">
+        <a href="#method">Method</a>
+        <a href="#results">Results</a>
+        <a href="#steering">Steering</a>
+        <a href="#citation">Citation</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="wrap hero-copy">
+          <p class="venue">ICML 2026</p>
+          <h1>DECODESHARE: Tracing the Shared Subspace of LLM Decode-Time Decisions</h1>
+
+          <p class="authors">
+            Zishan Shao<sup>1</sup>, Lixun Zhang<sup>1,2</sup>,
+            Kangning Cui<sup>3</sup>, Yixiao Wang<sup>2</sup>,
+            Ting Jiang<sup>1</sup>, Hancheng Ye<sup>1</sup>,
+            Qinsi Wang<sup>1</sup>, Zhixu Du<sup>1</sup>,
+            Yuzhe Fu<sup>1</sup>, Fan Yang<sup>3</sup>,
+            Danyang Zhuo<sup>2</sup>, Yiran Chen<sup>1</sup>,
+            Hai Helen Li<sup>1</sup>
+          </p>
+
+          <p class="affiliations">
+            <sup>1</sup>Duke ECE &nbsp; <sup>2</sup>Duke CS &nbsp;
+            <sup>3</sup>Wake Forest CS
+          </p>
+
+          <div class="actions" aria-label="Project links">
+            <a class="button primary" href="assets/DecodeShareICML2026.pdf">Paper PDF</a>
+            <a class="button" href="https://github.com/Zishan-Shao/decodeshare">Code</a>
+            <a class="button" href="https://huggingface.co/spaces/Zishan-Shao/decodeshare-demo">Demo</a>
+          </div>
+
+          <p class="tldr">
+            DecodeShare identifies compact task-general subspaces in KV-cached
+            decode-time hidden states, then tests their causal role with matched
+            decode-only interventions.
+          </p>
+        </div>
+
+        <figure class="wrap hero-visual">
+          <img
+            src="assets/decodeshare_pipeline.jpg"
+            alt="DecodeShare pipeline for activation collection, shared subspace estimation, and matched controls"
+          >
+        </figure>
+      </section>
+
+      <section class="section">
+        <div class="wrap">
+          <div class="stat-grid" aria-label="Headline results">
+            <div class="stat">
+              <span class="stat-value">32D</span>
+              <span class="stat-label">shared layer-10 workspace studied in detail</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value">-15.6</span>
+              <span class="stat-label">accuracy-point drop from full shared removal</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value">0.700</span>
+              <span class="stat-label">decode-time steering ranking rho for CAA vectors</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value">100%</span>
+              <span class="stat-label">patched@full rescue rate in targeted patchback rows</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="method" class="section alt">
+        <div class="wrap two-col">
+          <div>
+            <p class="eyebrow">Method</p>
+            <h2>Decode-time states are the intervention target.</h2>
+            <p>
+              Modern decoder-only LLM inference separates prompt prefill from
+              single-token decode steps. DecodeShare treats the hidden state
+              used during KV-cached decoding as the decision state, estimates
+              cross-task shared directions there, and removes only that
+              component during decoding.
+            </p>
+          </div>
+
+          <div class="step-grid">
+            <article>
+              <span>01</span>
+              <h3>Collect</h3>
+              <p>Pool decode-time hidden states across tasks and prompt variants.</p>
+            </article>
+            <article>
+              <span>02</span>
+              <h3>Estimate</h3>
+              <p>Select directions consistently shared across tasks, not just high-energy PCs.</p>
+            </article>
+            <article>
+              <span>03</span>
+              <h3>Intervene</h3>
+              <p>Run decode-only projection removal against dimension- and energy-matched controls.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="results" class="section">
+        <div class="wrap">
+          <p class="eyebrow">Core Results</p>
+          <h2>Shared decode subspaces are compact and causally important.</h2>
+          <p class="section-lead">
+            Across models and benchmarks, the discovered subspace occupies a
+            small fraction of the hidden dimension while causing larger decision
+            degradation than random or nonshared controls under matched budgets.
+          </p>
+
+          <div class="figure-pair">
+            <figure class="figure">
+              <img
+                src="assets/1_existence.png"
+                alt="Shared core dimensions across Qwen, Llama, and Falcon models"
+              >
+              <figcaption>
+                Compact shared cores appear across model families and pass
+                permutation and scramble tests.
+              </figcaption>
+            </figure>
+
+            <figure class="figure">
+              <img
+                src="assets/2_loto.png"
+                alt="Leave-one-task-out decode ablation accuracy results"
+              >
+              <figcaption>
+                Leave-one-task-out decode ablations show that removing the
+                shared subspace hurts held-out tasks more than random controls.
+              </figcaption>
+            </figure>
+          </div>
+
+          <div class="table-wrap" role="img" aria-label="Shared channel contents table">
+            <table>
+              <caption>Layer-10 shared workspace split on Llama-2-7B.</caption>
+              <thead>
+                <tr>
+                  <th>Ablated subspace</th>
+                  <th>Dim.</th>
+                  <th>Acc.</th>
+                  <th>Delta Acc.</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Full shared</td>
+                  <td>32</td>
+                  <td>28.5</td>
+                  <td>-15.6</td>
+                </tr>
+                <tr>
+                  <td>Q_out</td>
+                  <td>3</td>
+                  <td>44.9</td>
+                  <td>+0.8</td>
+                </tr>
+                <tr>
+                  <td>Q_core</td>
+                  <td>29</td>
+                  <td>27.3</td>
+                  <td>-16.8</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="section alt">
+        <div class="wrap two-col reversed">
+          <div>
+            <p class="eyebrow">Patchback</p>
+            <h2>The shared subspace carries recoverable decision information.</h2>
+            <p>
+              DecodeShare also tests whether the shared subspace can patch
+              corrupted decisions back toward the baseline answer. Targeted
+              patching rescues flips at much higher rates than random-vector,
+              random-subspace, and nonshared-patch controls.
+            </p>
+          </div>
+
+          <figure class="figure">
+            <img
+              src="assets/3_patchback.png"
+              alt="Patchback table showing targeted shared-subspace patching and controls"
+            >
+          </figure>
+        </div>
+      </section>
+
+      <section id="steering" class="section">
+        <div class="wrap">
+          <p class="eyebrow">Steering Reliability</p>
+          <h2>Decode-time validation is a better proxy for held-out steering utility.</h2>
+          <p class="section-lead">
+            Steering vectors can overlap the task-general decode channel.
+            DecodeShare separates shared and residual components, then compares
+            validation signals against held-out KV-cached decoding behavior.
+          </p>
+
+          <div class="split-media">
+            <figure class="figure">
+              <img
+                src="assets/decodeshare_steering_demo.gif"
+                alt="DecodeShare steering demo comparing baseline, prefill vector, and decode vector"
+              >
+            </figure>
+
+            <div class="metric-list">
+              <div class="metric">
+                <span>CAA contrastive</span>
+                <strong>prefill rho -0.370 -> decode rho 0.700</strong>
+              </div>
+              <div class="metric">
+                <span>Instruction vectors</span>
+                <strong>prefill rho 0.172 -> decode rho 0.767</strong>
+              </div>
+              <div class="metric">
+                <span>SAE features</span>
+                <strong>prefill rho -0.064 -> decode rho 0.594</strong>
+              </div>
+              <div class="metric">
+                <span>Held-out deployment</span>
+                <strong>decode-aligned selection improves REAL mean and flip rate</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section alt">
+        <div class="wrap two-col">
+          <div>
+            <p class="eyebrow">Sensitivity</p>
+            <h2>The shared fraction is stable under retention and threshold sweeps.</h2>
+            <p>
+              The paper reports shared-subspace size under PCA retention and
+              sharedness threshold sweeps. The selected core remains compact
+              under stricter settings, supporting the claim that DecodeShare is
+              not simply selecting high-energy directions.
+            </p>
+          </div>
+
+          <figure class="figure">
+            <img
+              src="assets/4_tau_sweep.png"
+              alt="Shared fraction sweep over PCA retention and tau threshold"
+            >
+          </figure>
+        </div>
+      </section>
+
+      <section id="reproduce" class="section">
+        <div class="wrap two-col">
+          <div>
+            <p class="eyebrow">Reproduce</p>
+            <h2>Run smoke checks first, then section-level reruns.</h2>
+            <p>
+              The repository contains lightweight smoke checks and full GPU
+              reproduction wrappers for the main paper sections.
+            </p>
+          </div>
+
+          <div class="code-panel">
+            <pre><code>conda env create -f environment.yml
+conda activate decodeshare
+bash scripts/run_all_smoke_tests.sh
+
+DRY_RUN=1 bash scripts/reproduce_ablation_tables.sh
+bash scripts/reproduce_h1_tables.sh
+bash scripts/reproduce_table_1_patchback.sh</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="citation" class="section alt">
+        <div class="wrap">
+          <p class="eyebrow">Citation</p>
+          <h2>Cite DecodeShare</h2>
+          <pre class="citation"><code>@inproceedings{shao2026decodeshare,
+  title     = {DECODESHARE: Tracing the Shared Subspace of LLM Decode-Time Decisions},
+  author    = {Shao, Zishan and Zhang, Lixun and Cui, Kangning and Wang, Yixiao
+               and Jiang, Ting and Ye, Hancheng and Wang, Qinsi and Du, Zhixu
+               and Fu, Yuzhe and Yang, Fan and Zhuo, Danyang and Chen, Yiran
+               and Li, Hai Helen},
+  booktitle = {Proceedings of the 43rd International Conference on Machine Learning},
+  year      = {2026}
+}</code></pre>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <span>DecodeShare</span>
+        <a href="https://github.com/Zishan-Shao/decodeshare">GitHub repository</a>
+      </div>
+    </footer>
+  </body>
+</html>
