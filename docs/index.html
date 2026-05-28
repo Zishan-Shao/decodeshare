@@ -14,9 +14,9 @@
     <header class="topbar">
       <a class="brand" href="#top">DecodeShare</a>
       <nav aria-label="Project navigation">
+        <a href="#steering">Steering</a>
         <a href="#method">Method</a>
         <a href="#results">Results</a>
-        <a href="#steering">Steering</a>
         <a href="#citation">Citation</a>
       </nav>
     </header>
@@ -57,38 +57,66 @@
 
         <figure class="wrap hero-visual">
           <img
-            src="assets/decodeshare_pipeline.jpg"
-            alt="DecodeShare pipeline for activation collection, shared subspace estimation, and matched controls"
+            src="assets/decodeshare_steering_demo.gif"
+            alt="DecodeShare steering demo comparing baseline, prefill vector, and decode vector"
           >
+          <figcaption>
+            A compact steering demo comparing baseline generation with
+            prefill-estimated and decode-estimated steering behavior.
+          </figcaption>
         </figure>
       </section>
 
-      <section class="section">
-        <div class="wrap">
-          <div class="stat-grid" aria-label="Headline results">
-            <div class="stat">
-              <span class="stat-value">32D</span>
-              <span class="stat-label">shared layer-10 workspace studied in detail</span>
-            </div>
-            <div class="stat">
-              <span class="stat-value">-15.6</span>
-              <span class="stat-label">accuracy-point drop from full shared removal</span>
-            </div>
-            <div class="stat">
-              <span class="stat-value">0.700</span>
-              <span class="stat-label">decode-time steering ranking rho for CAA vectors</span>
-            </div>
-            <div class="stat">
-              <span class="stat-value">100%</span>
-              <span class="stat-label">patched@full rescue rate in targeted patchback rows</span>
-            </div>
+      <section id="steering" class="section">
+        <div class="wrap two-col">
+          <div>
+            <p class="eyebrow">Steering Reliability</p>
+            <h2>Decode-time validation is a better proxy for held-out steering utility.</h2>
+            <p>
+              Steering vectors can overlap the task-general decode channel.
+              DecodeShare separates shared and residual components, then
+              compares validation signals against held-out KV-cached decoding
+              behavior.
+            </p>
+            <p>
+              This matters because many steering workflows choose directions
+              using prefill activations, while deployment decisions are made one
+              token at a time during decoding. DecodeShare makes that mismatch
+              visible and provides a decode-aligned way to test whether a vector
+              is likely to survive real generation.
+            </p>
+          </div>
+
+          <div class="takeaway-list">
+            <article>
+              <h3>Prefill can be misleading</h3>
+              <p>
+                A direction that looks useful on the full prompt may not align
+                with the hidden state that actually produces the next token.
+              </p>
+            </article>
+            <article>
+              <h3>Shared channels can interfere</h3>
+              <p>
+                Steering directions sometimes borrow task-general decode
+                structure, so projection is a diagnostic rather than a universal
+                repair.
+              </p>
+            </article>
+            <article>
+              <h3>Decode checks track deployment</h3>
+              <p>
+                Evaluating vectors in the same KV-cached regime used at
+                generation time gives a more realistic selection signal.
+              </p>
+            </article>
           </div>
         </div>
       </section>
 
       <section id="method" class="section alt">
-        <div class="wrap two-col">
-          <div>
+        <div class="wrap">
+          <div class="method-copy">
             <p class="eyebrow">Method</p>
             <h2>Decode-time states are the intervention target.</h2>
             <p>
@@ -99,6 +127,13 @@
               component during decoding.
             </p>
           </div>
+
+          <figure class="figure wide-figure">
+            <img
+              src="assets/decodeshare_pipeline.jpg"
+              alt="DecodeShare pipeline for activation collection, shared subspace estimation, and matched controls"
+            >
+          </figure>
 
           <div class="step-grid">
             <article>
@@ -126,8 +161,10 @@
           <h2>Shared decode subspaces are compact and causally important.</h2>
           <p class="section-lead">
             Across models and benchmarks, the discovered subspace occupies a
-            small fraction of the hidden dimension while causing larger decision
-            degradation than random or nonshared controls under matched budgets.
+            small fraction of the hidden dimension, but removing it changes
+            model decisions much more than matched controls. The main point is
+            not the exact number of dimensions; it is that a compact,
+            task-general channel can matter causally at decode time.
           </p>
 
           <div class="figure-pair">
@@ -153,124 +190,33 @@
               </figcaption>
             </figure>
           </div>
-
-          <div class="table-wrap" role="img" aria-label="Shared channel contents table">
-            <table>
-              <caption>Layer-10 shared workspace split on Llama-2-7B.</caption>
-              <thead>
-                <tr>
-                  <th>Ablated subspace</th>
-                  <th>Dim.</th>
-                  <th>Acc.</th>
-                  <th>Delta Acc.</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Full shared</td>
-                  <td>32</td>
-                  <td>28.5</td>
-                  <td>-15.6</td>
-                </tr>
-                <tr>
-                  <td>Q_out</td>
-                  <td>3</td>
-                  <td>44.9</td>
-                  <td>+0.8</td>
-                </tr>
-                <tr>
-                  <td>Q_core</td>
-                  <td>29</td>
-                  <td>27.3</td>
-                  <td>-16.8</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
         </div>
       </section>
 
       <section class="section alt">
-        <div class="wrap two-col reversed">
-          <div>
+        <div class="wrap evidence-grid">
+          <article>
             <p class="eyebrow">Patchback</p>
             <h2>The shared subspace carries recoverable decision information.</h2>
             <p>
               DecodeShare also tests whether the shared subspace can patch
               corrupted decisions back toward the baseline answer. Targeted
-              patching rescues flips at much higher rates than random-vector,
-              random-subspace, and nonshared-patch controls.
+              patching succeeds where random-vector, random-subspace, and
+              nonshared-patch controls largely fail, suggesting the channel
+              stores more than incidental variance.
             </p>
-          </div>
+          </article>
 
-          <figure class="figure">
-            <img
-              src="assets/3_patchback.png"
-              alt="Patchback table showing targeted shared-subspace patching and controls"
-            >
-          </figure>
-        </div>
-      </section>
-
-      <section id="steering" class="section">
-        <div class="wrap">
-          <p class="eyebrow">Steering Reliability</p>
-          <h2>Decode-time validation is a better proxy for held-out steering utility.</h2>
-          <p class="section-lead">
-            Steering vectors can overlap the task-general decode channel.
-            DecodeShare separates shared and residual components, then compares
-            validation signals against held-out KV-cached decoding behavior.
-          </p>
-
-          <div class="split-media">
-            <figure class="figure">
-              <img
-                src="assets/decodeshare_steering_demo.gif"
-                alt="DecodeShare steering demo comparing baseline, prefill vector, and decode vector"
-              >
-            </figure>
-
-            <div class="metric-list">
-              <div class="metric">
-                <span>CAA contrastive</span>
-                <strong>prefill rho -0.370 -> decode rho 0.700</strong>
-              </div>
-              <div class="metric">
-                <span>Instruction vectors</span>
-                <strong>prefill rho 0.172 -> decode rho 0.767</strong>
-              </div>
-              <div class="metric">
-                <span>SAE features</span>
-                <strong>prefill rho -0.064 -> decode rho 0.594</strong>
-              </div>
-              <div class="metric">
-                <span>Held-out deployment</span>
-                <strong>decode-aligned selection improves REAL mean and flip rate</strong>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="section alt">
-        <div class="wrap two-col">
-          <div>
-            <p class="eyebrow">Sensitivity</p>
-            <h2>The shared fraction is stable under retention and threshold sweeps.</h2>
+          <article>
+            <p class="eyebrow">Robustness</p>
+            <h2>The claim is checked against energy and threshold confounds.</h2>
             <p>
-              The paper reports shared-subspace size under PCA retention and
-              sharedness threshold sweeps. The selected core remains compact
-              under stricter settings, supporting the claim that DecodeShare is
-              not simply selecting high-energy directions.
+              The paper varies PCA retention, sharedness thresholds, and
+              matched intervention budgets. These controls keep the focus on
+              decode-shared structure rather than simply selecting the largest
+              or highest-energy directions.
             </p>
-          </div>
-
-          <figure class="figure">
-            <img
-              src="assets/4_tau_sweep.png"
-              alt="Shared fraction sweep over PCA retention and tau threshold"
-            >
-          </figure>
+          </article>
         </div>
       </section>
 
