@@ -1,14 +1,14 @@
-# DecodeShare
+# DecodeShare: Tracing the Shared Subspace of LLM Decode-Time Decisions
 
-DecodeShare is a protocol for finding task-general decision channels in
-KV-cached decode-time hidden states. It estimates low-dimensional subspaces
-shared across tasks, then tests their causal role by removing them only during
-decoding under matched intervention budgets.
+DecodeShare identifies task-general decision channels in KV-cached decode-time
+hidden states. It estimates low-dimensional subspaces shared across tasks, then
+tests their causal role by removing them only during decoding under matched
+intervention budgets.
 
 The artifact reproduces the paper's sharedness, decode ablation, patchback,
-prefill/decode mismatch, and steering-ranking experiments, including the result
-that decode-time validation is a stronger proxy for held-out steering utility
-than prefill-based validation.
+prefill/decode mismatch, and steering-ranking experiments. It also shows that
+decode-time validation is a stronger proxy for held-out steering utility than
+prefill-based validation.
 
 <p align="center">
   <img src="paper_artifacts/figures/decodeshare_pipeline.jpg" alt="DecodeShare pipeline" width="96%">
